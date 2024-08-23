@@ -79,22 +79,7 @@ def get_remote_dataset():
         only_completed=False, 
         only_published=False, 
     )
-    base_dir = dataset.get_local_copy()
-
-    # Extract all zip files
-    for file in os.listdir(base_dir):
-        if file.endswith('.zip'):
-            directory = os.path.join(
-                base_dir,
-                Path(file).stem,
-            )
-            file_path = os.path.join(base_dir, file)
-
-            if not os.path.exists(directory):
-                shutil.unpack_archive(file_path, extract_dir=directory)
-                #os.remove(file_path)
-    
-    return base_dir
+    return dataset.get_local_copy()
 
 def get_dataset():
     remote_dataset = get_remote_dataset()

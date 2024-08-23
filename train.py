@@ -137,7 +137,7 @@ def train_model():
     model = get_model()
     model.to(device)
 
-    model_training = ModelTraining(model, learning_rate = params['learning_rate'], pad_token_id=pad_token_id, vocab_size=params['vocab_size'])
+    model_training = ModelTraining(model, learning_rate = params['learning_rate'], vocab_size=params['vocab_size'])
 
     #summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
     print('Loaded model:')

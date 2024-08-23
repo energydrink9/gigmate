@@ -1,5 +1,5 @@
 import os
-from zipfile import ZipFile
+from zipfile import ZIP_STORED, ZipFile
 import os
 from clearml import Dataset
 from tqdm.contrib.concurrent import thread_map
@@ -100,24 +100,19 @@ def compress_dataset(dir: str, output_file_path: str) -> None:
     return shutil.make_archive(output_file_path, 'zip', dir)
 
 def upload_dataset(path: str, version: str):
-    print('Compressing dataset')
-    compressed_file = compress_dataset(path, get_filename_from_file_path(path))
-    try:
-        print('Creating dataset')
-        dataset = Dataset.create(
-            dataset_name=get_clearml_dataset_name(),
-            dataset_project=get_clearml_project_name(), 
-            dataset_version=version,
-    #        output_uri="gs://bucket-name/folder",
-        )
-        print('Adding files')
-        dataset.add_files(path=compressed_file)
-        print('Uploading')
-        dataset.upload(show_progress=True, preview=False, compression=None)
-        print('Finalizing')
-        dataset.finalize()
-    finally:
-        os.remove(compressed_file)
+    print('Creating dataset')
+    dataset = Dataset.create(
+        dataset_name=get_clearml_dataset_name(),
+        dataset_project=get_clearml_project_name(), 
+        dataset_version=version,
+#        output_uri="gs://bucket-name/folder",
+    )
+    print('Adding files')
+    dataset.add_files(path=path)
+    print('Uploading')
+    dataset.upload(show_progress=True, preview=False, compression=ZIP_STORED)
+    print('Finalizing')
+    dataset.finalize()
 
 
 if __name__ == '__main__':
