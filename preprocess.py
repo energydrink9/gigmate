@@ -1,5 +1,6 @@
+import itertools
 import os
-from zipfile import ZIP_STORED, ZipFile
+from zipfile import ZipFile
 import os
 from clearml import Dataset
 from tqdm.contrib.concurrent import thread_map
@@ -9,30 +10,23 @@ import glob
 from tokenizer import get_tokenizer
 from constants import get_clearml_dataset_name, get_clearml_dataset_version, get_clearml_project_name, get_params
 import shutil
+import pickle
+import kaggle
 
 DATASET_BASE_DIR = './dataset'
 BASE_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean'
 SPLIT_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-split'
 AUGMENTED_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-augmented'
-JSON_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-json'
-
-# # Set up Kaggle credentials
-# os.environ['KAGGLE_USERNAME'] = 'michelelugano'
-# os.environ['KAGGLE_KEY'] = '4cc37f942c85af673a34905c5466ef23'
-
-# !kaggle datasets download -d imsparsh/lakh-midi-clean
-# !pip install kaggle
-# !pip install zipfile
-
-# # Set up Kaggle credentials
-# os.environ['KAGGLE_USERNAME'] = 'michelelugano'
-# os.environ['KAGGLE_KEY'] = '4cc37f942c85af673a34905c5466ef23'
-
-# !kaggle datasets download -d imsparsh/lakh-midi-clean
+FINAL_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-final'
+ITEMS_PER_FILE = 4096
 
 # # Unzip the dataset
 # with ZipFile('lakh-midi-clean.zip', 'r') as zip_ref:
 #     zip_ref.extractall('lakh-midi-clean')
+
+def download_dataset():
+    kaggle.api.authenticate()
+    kaggle.api.dataset_download_files('imsparsh/lakh-midi-clean', path=BASE_DATASET_DIR, unzip=True)
 
 def get_json_file_dir(directory, artist):
     return f'{directory}/{artist}'
@@ -70,29 +64,36 @@ def augment_dataset(source_path: str, out_path: str):
         out_path=Path(out_path)
     )
 
-def preprocess_midi(midi_data):
-    return tokenizer(midi_data)
+def preprocess_midi(midi_data, tokenizer):
+    return tokenizer.encode(midi_data)
 
-def preprocess_midi_item(item, out_dir):
-    (i, midi_path) = item
+def preprocess_midi_item(item, tokenizer):
     try:
-        artist = get_artist_from_file_path(midi_path)
-        filename = f'{artist}-{get_filename_from_file_path(midi_path)}'
-        file_path = get_json_file_path(out_dir, artist, filename)
-        dir = get_json_file_dir(out_dir, artist)
-        if not os.path.exists(file_path):
-            if not os.path.exists(dir):
-                os.makedirs(dir, exist_ok=True)
-            tokens = preprocess_midi(midi_path)
-            tokenizer.save_tokens(tokens, path=file_path)
+        artist = get_artist_from_file_path(item)
+        tokens = preprocess_midi(item, tokenizer)
+        return {'artist': artist, 'tokens': tokens.ids }
     except Exception as e:
-        print(f'Error loading midi file: {midi_path}')
+        print(f'Error loading midi file: {item}')
         print(e)
 
-def preprocess_midi_dataset(midi_data_list, out_dir: str):
-    print(f'{len(midi_data_list)} midi files to process')
-    thread_map(lambda item: preprocess_midi_item(item, out_dir), enumerate(midi_data_list), max_workers=8)
+def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
 
+    print(f'{len(midi_data_list)} midi files to process')
+    tokens_list = thread_map(lambda item: preprocess_midi_item(item, tokenizer), midi_data_list, max_workers=8)
+    items_by_artist = itertools.groupby(tokens_list, lambda item: item['artist'])
+    for artist, items in items_by_artist:
+        items_per_file = itertools.batched(items, ITEMS_PER_FILE)
+        for i, item in enumerate(items_per_file):
+            artist_dir = os.path.join(out_dir, artist)
+            if not os.path.exists(artist_dir):
+                os.makedirs(artist_dir, exist_ok=True)
+
+            path = os.path.join(artist_dir, f'item-{artist}-{i}.pkl')
+            with open(path, 'ab') as file:
+                pickle.dump(item, file)
+        
 def get_midi_files(dir: str):
     return glob.glob(os.path.join(dir, '**/*.mid'), recursive=True)
 
@@ -110,17 +111,17 @@ def upload_dataset(path: str, version: str):
     print('Adding files')
     dataset.add_files(path=path)
     print('Uploading')
-    dataset.upload(show_progress=True, preview=False, compression=ZIP_STORED)
+    dataset.upload(show_progress=True, preview=False)
     print('Finalizing')
     dataset.finalize()
 
 
 if __name__ == '__main__':
-    #tokenizer = get_tokenizer()
-    #extract_dataset('lakh-midi-clean.zip', 'lakh-midi-clean')
-    #split_files(BASE_DATASET_DIR, SPLIT_DATASET_DIR)
-    #augment_dataset(SPLIT_DATASET_DIR, AUGMENTED_DATASET_DIR)
-    #midi_data_list = get_midi_files(AUGMENTED_DATASET_DIR)
-    #preprocess_midi_dataset(midi_data_list, JSON_DATASET_DIR)
-    upload_dataset(JSON_DATASET_DIR, get_clearml_dataset_version())
+    tokenizer = get_tokenizer()
+    download_dataset()
+    split_files(BASE_DATASET_DIR, SPLIT_DATASET_DIR, tokenizer)
+    augment_dataset(SPLIT_DATASET_DIR, AUGMENTED_DATASET_DIR)
+    midi_data_list = get_midi_files(AUGMENTED_DATASET_DIR)
+    preprocess_midi_dataset(midi_data_list, FINAL_DATASET_DIR, tokenizer)
+    upload_dataset(FINAL_DATASET_DIR, get_clearml_dataset_version())
     

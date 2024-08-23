@@ -59,7 +59,6 @@ def create_pt_datasets(directory, max_seq_len, validation_size=0.1, test_size=0.
         bos_token_id=1,
         eos_token_id=2,
     )
-
     test_ds = DatasetJSON(
         files_paths = test_paths,
         max_seq_len=max_seq_len,
