@@ -16,7 +16,7 @@ from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from device import get_device
 
-WEIGHTS_FILE = 'gigmate.weights'
+WEIGHTS_FILE = 'output/gigmate.weights'
 
 pad_token_id = get_pad_token_id()
 
@@ -27,6 +27,8 @@ def init_clearml_task(params):
     )
 
     task.connect(params)
+
+    return task
 
 def get_inputs_and_targets(batch, device):
     return batch['input_ids'].to(device), batch['labels'].to(device)
@@ -122,7 +124,7 @@ def train_model():
     params = get_params()
     print(f'Running with parameters: {params}')
 
-    init_clearml_task(params)
+    task = init_clearml_task(params)
 
     device = get_device()    
     print(f'Running on device: {device}')
@@ -146,6 +148,7 @@ def train_model():
     trainer = L.Trainer(callbacks=[early_stopping], logger=logger, max_epochs=params['epochs'])
     trainer.fit(model_training, train_loader, validation_loader)
     trainer.save_checkpoint(WEIGHTS_FILE)
+    task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)
 
     return model
 

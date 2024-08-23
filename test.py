@@ -1,3 +1,4 @@
+import itertools
 import torch
 from dataset import get_data_loaders
 from model import get_model
@@ -7,7 +8,7 @@ from constants import get_params
 from device import get_device
 
 INPUT_TOKENS_COUNT = 250
-OUTPUT_TOKENS_COUNT = 3
+OUTPUT_TOKENS_COUNT = 100
 NUM_OUTPUT_FILES = 5
 
 def get_input_midi_file_name(i: int) -> str:
@@ -88,11 +89,13 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
 def test_model(model, device):
     tokenizer = get_tokenizer()
 
+    buffer_size = 1000
     data_loader = get_data_loader()
+    data_items = list(itertools.islice(iter(data_loader), NUM_OUTPUT_FILES * buffer_size))
 
     for i in range(NUM_OUTPUT_FILES):
-        first_item = next(iter(data_loader))['input_ids']
-        input_sequence = get_input_sequence(first_item).to(device)
+        next_item = data_items[i * buffer_size]['input_ids']
+        input_sequence = get_input_sequence(next_item).to(device)
         output_sequence = compute_output_sequence(model, tokenizer, input_sequence)
 
         create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
