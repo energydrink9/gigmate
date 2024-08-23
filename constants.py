@@ -10,6 +10,7 @@ NUM_HEADS = 4
 DROPOUT_RATE = 0.1
 EPOCHS = 10
 BATCH_SIZE = 16
+LEARNING_RATE = 0.00001
 
 CLEARML_PROJECT_NAME = 'GigMate'
 CLEARML_DATASET_NAME = 'LakhMidiClean'
@@ -25,7 +26,7 @@ PARAMS = {
     'epochs': EPOCHS,
     'max_seq_len': MAX_SEQ_LEN,
     'batch_size': BATCH_SIZE,
-    'learning_rate': 0.00001,
+    'learning_rate': LEARNING_RATE,
 }
 
 def get_random_seed() -> int:

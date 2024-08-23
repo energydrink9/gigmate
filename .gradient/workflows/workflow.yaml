@@ -1,0 +1,43 @@
+'on':
+  github:
+    branches:
+      only: main
+jobs:
+  CloneRepo:
+    resources:
+      instance-type: C4
+    outputs:
+      repo:
+        type: volume
+    uses: git-checkout@v1
+    with:
+      url: https://github.com/energydrink9/gigmate
+      username: energydrink9
+      password: secret:GITHUB_SECRET
+  ModelTraining:
+    env:
+      CLEARML_API_ACCESS_KEY: secret:CLEARML_API_ACCESS_KEY
+      CLEARML_API_SECRET_KEY: secret:CLEARML_API_SECRET_KEY
+    resources:
+      instance-type: P5000
+    needs:
+      - CloneRepo
+    inputs:
+      repo: CloneRepo.outputs.repo
+    outputs:
+      training:
+        type: volume
+    uses: script@v1
+    with:
+      script: |-
+          export CLEARML_API_ACCESS_KEY="XATC94J089GPT7MZQWD0BOEA9WR238"
+          export CLEARML_API_SECRET_KEY="ak3S0Xh5OMXSj1FW8QoqbAA2RK_u-W-ntwhVnx-5asBie5fvELHhqsp0pCh-3HV-l8g"
+          export CLEARML_API_HOST="https://api.clear.ml"
+          export CLEARML_WEB_HOST="https://app.clear.ml/"
+          export CLEARML_FILES_HOST="https://files.clear.ml"
+          cd /inputs/repo
+          pip install -r requirements.txt
+          echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
+          python init.py
+          mv outputs /outputs/training
+      image: python:3.12

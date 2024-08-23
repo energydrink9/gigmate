@@ -8,7 +8,7 @@ from constants import get_params
 from device import get_device
 
 INPUT_TOKENS_COUNT = 250
-OUTPUT_TOKENS_COUNT = 100
+OUTPUT_TOKENS_COUNT = 5000
 NUM_OUTPUT_FILES = 5
 
 def get_input_midi_file_name(i: int) -> str:
