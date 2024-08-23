@@ -1,12 +1,14 @@
 import os
 from zipfile import ZipFile
 import os
+from clearml import Dataset
 from tqdm.contrib.concurrent import thread_map
 import miditok
 from pathlib import Path, PurePath
 import glob
 from tokenizer import get_tokenizer
-from constants import get_params
+from constants import get_clearml_dataset_name, get_clearml_dataset_version, get_clearml_project_name, get_params
+import shutil
 
 DATASET_BASE_DIR = './dataset'
 BASE_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean'
@@ -94,11 +96,36 @@ def preprocess_midi_dataset(midi_data_list, out_dir: str):
 def get_midi_files(dir: str):
     return glob.glob(os.path.join(dir, '**/*.mid'), recursive=True)
 
+def compress_dataset(dir: str, output_file_path: str) -> None:
+    return shutil.make_archive(output_file_path, 'zip', dir)
+
+def upload_dataset(path: str, version: str):
+    print('Compressing dataset')
+    compressed_file = compress_dataset(path, get_filename_from_file_path(path))
+    try:
+        print('Creating dataset')
+        dataset = Dataset.create(
+            dataset_name=get_clearml_dataset_name(),
+            dataset_project=get_clearml_project_name(), 
+            dataset_version=version,
+    #        output_uri="gs://bucket-name/folder",
+        )
+        print('Adding files')
+        dataset.add_files(path=compressed_file)
+        print('Uploading')
+        dataset.upload(show_progress=True, preview=False, compression=None)
+        print('Finalizing')
+        dataset.finalize()
+    finally:
+        os.remove(compressed_file)
+
 
 if __name__ == '__main__':
-    tokenizer = get_tokenizer()
-    extract_dataset('lakh-midi-clean.zip', 'lakh-midi-clean')
-    split_files(BASE_DATASET_DIR, SPLIT_DATASET_DIR)
-    augment_dataset(SPLIT_DATASET_DIR, AUGMENTED_DATASET_DIR)
-    midi_data_list = get_midi_files(AUGMENTED_DATASET_DIR)
-    preprocess_midi_dataset(midi_data_list, JSON_DATASET_DIR)
+    #tokenizer = get_tokenizer()
+    #extract_dataset('lakh-midi-clean.zip', 'lakh-midi-clean')
+    #split_files(BASE_DATASET_DIR, SPLIT_DATASET_DIR)
+    #augment_dataset(SPLIT_DATASET_DIR, AUGMENTED_DATASET_DIR)
+    #midi_data_list = get_midi_files(AUGMENTED_DATASET_DIR)
+    #preprocess_midi_dataset(midi_data_list, JSON_DATASET_DIR)
+    upload_dataset(JSON_DATASET_DIR, get_clearml_dataset_version())
+    

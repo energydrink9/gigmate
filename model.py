@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torchinfo import summary
-from clearml import Task
 import math
 from constants import get_params
 
@@ -102,14 +101,6 @@ def positional_encoding(seq_len, d_model):
     return pos_encoding
 
 def get_model(params = get_params()):
-
-    task = Task.init(
-        project_name='GigMate',
-        task_name='training',
-    )
-
-    task.connect(params)
-
     model = TransformerModel(
         params['num_layers'],
         params['d_model'],

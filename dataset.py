@@ -1,3 +1,4 @@
+import multiprocessing
 from pathlib import Path, PurePath
 from clearml import Dataset
 import torch
@@ -5,8 +6,8 @@ from torch.utils.data import DataLoader
 from miditok.pytorch_data import DatasetJSON, DataCollator
 import os
 from sklearn.model_selection import train_test_split
-from constants import get_params, get_random_seed
-from tokenizer import get_tokenizer
+from constants import get_clearml_dataset_version, get_params, get_random_seed, get_clearml_dataset_name, get_clearml_project_name, get_pad_token_id
+import shutil
 
 #!clearml-data create --project GigMate --name LakhMidiCleanDatasetFull
 #!clearml-data add --id 1a4115ff408e46208e8beabb197d6bde --files dataset/lakh-midi-clean
@@ -17,7 +18,7 @@ torch.use_deterministic_algorithms(True)
 
 params = get_params()
 
-def get_artist_from_file_path(file_path):
+def get_parent_directory_name_from_file_path(file_path):
     path = PurePath(file_path)
     return path.parent.name
 
@@ -39,23 +40,21 @@ def split_by_artist(file_paths_with_artists, artists, validation_size, test_size
     return train_paths, validation_paths, test_paths
 
 # Function to create TensorFlow Dataset from pickled files
-def create_pt_datasets(directory, max_seq_len, tokenizer, validation_size=0.1, test_size=0.1):
+def create_pt_datasets(directory, max_seq_len, validation_size=0.1, test_size=0.1):
     file_paths = get_file_paths(directory)
 
-    artists = list(set(map(lambda path: get_artist_from_file_path(path), file_paths)))
-    file_paths_with_artists = list(map(lambda path: (path, get_artist_from_file_path(path)), file_paths))
+    artists = list(set(map(lambda path: get_parent_directory_name_from_file_path(path), file_paths)))
+    file_paths_with_artists = list(map(lambda path: (path, get_parent_directory_name_from_file_path(path)), file_paths))
     train_paths, validation_paths, test_paths = split_by_artist(file_paths_with_artists, artists, validation_size, test_size)
 
     train_ds = DatasetJSON(
         files_paths = train_paths,
-        tokenizer=tokenizer,
         max_seq_len=max_seq_len,
         bos_token_id=1,
         eos_token_id=2,
     )
     validation_ds = DatasetJSON(
         files_paths = validation_paths,
-        tokenizer=tokenizer,
         max_seq_len=max_seq_len,
         bos_token_id=1,
         eos_token_id=2,
@@ -63,7 +62,6 @@ def create_pt_datasets(directory, max_seq_len, tokenizer, validation_size=0.1, t
 
     test_ds = DatasetJSON(
         files_paths = test_paths,
-        tokenizer=tokenizer,
         max_seq_len=max_seq_len,
         bos_token_id=1,
         eos_token_id=2,
@@ -72,37 +70,53 @@ def create_pt_datasets(directory, max_seq_len, tokenizer, validation_size=0.1, t
     return train_ds, validation_ds, test_ds
 
 def get_remote_dataset():
+
     dataset = Dataset.get(
-#        dataset_id='29c113071b6646fdaae0d314c775516f',  
-        dataset_project="GigMate",
-        dataset_name="LakhMidiClean",
+        dataset_project=get_clearml_project_name(),
+        dataset_name=get_clearml_dataset_name(),
+        dataset_version=get_clearml_dataset_version(),
 #        dataset_tags="full",
-        dataset_version="1.0.0",
         only_completed=False, 
         only_published=False, 
     )
-    return dataset
+    base_dir = dataset.get_local_copy()
 
-def get_dataset(tokenizer):
+    # Extract all zip files
+    for file in os.listdir(base_dir):
+        if file.endswith('.zip'):
+            directory = os.path.join(
+                base_dir,
+                Path(file).stem,
+            )
+            file_path = os.path.join(base_dir, file)
+
+            if not os.path.exists(directory):
+                shutil.unpack_archive(file_path, extract_dir=directory)
+                #os.remove(file_path)
+    
+    return base_dir
+
+def get_dataset():
     remote_dataset = get_remote_dataset()
-    directory = remote_dataset.get_local_copy()
-    train_ds, validation_ds, test_ds = create_pt_datasets(directory, max_seq_len=get_params()['max_seq_len'], tokenizer=tokenizer)
+    directory = remote_dataset
+    train_ds, validation_ds, test_ds = create_pt_datasets(directory, max_seq_len=get_params()['max_seq_len'])
     return train_ds, validation_ds, test_ds
 
 def get_data_loaders():
-    tokenizer = get_tokenizer()
 
-    train_ds, validation_ds, test_ds = get_dataset(tokenizer)
+    train_ds, validation_ds, test_ds = get_dataset()
 
     collator = DataCollator(
-        pad_token_id=tokenizer.pad_token_id,
+        pad_token_id=get_pad_token_id(),
         copy_inputs_as_labels=True,
         shift_labels=True,
-        labels_pad_idx=tokenizer.pad_token_id,
+        labels_pad_idx=get_pad_token_id(),
     )
 
-    train_loader = DataLoader(train_ds, batch_size=params.batch_size, collate_fn=collator, shuffle=True)
-    validation_loader = DataLoader(validation_ds, batch_size=params.batch_size, collate_fn=collator, shuffle=False)
-    test_loader = DataLoader(test_ds, batch_size=params.batch_size, collate_fn=collator, shuffle=False)
+    num_workers = multiprocessing.cpu_count() - 1
+
+    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, shuffle=True, num_workers=num_workers)
+    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, shuffle=False, num_workers=num_workers)
 
     return train_loader, validation_loader, test_loader
