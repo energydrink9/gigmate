@@ -70,6 +70,8 @@ def split_directory_files(directory, out_path, tokenizer, average_num_tokens):
             num_overlap_bars=2,
             average_num_tokens_per_note=average_num_tokens
         )
+    except FileNotFoundError as e:
+        print(f'Warning: Hidden file not found in {out_path}. Continuing without it.')
     except Exception as e:
         print(f'Error splitting files in directory: {directory}')
         raise e
