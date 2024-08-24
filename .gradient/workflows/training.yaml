@@ -11,7 +11,7 @@ jobs:
         type: volume
     uses: git-checkout@v1
     with:
-      url: https://github.com/energydrink9/gigmate
+      url: https://github.com/energydrink9/gigmate/tree/training
       username: energydrink9
       password: secret:GITHUB_SECRET
   ModelTraining:
