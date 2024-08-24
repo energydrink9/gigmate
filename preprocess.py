@@ -52,14 +52,18 @@ def extract_dataset(filename: str, out: str):
 def directory_has_files(directory: str, file_extension: str):
     return len(list(Path(directory).glob(f'**/*{file_extension}'))) > 0
 
-def split_directory_files(source_dir, out_dir, tokenizer):
-    miditok.utils.split_files_for_training(
-        files_paths=list(Path(Path(source_dir).resolve()).glob('**/*.mid')),
-        tokenizer=tokenizer,
-        save_dir=Path(out_dir),
-        max_seq_len=get_params()['max_seq_len'],
-        num_overlap_bars=2,
-    )
+def split_directory_files(directory, out_path, tokenizer):
+    try:
+        miditok.utils.split_files_for_training(
+            files_paths=list(Path(Path(directory).resolve()).glob('**/*.mid')),
+            tokenizer=tokenizer,
+            save_dir=Path(out_path),
+            max_seq_len=get_params()['max_seq_len'],
+            num_overlap_bars=2,
+        )
+    except Exception as e:
+        print(f'Error splitting files in directory: {directory}')
+        raise e
 
 def split_files(source_path, out_path, tokenizer):
     directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]
@@ -67,13 +71,17 @@ def split_files(source_path, out_path, tokenizer):
     print('Data augmentation complete')
 
 def augment_dataset_directory(directory: str, out_path: str):
-    miditok.data_augmentation.augment_dataset(
-        data_path=Path(directory),
-        pitch_offsets=[-10, 10],
-        velocity_offsets=[-4, 4],
-        duration_offsets=[-0.5, 0.5],
-        out_path=Path(out_path)
-    )
+    try:
+        miditok.data_augmentation.augment_dataset(
+            data_path=Path(directory),
+            pitch_offsets=[-10, 10],
+            velocity_offsets=[-4, 4],
+            duration_offsets=[-0.5, 0.5],
+            out_path=Path(out_path)
+        )
+    except Exception as e:
+        print(f'Error augmenting files in directory: {directory}')
+        raise e
 
 def augment_dataset(source_path: str, out_path: str):
     directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]

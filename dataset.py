@@ -40,10 +40,10 @@ def split_by_artist(file_paths_with_artists, artists, validation_size, test_size
 
     return train_paths, validation_paths, test_paths
 
-def get_dataset(file_paths: list[str], max_seq_len: int):
+def get_dataset(directory: str, max_seq_len: int):
 
     dataset = DatasetPickle(
-        files_paths = file_paths,
+        directory=directory,
         max_seq_len=max_seq_len,
         bos_token_id=1,
         eos_token_id=2,
@@ -53,32 +53,31 @@ def get_dataset(file_paths: list[str], max_seq_len: int):
 # Function to create TensorFlow Dataset from pickled files
 def create_pt_datasets(directory, max_seq_len, validation_size=0.1, test_size=0.1):
     file_paths = get_file_paths(directory)
-
-    artists = list(set(map(lambda path: get_parent_directory_name_from_file_path(path), file_paths)))
-    file_paths_with_artists = list(map(lambda path: (path, get_parent_directory_name_from_file_path(path)), file_paths))
-    train_paths, validation_paths, test_paths = split_by_artist(file_paths_with_artists, artists, validation_size, test_size)
-
     train_ds = get_dataset(train_paths, max_seq_len)
     validation_ds = get_dataset(validation_paths, max_seq_len)
     test_ds = get_dataset(test_paths, max_seq_len)
 
     return train_ds, validation_ds, test_ds
 
-def get_remote_dataset():
-
+def get_remote_dataset(dataset: str):
     dataset = Dataset.get(
         dataset_project=get_clearml_project_name(),
         dataset_name=get_clearml_dataset_name(),
         dataset_version=get_clearml_dataset_version(),
-#        dataset_tags="full",
+        dataset_tags=[f"{dataset}-set"],
         only_completed=False, 
         only_published=False, 
     )
     return dataset.get_local_copy()
 
+def get_pt_dataset_from_remote_dataset(set: str):
+    dataset = get_remote_dataset('train')
+    return create_pt_datasets(dataset, max_seq_len=get_params()['max_seq_len'])
+
 def get_datasets():
-    remote_dataset = get_remote_dataset()
-    train_ds, validation_ds, test_ds = create_pt_datasets(remote_dataset, max_seq_len=get_params()['max_seq_len'])
+    train_ds = get_pt_dataset_from_remote_dataset('train')
+    validation_ds = get_pt_dataset_from_remote_dataset('validation')
+    test_ds = get_pt_dataset_from_remote_dataset('test')
     return train_ds, validation_ds, test_ds
 
 def get_data_loaders():

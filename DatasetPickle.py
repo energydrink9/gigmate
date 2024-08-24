@@ -1,10 +1,10 @@
 from miditok.pytorch_data.datasets import _DatasetABC
 import pickle
-from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from torch import LongTensor
-
-from miditok import MusicTokenizer, TokSequence
+import json
+import os
+from preprocess import ITEMS_PER_FILE
 
 class DatasetPickle(_DatasetABC):
     r"""
@@ -32,7 +32,7 @@ class DatasetPickle(_DatasetABC):
 
     def __init__(
         self,
-        files_paths: Sequence[Path],
+        directory: str,
         max_seq_len: int,
         bos_token_id: int | None = None,
         eos_token_id: int | None = None,
@@ -44,15 +44,27 @@ class DatasetPickle(_DatasetABC):
             [1 for tok in [bos_token_id, eos_token_id] if tok is not None]
         )
 
-        actual_file_paths = []
-        for file_path in files_paths:
-            with open(file_path, 'rb') as file:
-                items = pickle.load(file)
-                actual_file_paths += items
+        self.directory = directory
+        self.files_paths = list(Path(directory).glob(f'**/*.pkl'))
 
-        self.files_paths = actual_file_paths
+        with open(os.path.join(directory, 'metadata')) as file:
+            metadata = json.load(file)
+            total_files = metadata.total_files
+
+        self.items = [None] * total_files
+        self.total_files = total_files
 
         super().__init__()
+
+    def get_item(self, idx):
+        if self.items[idx] == None:
+            file_idx = idx // ITEMS_PER_FILE
+            with open(self.files_paths[file_idx], 'rb') as file:
+                items = pickle.load(file)
+                for i, item in enumerate(items):
+                    self.items[file_idx + i] = item
+
+        return self.items[idx]
 
     def __getitem__(self, idx: int) -> dict[str, LongTensor]:
         """
@@ -61,7 +73,8 @@ class DatasetPickle(_DatasetABC):
         :param idx: index of the file to load.
         :return: the tokens as a dictionary mapping to the token ids as a tensor.
         """
-        token_ids = self.files_paths[idx]['tokens']
+        item = self.get_item(idx)
+        token_ids = item['tokens']
         token_ids = self._preprocess_token_ids(
             token_ids,
             self._effective_max_seq_len,
@@ -76,4 +89,4 @@ class DatasetPickle(_DatasetABC):
 
         :return: number of elements in the dataset.
         """
-        return len(self.files_paths)
+        return self.total_files
