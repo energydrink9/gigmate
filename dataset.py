@@ -3,11 +3,12 @@ from pathlib import Path, PurePath
 from clearml import Dataset
 import torch
 from torch.utils.data import DataLoader
-from miditok.pytorch_data import DatasetJSON, DataCollator
+from miditok.pytorch_data import DataCollator
 import os
 from sklearn.model_selection import train_test_split
 from constants import get_clearml_dataset_version, get_params, get_random_seed, get_clearml_dataset_name, get_clearml_project_name, get_pad_token_id
 import shutil
+from DatasetPickle import DatasetPickle
 
 #!clearml-data create --project GigMate --name LakhMidiCleanDatasetFull
 #!clearml-data add --id 1a4115ff408e46208e8beabb197d6bde --files dataset/lakh-midi-clean
@@ -27,7 +28,7 @@ def get_filename_from_file_path(file_path):
 
 # Function to generate file paths
 def get_file_paths(directory):
-    return list(Path(directory).glob('**/*.json'))
+    return list(Path(directory).glob('**/*.pkl'))
 
 def split_by_artist(file_paths_with_artists, artists, validation_size, test_size, seed=get_random_seed()):
     train_artists, rest_artists = train_test_split(artists, test_size=validation_size + test_size, random_state=seed)
@@ -39,6 +40,16 @@ def split_by_artist(file_paths_with_artists, artists, validation_size, test_size
 
     return train_paths, validation_paths, test_paths
 
+def get_dataset(file_paths: list[str], max_seq_len: int):
+
+    dataset = DatasetPickle(
+        files_paths = file_paths,
+        max_seq_len=max_seq_len,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+    return dataset
+
 # Function to create TensorFlow Dataset from pickled files
 def create_pt_datasets(directory, max_seq_len, validation_size=0.1, test_size=0.1):
     file_paths = get_file_paths(directory)
@@ -47,24 +58,9 @@ def create_pt_datasets(directory, max_seq_len, validation_size=0.1, test_size=0.
     file_paths_with_artists = list(map(lambda path: (path, get_parent_directory_name_from_file_path(path)), file_paths))
     train_paths, validation_paths, test_paths = split_by_artist(file_paths_with_artists, artists, validation_size, test_size)
 
-    train_ds = DatasetJSON(
-        files_paths = train_paths,
-        max_seq_len=max_seq_len,
-        bos_token_id=1,
-        eos_token_id=2,
-    )
-    validation_ds = DatasetJSON(
-        files_paths = validation_paths,
-        max_seq_len=max_seq_len,
-        bos_token_id=1,
-        eos_token_id=2,
-    )
-    test_ds = DatasetJSON(
-        files_paths = test_paths,
-        max_seq_len=max_seq_len,
-        bos_token_id=1,
-        eos_token_id=2,
-    )
+    train_ds = get_dataset(train_paths, max_seq_len)
+    validation_ds = get_dataset(validation_paths, max_seq_len)
+    test_ds = get_dataset(test_paths, max_seq_len)
 
     return train_ds, validation_ds, test_ds
 
@@ -80,15 +76,14 @@ def get_remote_dataset():
     )
     return dataset.get_local_copy()
 
-def get_dataset():
+def get_datasets():
     remote_dataset = get_remote_dataset()
-    directory = remote_dataset
-    train_ds, validation_ds, test_ds = create_pt_datasets(directory, max_seq_len=get_params()['max_seq_len'])
+    train_ds, validation_ds, test_ds = create_pt_datasets(remote_dataset, max_seq_len=get_params()['max_seq_len'])
     return train_ds, validation_ds, test_ds
 
 def get_data_loaders():
 
-    train_ds, validation_ds, test_ds = get_dataset()
+    train_ds, validation_ds, test_ds = get_datasets()
 
     collator = DataCollator(
         pad_token_id=get_pad_token_id(),

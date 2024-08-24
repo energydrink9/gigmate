@@ -124,7 +124,6 @@ if __name__ == '__main__':
     split_files(BASE_DATASET_DIR, SPLIT_DATASET_DIR, tokenizer)
     augment_dataset(SPLIT_DATASET_DIR, AUGMENTED_DATASET_DIR)
     midi_data_list = get_midi_files(AUGMENTED_DATASET_DIR)
-    print(midi_data_list)
     preprocess_midi_dataset(midi_data_list, FINAL_DATASET_DIR, tokenizer)
     upload_dataset(FINAL_DATASET_DIR, get_clearml_dataset_version())
     
