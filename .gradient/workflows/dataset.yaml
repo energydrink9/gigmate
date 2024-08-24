@@ -1,7 +1,7 @@
 'on':
   github:
     branches:
-      only: dataset
+      only: main
 jobs:
   CloneRepo:
     resources:
@@ -11,7 +11,7 @@ jobs:
         type: volume
     uses: git-checkout@v1
     with:
-      url: https://github.com/energydrink9/gigmate/tree/dataset
+      url: https://github.com/energydrink9/gigmate
       username: energydrink9
       password: secret:GITHUB_SECRET
   Dataset:
