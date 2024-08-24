@@ -18,7 +18,7 @@ BASE_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean'
 SPLIT_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-split'
 AUGMENTED_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-augmented'
 FINAL_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-final'
-ITEMS_PER_FILE = 4096
+ITEMS_PER_FILE = 1024 * 8
 
 # # Unzip the dataset
 # with ZipFile('lakh-midi-clean.zip', 'r') as zip_ref:
@@ -63,6 +63,7 @@ def augment_dataset(source_path: str, out_path: str):
         duration_offsets=[-0.5, 0.5],
         out_path=Path(out_path)
     )
+    print('Data augmentation complete')
 
 def preprocess_midi(midi_data, tokenizer):
     return tokenizer.encode(midi_data)
@@ -77,6 +78,7 @@ def preprocess_midi_item(item, tokenizer):
         print(e)
 
 def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
+    print('Converting to pickle files')
     if not os.path.exists(out_dir):
         os.makedirs(out_dir, exist_ok=True)
 
@@ -122,6 +124,7 @@ if __name__ == '__main__':
     split_files(BASE_DATASET_DIR, SPLIT_DATASET_DIR, tokenizer)
     augment_dataset(SPLIT_DATASET_DIR, AUGMENTED_DATASET_DIR)
     midi_data_list = get_midi_files(AUGMENTED_DATASET_DIR)
+    print(midi_data_list)
     preprocess_midi_dataset(midi_data_list, FINAL_DATASET_DIR, tokenizer)
     upload_dataset(FINAL_DATASET_DIR, get_clearml_dataset_version())
     
