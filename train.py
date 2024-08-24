@@ -1,6 +1,5 @@
 from typing import Literal
 from clearml import Task
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torchmetrics
 import torch
 from torch import nn

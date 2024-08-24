@@ -15,6 +15,8 @@ import kaggle
 from sklearn.model_selection import train_test_split
 import multiprocessing
 import json
+from miditok.utils import get_average_num_tokens_per_note
+import random
 
 DATASET_BASE_DIR = './dataset'
 BASE_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean'
@@ -22,6 +24,7 @@ SPLIT_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-split'
 AUGMENTED_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-augmented'
 FINAL_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-final'
 ITEMS_PER_FILE = 1024 * 8
+NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE = 100
 
 # # Unzip the dataset
 # with ZipFile('lakh-midi-clean.zip', 'r') as zip_ref:
@@ -49,26 +52,42 @@ def extract_dataset(filename: str, out: str):
     with ZipFile(filename, 'r') as zip_ref:
         zip_ref.extractall(out)
 
-def directory_has_files(directory: str, file_extension: str):
-    return len(list(Path(directory).glob(f'**/*{file_extension}'))) > 0
+def get_files_in_directory(directory: str, extension: str = '.mid'):
+    absolute_path = Path(directory).resolve()
+    iterator = Path(absolute_path).glob(f'**/*{extension}')
+    return [p for p in iterator]
 
-def split_directory_files(directory, out_path, tokenizer):
+def directory_has_files(directory: str, file_extension: str):
+    return len(get_files_in_directory(directory, file_extension)) > 0
+
+def split_directory_files(directory, out_path, tokenizer, average_num_tokens):
     try:
         miditok.utils.split_files_for_training(
-            files_paths=list(Path(Path(directory).resolve()).glob('**/*.mid')),
+            files_paths=get_files_in_directory(directory),
             tokenizer=tokenizer,
             save_dir=Path(out_path),
             max_seq_len=get_params()['max_seq_len'],
             num_overlap_bars=2,
+            average_num_tokens_per_note=average_num_tokens
         )
     except Exception as e:
         print(f'Error splitting files in directory: {directory}')
         raise e
 
+def get_average_num_tokens(directory: str):
+    files = get_files_in_directory(directory)
+    print(files[0])
+    print(directory)
+    print(len(files))
+    random_files = random.sample(files, min(NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE, len(files)))
+    return get_average_num_tokens_per_note(tokenizer, random_files)
+
 def split_files(source_path, out_path, tokenizer):
+    average_num_tokens = get_average_num_tokens(source_path)
+    print(f'Average number of tokens per note: {average_num_tokens}')
     directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]
-    thread_map(lambda directory: split_directory_files(os.path.join(source_path, directory), os.path.join(out_path, directory), tokenizer), directories, max_workers=multiprocessing.cpu_count())
-    print('Data augmentation complete')
+    thread_map(lambda directory: split_directory_files(os.path.join(source_path, directory), os.path.join(out_path, directory), tokenizer, average_num_tokens), directories, max_workers=multiprocessing.cpu_count())
+    print('Data splitting complete')
 
 def augment_dataset_directory(directory: str, out_path: str):
     try:
