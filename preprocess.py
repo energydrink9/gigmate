@@ -49,6 +49,9 @@ def extract_dataset(filename: str, out: str):
     with ZipFile(filename, 'r') as zip_ref:
         zip_ref.extractall(out)
 
+def directory_has_files(directory: str, file_extension: str):
+    return len(list(Path(directory).glob(f'**/*{file_extension}'))) > 0
+
 def split_directory_files(source_dir, out_dir, tokenizer):
     miditok.utils.split_files_for_training(
         files_paths=list(Path(Path(source_dir).resolve()).glob('**/*.mid')),
@@ -59,7 +62,7 @@ def split_directory_files(source_dir, out_dir, tokenizer):
     )
 
 def split_files(source_path, out_path, tokenizer):
-    directories = os.listdir(source_path)
+    directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]
     thread_map(lambda directory: split_directory_files(os.path.join(source_path, directory), os.path.join(out_path, directory), tokenizer), directories, max_workers=multiprocessing.cpu_count())
     print('Data augmentation complete')
 
@@ -73,7 +76,7 @@ def augment_dataset_directory(directory: str, out_path: str):
     )
 
 def augment_dataset(source_path: str, out_path: str):
-    directories = os.listdir(source_path)
+    directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]
     thread_map(lambda directory: augment_dataset_directory(os.path.join(source_path, directory), os.path.join(out_path, directory)), directories, max_workers=multiprocessing.cpu_count())
     print('Data augmentation complete')
 
