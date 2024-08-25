@@ -25,7 +25,7 @@ BASE_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean'
 SPLIT_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-split'
 AUGMENTED_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-augmented'
 FINAL_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-final'
-ITEMS_PER_FILE = 1024 * 8
+ITEMS_PER_FILE = 1024 * 4
 NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE = 100
 
 def measure_time(method_name: str, func):
@@ -92,8 +92,9 @@ def get_average_num_tokens(directory: str):
 def split_files(source_path, out_path, tokenizer):
     average_num_tokens = get_average_num_tokens(source_path)
     print(f'Average number of tokens per note: {average_num_tokens}')
-    directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]
-    thread_map(lambda directory: split_directory_files(os.path.join(source_path, directory), os.path.join(out_path, directory), tokenizer, average_num_tokens), directories, max_workers=multiprocessing.cpu_count())
+    #directories = [os.path.basename(f.path) for f in os.scandir(source_path) if f.is_dir() and directory_has_files(f.path, '.mid')]
+    #thread_map(lambda directory: split_directory_files(os.path.join(source_path, directory), os.path.join(out_path, directory), tokenizer, average_num_tokens), directories, max_workers=multiprocessing.cpu_count())
+    split_directory_files(source_path, out_path, tokenizer, average_num_tokens)
     print('Data splitting complete')
 
 def augment_dataset_directory(directory: str, out_path: str):
@@ -117,18 +118,26 @@ def augment_dataset(source_path: str, out_path: str):
 def preprocess_midi(midi_file_path, tokenizer):
     return tokenizer.encode(midi_file_path)
 
-def preprocess_midi_item(item, tokenizer):
-    try:
-        tokens = preprocess_midi(item, tokenizer)
-        return tokens.ids
-    except Exception as e:
-        print(f'Error loading midi file: {item}')
-        print(e)
+def preprocess_midi_items(out_dir, items, tokenizer, i):
+    tokenized_items = []
+    print(f'Processing {len(items)} items in batch {i}')
+    for item in items:
+        try:
+            tokens = preprocess_midi(item, tokenizer)
+            tokenized_items.append(tokens.ids)
+        except Exception as e:
+            print(f'Error loading midi file: {item}')
+            print(e)
 
-def persist_items_batch(out_dir: str, i: int, item):
+    if len(tokenized_items) > 0:
+        persist_items_batch(out_dir, i, tokenized_items)
+    
+    return len(tokenized_items)
+
+def persist_items_batch(out_dir: str, i: int, batch):
     path = os.path.join(out_dir, f'item-{i}.pkl')
-    with open(path, 'ab') as file:
-        pickle.dump(item, file)
+    with open(path, 'wb') as file:
+        pickle.dump(batch, file)
 
 def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
     print('Converting to pickle files')
@@ -136,12 +145,12 @@ def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
         os.makedirs(out_dir, exist_ok=True)
 
     print(f'{len(midi_data_list)} midi files to process')
-    items = thread_map(lambda item: preprocess_midi_item(item, tokenizer), midi_data_list, max_workers=multiprocessing.cpu_count())
-    items_per_file = itertools.batched(items, ITEMS_PER_FILE)
-    thread_map(lambda item: persist_items_batch(out_dir, item[0], item[1]), enumerate(items_per_file), max_workers=multiprocessing.cpu_count())
-    
+    items_batches = list(itertools.batched(midi_data_list, ITEMS_PER_FILE))
+    result = thread_map(lambda items: preprocess_midi_items(out_dir, items[1], tokenizer, items[0]), enumerate(items_batches), max_workers=multiprocessing.cpu_count())
+    total_files = sum(result)
+
     metadata = {
-        'total_files': len(items)
+        'total_files': total_files
     }
     with open(os.path.join(out_dir, 'metadata'), 'w+') as file:
         json.dump(metadata, file)
