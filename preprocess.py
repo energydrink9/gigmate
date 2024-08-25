@@ -3,6 +3,7 @@ import os
 from zipfile import ZipFile
 import os
 from clearml import Dataset
+import symusic
 from tqdm.contrib.concurrent import thread_map
 import miditok
 from pathlib import Path, PurePath
@@ -17,6 +18,7 @@ import multiprocessing
 import json
 from miditok.utils import get_average_num_tokens_per_note
 import random
+import time
 
 DATASET_BASE_DIR = './dataset'
 BASE_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean'
@@ -26,9 +28,12 @@ FINAL_DATASET_DIR = f'{DATASET_BASE_DIR}/lakh-midi-clean-final'
 ITEMS_PER_FILE = 1024 * 8
 NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE = 100
 
-# # Unzip the dataset
-# with ZipFile('lakh-midi-clean.zip', 'r') as zip_ref:
-#     zip_ref.extractall('lakh-midi-clean')
+def measure_time(method_name: str, func):
+    start_time = time.time()
+    ret = func()
+    end_time = time.time()
+    print(f'{method_name} took {end_time - start_time} seconds')
+    return ret
 
 def download_dataset():
     kaggle.api.authenticate()
@@ -95,7 +100,7 @@ def augment_dataset_directory(directory: str, out_path: str):
     try:
         miditok.data_augmentation.augment_dataset(
             data_path=Path(directory),
-            pitch_offsets=[-10, 10],
+            pitch_offsets=[-5, 5],
             velocity_offsets=[-4, 4],
             duration_offsets=[-0.5, 0.5],
             out_path=Path(out_path)
@@ -109,8 +114,8 @@ def augment_dataset(source_path: str, out_path: str):
     thread_map(lambda directory: augment_dataset_directory(os.path.join(source_path, directory), os.path.join(out_path, directory)), directories, max_workers=multiprocessing.cpu_count())
     print('Data augmentation complete')
 
-def preprocess_midi(midi_data, tokenizer):
-    return tokenizer.encode(midi_data)
+def preprocess_midi(midi_file_path, tokenizer):
+    return tokenizer.encode(midi_file_path)
 
 def preprocess_midi_item(item, tokenizer):
     try:
