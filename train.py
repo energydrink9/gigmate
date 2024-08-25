@@ -5,17 +5,17 @@ import torch
 from torch import nn
 from torchmetrics.text import Perplexity
 from torchmetrics import F1Score, Precision, Recall
-from dataset import get_data_loaders
-from model import get_model
+from gigmate.dataset import get_data_loaders
+from gigmate.model import get_model
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
-from constants import get_clearml_project_name, get_params, get_pad_token_id
+from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
-from device import get_device
+from gigmate.device import get_device
 
-WEIGHTS_FILE = 'output/gigmate.weights'
+WEIGHTS_FILE = 'gigmate/output/gigmate.weights'
 
 pad_token_id = get_pad_token_id()
 

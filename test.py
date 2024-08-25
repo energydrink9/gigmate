@@ -1,11 +1,11 @@
 import itertools
 import torch
-from dataset import get_data_loaders
-from model import get_model
-from tokenizer import get_tokenizer
+from gigmate.dataset import get_data_loaders
+from gigmate.model import get_model
+from gigmate.tokenizer import get_tokenizer
 from miditok import TokSequence
-from constants import get_params
-from device import get_device
+from gigmate.constants import get_params
+from gigmate.device import get_device
 
 INPUT_TOKENS_COUNT = 250
 OUTPUT_TOKENS_COUNT = 5000

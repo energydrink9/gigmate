@@ -3,9 +3,9 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torchinfo import summary
 import math
-from constants import get_params
+from gigmate.constants import get_params
 
-MODEL_FILE_NAME = 'model.chk'
+MODEL_FILE_NAME = 'gigmate/model.chk'
 
 # num_layers = 8
 # d_model = 512

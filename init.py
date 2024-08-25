@@ -1,5 +1,5 @@
-from train import train_model
-from test import test_model
+from gigmate.train import train_model
+from gigmate.test import test_model
 
 def init():
     print('Starting model training')

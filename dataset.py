@@ -6,9 +6,8 @@ from torch.utils.data import DataLoader
 from miditok.pytorch_data import DataCollator
 import os
 from sklearn.model_selection import train_test_split
-from constants import get_clearml_dataset_version, get_params, get_random_seed, get_clearml_dataset_name, get_clearml_project_name, get_pad_token_id
-import shutil
-from DatasetPickle import DatasetPickle
+from gigmate.constants import get_clearml_dataset_version, get_params, get_random_seed, get_clearml_dataset_name, get_clearml_project_name, get_pad_token_id
+from gigmate.DatasetPickle import DatasetPickle
 
 #!clearml-data create --project GigMate --name LakhMidiCleanDatasetFull
 #!clearml-data add --id 1a4115ff408e46208e8beabb197d6bde --files dataset/lakh-midi-clean
@@ -41,7 +40,6 @@ def split_by_artist(file_paths_with_artists, artists, validation_size, test_size
     return train_paths, validation_paths, test_paths
 
 def get_dataset(directory: str, max_seq_len: int):
-
     dataset = DatasetPickle(
         directory=directory,
         max_seq_len=max_seq_len,
@@ -51,13 +49,8 @@ def get_dataset(directory: str, max_seq_len: int):
     return dataset
 
 # Function to create TensorFlow Dataset from pickled files
-def create_pt_datasets(directory, max_seq_len, validation_size=0.1, test_size=0.1):
-    file_paths = get_file_paths(directory)
-    train_ds = get_dataset(train_paths, max_seq_len)
-    validation_ds = get_dataset(validation_paths, max_seq_len)
-    test_ds = get_dataset(test_paths, max_seq_len)
-
-    return train_ds, validation_ds, test_ds
+def create_pt_dataset(directory, max_seq_len):
+    return get_dataset(directory, max_seq_len)
 
 def get_remote_dataset(dataset: str):
     dataset = Dataset.get(
@@ -71,8 +64,8 @@ def get_remote_dataset(dataset: str):
     return dataset.get_local_copy()
 
 def get_pt_dataset_from_remote_dataset(set: str):
-    dataset = get_remote_dataset('train')
-    return create_pt_datasets(dataset, max_seq_len=get_params()['max_seq_len'])
+    dataset = get_remote_dataset(set)
+    return create_pt_dataset(dataset, max_seq_len=get_params()['max_seq_len'])
 
 def get_datasets():
     train_ds = get_pt_dataset_from_remote_dataset('train')

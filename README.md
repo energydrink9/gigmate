@@ -17,6 +17,12 @@ Jupyter
 
 CLI:
 
+Run the following command to add gigmate to your path.
+
+```sh
+export PYTHONPATH="~/Dev/gigmate:$PYTHONPATH"
+```
+
 Run the following command to authenticate.
 
 ```sh

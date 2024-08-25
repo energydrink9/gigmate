@@ -4,7 +4,7 @@ from pathlib import Path
 from torch import LongTensor
 import json
 import os
-from preprocess import ITEMS_PER_FILE
+from gigmate.processing.steps.tokenize import ITEMS_PER_FILE
 
 class DatasetPickle(_DatasetABC):
     r"""
