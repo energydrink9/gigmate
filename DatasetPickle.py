@@ -4,9 +4,21 @@ from pathlib import Path
 from torch import LongTensor
 import json
 import os
-from gigmate.processing.steps.tokenize import ITEMS_PER_FILE
+import weakref
+import torch
+from torch.utils.data import IterableDataset
+import math
 
-class DatasetPickle(_DatasetABC):
+ITEMS_PER_FILE = 1024 * 2
+
+class WeakRefList:
+    def __init__(self, lst):
+        self.lst = lst
+
+    def __call__(self):
+        return self.lst
+
+class DatasetPickle(_DatasetABC, IterableDataset):
     r"""
     Basic ``Dataset`` loading JSON files of tokenized music files.
 
@@ -45,43 +57,39 @@ class DatasetPickle(_DatasetABC):
         )
 
         self.directory = directory
-        self.files_paths = list(Path(directory).glob(f'**/*.pkl'))
+        self.files_paths = sorted(Path(directory).glob(f'**/*.pkl'))
 
         with open(os.path.join(directory, 'metadata')) as file:
             metadata = json.load(file)
-            total_files = metadata.total_files
+            total_files = metadata['total_files']
 
-        self.items = [None] * total_files
+        self.items = weakref.WeakValueDictionary()
         self.total_files = total_files
+        print(f'Loaded dataset with {self.total_files} files')
 
         super().__init__()
 
-    def get_item(self, idx):
-        if self.items[idx] == None:
-            file_idx = idx // ITEMS_PER_FILE
-            with open(self.files_paths[file_idx], 'rb') as file:
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:  # single-process data loading
+            start, end = 0, len(self.files_paths)
+        else:  # in a worker process
+            per_worker = int(math.ceil(len(self.files_paths) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            start = worker_id * per_worker
+            end = min(start + per_worker, len(self.files_paths))
+
+        for file_path in self.files_paths[start:end]:
+            with open(file_path, 'rb') as file:
                 items = pickle.load(file)
-                for i, item in enumerate(items):
-                    self.items[file_idx + i] = item
-
-        return self.items[idx]
-
-    def __getitem__(self, idx: int) -> dict[str, LongTensor]:
-        """
-        Load the tokens from the ``idx`` JSON file.
-
-        :param idx: index of the file to load.
-        :return: the tokens as a dictionary mapping to the token ids as a tensor.
-        """
-        item = self.get_item(idx)
-        token_ids = item['tokens']
-        token_ids = self._preprocess_token_ids(
-            token_ids,
-            self._effective_max_seq_len,
-            self.bos_token_id,
-            self.eos_token_id,
-        )
-        return {"input_ids": LongTensor(token_ids)}
+                for item in items:
+                    token_ids = self._preprocess_token_ids(
+                        item,
+                        self._effective_max_seq_len,
+                        self.bos_token_id,
+                        self.eos_token_id,
+                    )
+                    yield {"input_ids": LongTensor(token_ids)}
 
     def __len__(self) -> int:
         """
@@ -90,3 +98,12 @@ class DatasetPickle(_DatasetABC):
         :return: number of elements in the dataset.
         """
         return self.total_files
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['items']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.items = weakref.WeakValueDictionary()

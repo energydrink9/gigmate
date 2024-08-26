@@ -1,4 +1,3 @@
-from clearml import Task
 import os
 import glob
 from tqdm.contrib.concurrent import thread_map
@@ -8,12 +7,13 @@ import pickle
 import json
 from sklearn.model_selection import train_test_split
 from pathlib import PurePath
-from gigmate.constants import get_clearml_dataset_version, get_clearml_project_name, get_random_seed
+from gigmate.DatasetPickle import ITEMS_PER_FILE
+from gigmate.constants import get_clearml_dataset_version, get_random_seed
+from gigmate.processing.steps.augment import AUGMENTED_DATASET_DIR
 from gigmate.tokenizer import get_tokenizer
 from gigmate.processing.process import upload_dataset
 
-FINAL_DATASET_DIR = './dataset/lakh-midi-clean-final'
-ITEMS_PER_FILE = 1024 * 2
+FINAL_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-final'
 
 def get_midi_files(dir: str):
     return glob.glob(os.path.join(dir, '**/*.mid'), recursive=True)
@@ -82,19 +82,20 @@ def split_dataset(file_paths, validation_size=0.1, test_size=0.1):
         'test': test_paths
     }
 
-def tokenize_midi_files(augmented_output_dir: str):
+def tokenize_midi_files(source_dir: str, is_augmented: bool = True):
     tokenizer = get_tokenizer()
-    midi_data_list = get_midi_files(augmented_output_dir)
+    midi_data_list = get_midi_files(source_dir)
     paths_by_dataset = split_dataset(midi_data_list)
 
+    tags = ['final', 'augmented'] if is_augmented else ['final']
+    
     for dataset, paths in paths_by_dataset.items():
         print(f'Processing {dataset} dataset paths')
         directory = os.path.join(FINAL_DATASET_DIR, dataset)
         preprocess_midi_dataset(paths, directory, tokenizer)
-        upload_dataset(directory, get_clearml_dataset_version(), ["step-tokenize"], dataset=dataset)
+        upload_dataset(directory, get_clearml_dataset_version(), tags, dataset=dataset)
 
     return FINAL_DATASET_DIR
 
 if __name__ == '__main__':
-    Task.init(project_name=get_clearml_project_name(), task_name='tokenize-midi-files')
-    tokenize_midi_files()
+    tokenize_midi_files(AUGMENTED_DATASET_DIR)

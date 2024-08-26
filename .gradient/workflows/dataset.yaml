@@ -1,7 +1,7 @@
 'on':
   github:
     branches:
-      only: main
+      only: dataset
 jobs:
   CloneRepo:
     resources:

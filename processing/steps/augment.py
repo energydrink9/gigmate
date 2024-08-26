@@ -1,13 +1,12 @@
-from clearml import Task
 from pathlib import Path
 import os
 from tqdm.contrib.concurrent import thread_map
 import multiprocessing
 from miditok import data_augmentation
-from gigmate.constants import get_clearml_dataset_version, get_clearml_project_name
-from gigmate.processing.process import get_remote_dataset, upload_dataset, get_files_in_directory, directory_has_files
+from gigmate.processing.process import directory_has_files
+from gigmate.processing.steps.split import SPLIT_DATASET_DIR
 
-AUGMENTED_DATASET_DIR = './dataset/lakh-midi-clean-augmented'
+AUGMENTED_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-augmented'
 
 def augment_dataset_directory(directory: str, out_path: str):
     try:
@@ -33,5 +32,4 @@ def augment_midi_files(split_output_dir: str):
     return augment_output_dir
 
 if __name__ == '__main__':
-    Task.init(project_name=get_clearml_project_name(), task_name='augment-midi-files')
-    augment_midi_files()
+    augment_midi_files(SPLIT_DATASET_DIR)

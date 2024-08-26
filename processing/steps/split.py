@@ -1,14 +1,13 @@
-from clearml import Task
 from pathlib import Path
 import miditok
-from gigmate.constants import get_clearml_project_name, get_params
+from gigmate.constants import get_params
 from gigmate.tokenizer import get_tokenizer
 from gigmate.processing.process import get_files_in_directory
 import random
 import kaggle
 
-BASE_DATASET_DIR = './dataset/lakh-midi-clean'
-SPLIT_DATASET_DIR = './dataset/lakh-midi-clean-split'
+BASE_DATASET_DIR = './gigmate/dataset/lakh-midi-clean'
+SPLIT_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-split'
 NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE = 100
 
 def download_raw_dataset(directory: str):
@@ -51,5 +50,4 @@ def split_midi_files():
     return SPLIT_DATASET_DIR
 
 if __name__ == '__main__':
-    Task.init(project_name=get_clearml_project_name(), task_name='split-midi-files')
     split_midi_files()

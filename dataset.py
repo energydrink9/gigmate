@@ -14,7 +14,7 @@ from gigmate.DatasetPickle import DatasetPickle
 #!clearml-data close
 
 torch.manual_seed(get_random_seed())
-torch.use_deterministic_algorithms(True)
+#torch.use_deterministic_algorithms(True) # TODO: re-enable
 
 params = get_params()
 
@@ -48,7 +48,6 @@ def get_dataset(directory: str, max_seq_len: int):
     )
     return dataset
 
-# Function to create TensorFlow Dataset from pickled files
 def create_pt_dataset(directory, max_seq_len):
     return get_dataset(directory, max_seq_len)
 
@@ -86,8 +85,8 @@ def get_data_loaders():
 
     num_workers = multiprocessing.cpu_count() - 1
 
-    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, shuffle=True, num_workers=num_workers)
-    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, shuffle=False, num_workers=num_workers)
-    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, shuffle=False, num_workers=num_workers)
+    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, num_workers=num_workers)
+    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, num_workers=num_workers)
+    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, num_workers=num_workers)
 
     return train_loader, validation_loader, test_loader
