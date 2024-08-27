@@ -20,7 +20,7 @@ jobs:
       CLEARML_API_ACCESS_KEY: secret:CLEARML_API_ACCESS_KEY
       CLEARML_API_SECRET_KEY: secret:CLEARML_API_SECRET_KEY
     resources:
-      instance-type: P5000
+      instance-type: A4000
     needs:
       - CloneRepo
     inputs:
@@ -37,10 +37,10 @@ jobs:
           export CLEARML_WEB_HOST="https://app.clear.ml/"
           export CLEARML_FILES_HOST="https://files.clear.ml"
           cp -r /inputs/repo /tmp/gigmate
-          cd /tmp
-          pip install -r gigmate/requirements.txt
+          cd /tmp/gigmate
+          python -m pip install .
           echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
-          export PYTHONPATH=$PYTHONPATH:~/tmp/gigmate
-          python gigmate/init.py
+          python -m gigmate.train
+          python -m gigmate.test
           mv gigmate/outputs /outputs/training
       image: python:3.12

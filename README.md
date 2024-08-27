@@ -1,4 +1,28 @@
-### RUN
+### Development
+
+Setup:
+```
+python -m pip install -e .
+```
+
+Train
+```
+python -m gigmate.train
+```
+
+Test
+```
+python -m gigmate.test
+```
+
+Create dataset
+```
+python -m gigmate.processing.pipeline
+```
+
+
+### Run
+
 
 Jupyter
 

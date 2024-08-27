@@ -4,42 +4,83 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gigmate"
-version = "0.1.0"
-description = "MIDI generation"
+dynamic = ["version"]
+description = 'MIDI generation'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = []
 authors = [
-    { name = "Michele Lugano", email = "michele.lugano@gmail.com" },
+  { name = "Michele Lugano", email = "michele.lugano9@gmail.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "clearml",
-    "tqdm",
-    "scikit-learn",
-    "pickle",
-    "torch",
-    "torchinfo",
-    "torchmetrics",
-    "symusic",
-    "miditok",
-]
-requires-python = ">=3.9"
-dynamic = ["version"]
-
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0",
+    "clearml==1.16.3",
+    "kaggle==1.6.17",
+    "lightning==2.4.0",
+    "miditok @ git+https://github.com/Natooz/MidiTok@2281c4ffc58030176fa2dbd25fb5e8d62345908b",
+    "symusic @ git+https://github.com/Yikai-Liao/symusic@cf52d3e5208f175b561934ab879ffa4c14564f89",
+    "numpy==2.1.0",
+    "scikit_learn==1.5.1",
+    "torch==2.4.0",
+    "torchinfo==1.8.0",
+    "torchmetrics==1.4.1",
+    "tqdm==4.66.5",
+    "tensorboard==2.17.1",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["gigmate"]
-
+[project.urls]
+Documentation = "https://github.com/Michele Lugano/gigmate#readme"
+Issues = "https://github.com/Michele Lugano/gigmate/issues"
+Source = "https://github.com/Michele Lugano/gigmate"
 
 [tool.hatch.version]
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+path = "src/gigmate/__about__.py"
 
-[tool.black]
-line-length = 100
-target-version = ['py39']
+[tool.hatch.envs.types]
+extra-dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/gigmate tests}"
 
-[tool.isort]
-profile = "black"
-line_length = 100
+[tool.coverage.run]
+source_pkgs = ["gigmate", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/gigmate/__about__.py",
+]
+
+[tool.coverage.paths]
+gigmate = ["src/gigmate", "*/gigmate/src/gigmate"]
+tests = ["tests", "*/gigmate/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+
+[tool.hatch.envs.default]
+
+[tool.hatch.envs.default.scripts]
+train = "python -m gigmate.train"
+dataset = "python -m gigmate.dataset"
+test = "python -m gigmate.test"
+process = "python -m gigmate.processing.pipeline"
+
+[tool.hatch.metadata]
+allow-direct-references = true

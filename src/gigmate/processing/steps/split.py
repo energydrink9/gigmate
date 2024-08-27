@@ -9,6 +9,7 @@ import kaggle
 BASE_DATASET_DIR = './gigmate/dataset/lakh-midi-clean'
 SPLIT_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-split'
 NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE = 100
+SEQUENCE_LENGTH = 1024
 
 def download_raw_dataset(directory: str):
     kaggle.api.authenticate()
@@ -26,7 +27,7 @@ def split_directory_files(directory, out_path, tokenizer, average_num_tokens):
             files_paths=get_files_in_directory(directory),
             tokenizer=tokenizer,
             save_dir=Path(out_path),
-            max_seq_len=get_params()['max_seq_len'],
+            max_seq_len=SEQUENCE_LENGTH,
             num_overlap_bars=2,
             average_num_tokens_per_note=average_num_tokens
         )

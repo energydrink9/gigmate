@@ -6,7 +6,10 @@ import json
 import os
 import torch
 from torch.utils.data import IterableDataset
+from miditok.utils.split import split_seq_in_subsequences
 import math
+
+from gigmate.constants import get_params
 
 ITEMS_PER_FILE = 1024 * 2
 
@@ -49,7 +52,7 @@ class DatasetPickle(_DatasetABC, IterableDataset):
         )
 
         self.directory = directory
-        self.files_paths = sorted(Path(directory).glob(f'**/*.pkl'))
+        self.files_paths = list(sorted(Path(directory).glob(f'**/*.pkl')))[:1]
 
         with open(os.path.join(directory, 'metadata')) as file:
             metadata = json.load(file)
@@ -68,23 +71,28 @@ class DatasetPickle(_DatasetABC, IterableDataset):
             worker_id = worker_info.id
             start = worker_id * per_worker
             end = min(start + per_worker, len(self.files_paths))
-
+        
         for file_path in self.files_paths[start:end]:
             with open(file_path, 'rb') as file:
                 items = pickle.load(file)
                 for item in items:
-                    token_ids = self._preprocess_token_ids(
-                        item,
-                        self._effective_max_seq_len,
-                        self.bos_token_id,
-                        self.eos_token_id,
-                    )
-                    yield {"input_ids": LongTensor(token_ids)}
+                    if (self.max_seq_len < len(items)):
+                        sequences = split_seq_in_subsequences(item, 0, self._effective_max_seq_len)
+                    else:
+                        sequences = [item]
+                    for sequence in sequences:
+                        token_ids = self._preprocess_token_ids(
+                            sequence,
+                            self.max_seq_len,
+                            self.bos_token_id,
+                            self.eos_token_id,
+                        )
+                        yield {"input_ids": LongTensor(token_ids)}
 
-    def __len__(self) -> int:
-        """
-        Return the size of the dataset.
+    # def __len__(self) -> int:
+    #     """
+    #     Return the size of the dataset.
 
-        :return: number of elements in the dataset.
-        """
-        return self.total_files
+    #     :return: number of elements in the dataset.
+    #     """
+    #     return self.total_files

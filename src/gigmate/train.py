@@ -8,7 +8,6 @@ from torchmetrics import F1Score, Precision, Recall
 from gigmate.dataset import get_data_loaders
 from gigmate.model import get_model
 import numpy as np
-from torch.utils.tensorboard import SummaryWriter
 from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping
@@ -16,6 +15,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.device import get_device
 
 WEIGHTS_FILE = 'gigmate/output/gigmate.weights'
+LOG_INTERVAL = 32
 
 pad_token_id = get_pad_token_id()
 
@@ -66,55 +66,61 @@ class ModelTraining(L.LightningModule):
 
     def log_metric(self, dataset: Literal['train', 'val', 'test'], metric_name: str, value):
         log_on_step = dataset == 'train'
-        self.log(f"{dataset}_{metric_name}", value, on_step=log_on_step, on_epoch=True)
+        self.log(f"{dataset}_{metric_name}", value, on_step=log_on_step, on_epoch=True, prog_bar=metric_name in ['loss', 'accuracy'])
 
-    def compute_train_metrics(self, logits, targets):
-        transposed_logits = logits.transpose(1, 2)
-        loss = self.train_loss(transposed_logits, targets)
+    def compute_train_loss(self, transposed_logits, targets):
+        return self.train_loss(transposed_logits, targets)
+
+    def compute_train_metrics(self, transposed_logits, targets):
         accuracy = self.train_accuracy_metric(transposed_logits, targets)
-        # perplexity = self.train_perplexity_metric(logits, targets)
-        # f1_score = self.train_f1_metric(transposed_logits, targets)
-        # precision = self.train_precision_metric(transposed_logits, targets)
-        # recall = self.train_recall_metric(transposed_logits, targets)
+        f1_score = self.train_f1_metric(transposed_logits, targets)
+        precision = self.train_precision_metric(transposed_logits, targets)
+        recall = self.train_recall_metric(transposed_logits, targets)
 
-        return loss, dict({
+        return dict({
             'accuracy': accuracy,
-            # 'perplexity': perplexity,
-            # 'f1_score': f1_score,
-            # 'precision': precision,
-            # 'recall': recall,
+            'f1_score': f1_score,
+            'precision': precision,
+            'recall': recall,
         })
-    
-    def compute_val_metrics(self, logits, targets):
-        transposed_logits = logits.transpose(1, 2)
-        loss = self.val_loss(transposed_logits, targets)
-        accuracy = self.val_accuracy_metric(transposed_logits, targets)
-        # perplexity = self.val_perplexity_metric(logits, targets)
-        # f1_score = self.val_f1_metric(transposed_logits, targets)
-        # precision = self.val_precision_metric(transposed_logits, targets)
-        # recall = self.val_recall_metric(transposed_logits, targets)
 
-        return loss, dict({
+    def compute_val_loss(self, transposed_logits, targets):
+        return self.val_loss(transposed_logits, targets)
+    
+    def compute_val_metrics(self, transposed_logits, targets):
+        accuracy = self.val_accuracy_metric(transposed_logits, targets)
+        f1_score = self.val_f1_metric(transposed_logits, targets)
+        precision = self.val_precision_metric(transposed_logits, targets)
+        recall = self.val_recall_metric(transposed_logits, targets)
+
+        return dict({
             'accuracy': accuracy,
-            # 'perplexity': perplexity,
-            # 'f1_score': f1_score,
-            # 'precision': precision,
-            # 'recall': recall,
+            'f1_score': f1_score,
+            'precision': precision,
+            'recall': recall,
         })
 
     def training_step(self, batch, batch_idx):
         inputs, targets = get_inputs_and_targets(batch, self.device)
         logits = self.model(inputs)
-        loss, metrics = self.compute_train_metrics(logits, targets)
-        self.log_metrics("train", loss=loss, **metrics)
+        transposed_logits = logits.transpose(1, 2)
+        loss = self.compute_train_loss(transposed_logits, targets)
+
+        if batch_idx % LOG_INTERVAL == 0:
+            metrics = self.compute_train_metrics(transposed_logits, targets)
+            self.log_metrics("train", loss=loss, **metrics)
 
         return loss
     
     def validation_step(self, batch, batch_idx):
         inputs, targets = get_inputs_and_targets(batch, self.device)
         logits = self.model(inputs)
-        loss, metrics = self.compute_val_metrics(logits, targets)
-        self.log_metrics("val", loss=loss, **metrics)
+        transposed_logits = logits.transpose(1, 2)
+        loss = self.compute_val_loss(transposed_logits, targets)
+
+        if batch_idx % LOG_INTERVAL == 0:
+            metrics = self.compute_val_metrics(transposed_logits, targets)
+            self.log_metrics("val", loss=loss, **metrics)
 
         return loss
 
@@ -146,7 +152,13 @@ def train_model():
 
     logger = TensorBoardLogger("tb_logs", name="GigMate")
     early_stopping = EarlyStopping('val_loss')
-    trainer = L.Trainer(callbacks=[early_stopping], logger=logger, max_epochs=params['epochs'])
+    
+    trainer = L.Trainer(
+        callbacks=[early_stopping],
+        logger=logger,
+        max_epochs=params['epochs'],
+    )
+    
     trainer.fit(model_training, train_loader, validation_loader)
     trainer.save_checkpoint(WEIGHTS_FILE)
     task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)

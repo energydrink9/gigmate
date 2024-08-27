@@ -10,6 +10,7 @@ from pathlib import PurePath
 from gigmate.DatasetPickle import ITEMS_PER_FILE
 from gigmate.constants import get_clearml_dataset_version, get_random_seed
 from gigmate.processing.steps.augment import AUGMENTED_DATASET_DIR
+from gigmate.processing.steps.split import SEQUENCE_LENGTH
 from gigmate.tokenizer import get_tokenizer
 from gigmate.processing.process import upload_dataset
 
@@ -53,7 +54,8 @@ def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
     total_files = sum(result)
 
     metadata = {
-        'total_files': total_files
+        'total_files': total_files,
+        'sequence_length': SEQUENCE_LENGTH
     }
     with open(os.path.join(out_dir, 'metadata'), 'w+') as file:
         json.dump(metadata, file)

@@ -7,12 +7,6 @@ from gigmate.constants import get_params
 
 MODEL_FILE_NAME = 'gigmate/model.chk'
 
-# num_layers = 8
-# d_model = 512
-# num_heads = 8
-# dff = d_model * 4
-# dropout_rate = 0.1
-
 def look_ahead_mask(size: int) -> torch.FloatTensor:  
     mask = torch.triu(torch.ones(size, size), diagonal=1)
     mask[mask.bool()] = -float('inf')
@@ -79,7 +73,7 @@ class TransformerModel(nn.Module):
                 x, key_value = layer(x, past_key_value=past_key_value, use_cache=use_cache)
                 new_key_values.append(key_value)
             else:
-                x = layer(x, past_key_value=past_key_value, use_cache=use_cache)
+                x = layer(x, past_key_value=None, use_cache=use_cache)
 
         # Final output layer
         x = self.dense(x)

@@ -40,9 +40,8 @@ jobs:
           export CLEARML_WEB_HOST="https://app.clear.ml/"
           export CLEARML_FILES_HOST="https://files.clear.ml"
           cp -r /inputs/repo /tmp/gigmate
-          cd /tmp
-          pip install -r gigmate/requirements.txt
+          cd /tmp/gigmate
+          python -m pip install .
           echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
-          export PYTHONPATH=$PYTHONPATH:~/tmp/gigmate
-          python gigmate/processing/pipeline.py
+          python -m gigmate.processing.pipeline
       image: python:3.12
