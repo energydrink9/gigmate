@@ -4,19 +4,11 @@ from pathlib import Path
 from torch import LongTensor
 import json
 import os
-import weakref
 import torch
 from torch.utils.data import IterableDataset
 import math
 
 ITEMS_PER_FILE = 1024 * 2
-
-class WeakRefList:
-    def __init__(self, lst):
-        self.lst = lst
-
-    def __call__(self):
-        return self.lst
 
 class DatasetPickle(_DatasetABC, IterableDataset):
     r"""
@@ -62,10 +54,8 @@ class DatasetPickle(_DatasetABC, IterableDataset):
         with open(os.path.join(directory, 'metadata')) as file:
             metadata = json.load(file)
             total_files = metadata['total_files']
-
-        self.items = weakref.WeakValueDictionary()
-        self.total_files = total_files
-        print(f'Loaded dataset with {self.total_files} files')
+            self.total_files = total_files
+            print(f'Loaded dataset with {total_files} files')
 
         super().__init__()
 
@@ -98,12 +88,3 @@ class DatasetPickle(_DatasetABC, IterableDataset):
         :return: number of elements in the dataset.
         """
         return self.total_files
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        del state['items']
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        self.items = weakref.WeakValueDictionary()

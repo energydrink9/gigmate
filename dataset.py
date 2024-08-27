@@ -8,10 +8,7 @@ import os
 from sklearn.model_selection import train_test_split
 from gigmate.constants import get_clearml_dataset_version, get_params, get_random_seed, get_clearml_dataset_name, get_clearml_project_name, get_pad_token_id
 from gigmate.DatasetPickle import DatasetPickle
-
-#!clearml-data create --project GigMate --name LakhMidiCleanDatasetFull
-#!clearml-data add --id 1a4115ff408e46208e8beabb197d6bde --files dataset/lakh-midi-clean
-#!clearml-data close
+import time
 
 torch.manual_seed(get_random_seed())
 #torch.use_deterministic_algorithms(True) # TODO: re-enable
@@ -53,6 +50,7 @@ def create_pt_dataset(directory, max_seq_len):
 
 def get_remote_dataset(dataset: str):
     dataset = Dataset.get(
+        alias=f'{get_clearml_dataset_name()}-{dataset}',
         dataset_project=get_clearml_project_name(),
         dataset_name=get_clearml_dataset_name(),
         dataset_version=get_clearml_dataset_version(),
@@ -85,8 +83,30 @@ def get_data_loaders():
 
     num_workers = multiprocessing.cpu_count() - 1
 
-    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, num_workers=num_workers)
-    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, num_workers=num_workers)
-    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, num_workers=num_workers)
+    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
+    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
+    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
 
     return train_loader, validation_loader, test_loader
+
+def measure_dataloader_iteration_time(dataloader):
+    print('Measuring access time to dataloader...')
+    start_time = time.time()
+    total_items = 0
+
+    for batch in dataloader:
+        # Simulate a light operation on the batch
+        _ = batch['input_ids'].shape
+        total_items += len(batch['input_ids'])
+
+    end_time = time.time()
+    total_time = end_time - start_time
+
+    print(f"Total time to iterate: {total_time:.2f} seconds")
+    print(f"Total number of items: {total_items}")
+    print(f"Average time per item: {total_time / total_items:.5f} seconds")
+    print(f"Items per second: {total_items / total_time:.2f}")
+
+if __name__ == '__main__':
+    train_dataloader, _, _ = get_data_loaders()
+    measure_dataloader_iteration_time(train_dataloader)

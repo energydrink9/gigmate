@@ -47,6 +47,8 @@ def optimize_hyperparameters():
         job_class=LocalClearmlJob,
     )
 
+    optimizer.set_base_configuration(base_params)
+
     optimizer.start_locally()
     optimizer.wait()
     optimizer.stop()

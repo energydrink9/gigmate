@@ -110,5 +110,6 @@ def get_model(params = get_params()):
         params['max_seq_len'],
         params['dropout_rate']
     )
+
     #model.load_state_dict(torch.load(MODEL_FILE_NAME))
     return model
