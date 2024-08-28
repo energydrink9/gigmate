@@ -26,14 +26,11 @@ class TransformerBlock(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, x, past_key_value=None, use_cache=False):
+    def forward(self, x):
         sequence_length = x.size(1)
         mask = look_ahead_mask(sequence_length).to(x.device)
 
-        if past_key_value is None:
-            attn_output, attn_weights = self.mha(x, x, x, attn_mask=mask, is_causal=True)
-        else:
-            attn_output, attn_weights = self.mha(x, past_key_value[0], past_key_value[1], attn_mask=mask, is_causal=True)
+        attn_output, _ = self.mha(x, x, x, attn_mask=mask, is_causal=True)
 
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)
@@ -41,10 +38,7 @@ class TransformerBlock(nn.Module):
         ffn_output = self.dropout2(ffn_output)
         out2 = self.layernorm2(out1 + ffn_output)
 
-        if use_cache:
-            return out2, (attn_weights, out1)
-        else:
-            return out2
+        return out2
 
 class TransformerModel(nn.Module):
     def __init__(self, num_layers, d_model, num_heads, dff, vocab_size, max_seq_len, dropout=0.1):
@@ -55,32 +49,22 @@ class TransformerModel(nn.Module):
         self.dense = nn.Linear(d_model, vocab_size)
         self.pos_encoding = positional_encoding(max_seq_len, d_model)
 
-    def forward(self, inputs, past_key_values=None, use_cache=False):
+    def forward(self, inputs):
 
         # Combine embeddings
         x = self.embedding(inputs)
 
         # Add positional encoding
         x = x + self.pos_encoding[:, :x.size(1), :].to(x.device)
-
-        new_key_values = [] if use_cache else None
         
         # Pass through transformer blocks
-        for i, layer in enumerate(self.transformer_layers):
-            past_key_value = past_key_values[i] if past_key_values is not None else None
-            if use_cache:
-                x, key_value = layer(x, past_key_value=past_key_value, use_cache=use_cache)
-                new_key_values.append(key_value)
-            else:
-                x = layer(x, past_key_value=None, use_cache=use_cache)
+        for layer in self.transformer_layers:
+            x = layer(x)
 
         # Final output layer
         x = self.dense(x)
 
-        if use_cache:
-            return x, new_key_values
-        else:
-            return x
+        return x
 
 def positional_encoding(seq_len, d_model):
     position = torch.arange(seq_len, dtype=torch.float).unsqueeze(1)
