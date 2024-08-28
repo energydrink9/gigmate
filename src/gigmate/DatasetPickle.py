@@ -11,7 +11,7 @@ import math
 
 from gigmate.constants import get_params
 
-ITEMS_PER_FILE = 1024 * 2
+ITEMS_PER_FILE = 1024 * 16
 
 class DatasetPickle(_DatasetABC, IterableDataset):
     r"""
@@ -52,9 +52,9 @@ class DatasetPickle(_DatasetABC, IterableDataset):
         )
 
         self.directory = directory
-        self.files_paths = list(sorted(Path(directory).glob(f'**/*.pkl')))[:1]
+        self.files_paths = list(sorted(Path(directory).glob(f'**/*.pkl')))
 
-        with open(os.path.join(directory, 'metadata')) as file:
+        with open(os.path.join(directory, 'metadata.json')) as file:
             metadata = json.load(file)
             total_files = metadata['total_files']
             self.total_files = total_files

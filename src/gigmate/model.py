@@ -5,7 +5,7 @@ from torchinfo import summary
 import math
 from gigmate.constants import get_params
 
-MODEL_FILE_NAME = 'gigmate/model.chk'
+MODEL_FILE_NAME = 'output/model.chk'
 
 def look_ahead_mask(size: int) -> torch.FloatTensor:  
     mask = torch.triu(torch.ones(size, size), diagonal=1)
@@ -53,7 +53,6 @@ class TransformerModel(nn.Module):
         self.max_seq_len = max_seq_len
         self.transformer_layers = nn.ModuleList([TransformerBlock(d_model, num_heads, dff, dropout) for _ in range(num_layers)])
         self.dense = nn.Linear(d_model, vocab_size)
-        self.softmax = nn.Softmax(dim=-1)
         self.pos_encoding = positional_encoding(max_seq_len, d_model)
 
     def forward(self, inputs, past_key_values=None, use_cache=False):
@@ -77,7 +76,6 @@ class TransformerModel(nn.Module):
 
         # Final output layer
         x = self.dense(x)
-        x = self.softmax(x)
 
         if use_cache:
             return x, new_key_values

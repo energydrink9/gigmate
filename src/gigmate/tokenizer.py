@@ -5,8 +5,8 @@ from miditok import REMI, TokenizerConfig
 from gigmate.constants import get_params
 
 SAMPLE_COUNT = 5000
-TOKENIZER_MODEL_FILE = 'gigmate/tokenizer_model'
-TOKENIZER_CONFIGURATION_PATH = 'gigmate/tokenizer.json'
+TOKENIZER_MODEL_FILE = 'tokenizer_model'
+TOKENIZER_CONFIGURATION_PATH = 'tokenizer.json'
 
 def new_tokenizer():
     tokenizer = REMI(TokenizerConfig(use_programs=True, use_rests = True, use_tempos=True, use_time_signatures=True, use_chords=True))

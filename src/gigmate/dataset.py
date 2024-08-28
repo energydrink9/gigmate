@@ -9,9 +9,10 @@ from sklearn.model_selection import train_test_split
 from gigmate.constants import get_clearml_dataset_version, get_params, get_random_seed, get_clearml_dataset_name, get_clearml_project_name, get_pad_token_id
 from gigmate.DatasetPickle import DatasetPickle
 import time
+import random
 
+random.seed(get_random_seed())
 torch.manual_seed(get_random_seed())
-#torch.use_deterministic_algorithms(True) # TODO: re-enable
 
 params = get_params()
 
@@ -83,6 +84,7 @@ def get_data_loaders():
 
     num_workers = multiprocessing.cpu_count() - 1
 
+    # The train dataset is already shuffled
     train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
     validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
     test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
@@ -96,8 +98,8 @@ def measure_dataloader_iteration_time(dataloader):
 
     for batch in dataloader:
         # Simulate a light operation on the batch
-        _ = batch['input_ids'].shape
-        total_items += len(batch['input_ids'])
+        shape = batch['input_ids'].shape
+        total_items += shape[0]
 
     end_time = time.time()
     total_time = end_time - start_time

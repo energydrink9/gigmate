@@ -1,5 +1,6 @@
 import os
 import glob
+import random
 from tqdm.contrib.concurrent import thread_map
 import multiprocessing
 import itertools
@@ -14,7 +15,7 @@ from gigmate.processing.steps.split import SEQUENCE_LENGTH
 from gigmate.tokenizer import get_tokenizer
 from gigmate.processing.process import upload_dataset
 
-FINAL_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-final'
+FINAL_DATASET_DIR = 'dataset/lakh-midi-clean-final'
 
 def get_midi_files(dir: str):
     return glob.glob(os.path.join(dir, '**/*.mid'), recursive=True)
@@ -38,12 +39,20 @@ def preprocess_midi_items(out_dir, items, tokenizer, i):
     
     return len(tokenized_items)
 
-def persist_items_batch(out_dir: str, i: int, batch):
+def persist_items_batch(out_dir: str, i: int, batch, verbose=False):
     path = os.path.join(out_dir, f'item-{i}.pkl')
+
     with open(path, 'wb') as file:
         pickle.dump(batch, file)
 
+    if verbose:
+        print(f'Wrote file {path} with {len(batch)} items of length {len(batch[0])}.')
+
 def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
+    print('Shuffling midi data list')
+    random.seed(get_random_seed())
+    random.shuffle(midi_data_list)
+
     print('Converting to pickle files')
     if not os.path.exists(out_dir):
         os.makedirs(out_dir, exist_ok=True)
@@ -57,7 +66,7 @@ def preprocess_midi_dataset(midi_data_list, out_dir: str, tokenizer):
         'total_files': total_files,
         'sequence_length': SEQUENCE_LENGTH
     }
-    with open(os.path.join(out_dir, 'metadata'), 'w+') as file:
+    with open(os.path.join(out_dir, 'metadata.json'), 'w+') as file:
         json.dump(metadata, file)
 
 def get_parent_directory_name_from_file_path(file_path):

@@ -6,7 +6,7 @@ from miditok import data_augmentation
 from gigmate.processing.process import directory_has_files
 from gigmate.processing.steps.split import SPLIT_DATASET_DIR
 
-AUGMENTED_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-augmented'
+AUGMENTED_DATASET_DIR = 'dataset/lakh-midi-clean-augmented'
 
 def augment_dataset_directory(directory: str, out_path: str):
     try:

@@ -8,16 +8,19 @@ from torchmetrics import F1Score, Precision, Recall
 from gigmate.dataset import get_data_loaders
 from gigmate.model import get_model
 import numpy as np
-from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id
+from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id, get_random_seed
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.device import get_device
 
-WEIGHTS_FILE = 'gigmate/output/gigmate.weights'
-LOG_INTERVAL = 32
+WEIGHTS_FILE = 'output/gigmate.weights'
+LOG_INTERVAL = 5
 
 pad_token_id = get_pad_token_id()
+batch_size = get_params()['batch_size']
+L.seed_everything(get_random_seed())
+#torch.use_deterministic_algorithms(True) # TODO: re-enable
 
 def init_clearml_task(params):
     task = Task.init(
@@ -70,7 +73,7 @@ class ModelTraining(L.LightningModule):
 
     def compute_train_loss(self, transposed_logits, targets):
         return self.train_loss(transposed_logits, targets)
-
+    
     def compute_train_metrics(self, transposed_logits, targets):
         accuracy = self.train_accuracy_metric(transposed_logits, targets)
         f1_score = self.train_f1_metric(transposed_logits, targets)

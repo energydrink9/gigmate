@@ -5,11 +5,12 @@ from gigmate.tokenizer import get_tokenizer
 from gigmate.processing.process import get_files_in_directory
 import random
 import kaggle
+import os
 
-BASE_DATASET_DIR = './gigmate/dataset/lakh-midi-clean'
-SPLIT_DATASET_DIR = './gigmate/dataset/lakh-midi-clean-split'
+BASE_DATASET_DIR = 'dataset/lakh-midi-clean'
+SPLIT_DATASET_DIR = 'dataset/lakh-midi-clean-split'
 NUMBER_OF_FILES_TO_COMPUTE_AVERAGE_NUM_TOKENS_PER_NOTE = 100
-SEQUENCE_LENGTH = 1024
+SEQUENCE_LENGTH = 128
 
 def download_raw_dataset(directory: str):
     kaggle.api.authenticate()
@@ -45,6 +46,9 @@ def split_files(source_path, out_path, tokenizer):
     return SPLIT_DATASET_DIR
 
 def split_midi_files():
+    if not os.path.exists(BASE_DATASET_DIR):
+        os.makedirs(BASE_DATASET_DIR, exist_ok=True)
+
     raw_dataset_dir = download_raw_dataset(BASE_DATASET_DIR)
     tokenizer = get_tokenizer()
     split_files(raw_dataset_dir, SPLIT_DATASET_DIR, tokenizer)
