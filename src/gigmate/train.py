@@ -160,6 +160,9 @@ def train_model():
         callbacks=[early_stopping],
         logger=logger,
         max_epochs=params['epochs'],
+        limit_train_batches=params['training_set_size'],
+        limit_val_batches=params['validation_set_size'],
+        accumulate_grad_batches=params['accumulate_grad_batches'],
     )
     
     trainer.fit(model_training, train_loader, validation_loader)

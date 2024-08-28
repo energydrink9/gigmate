@@ -2,15 +2,22 @@ RANDOM_SEED = 42
 PAD_TOKEN_ID = 0
 
 # Parameters
-MAX_SEQ_LEN = 64
+MAX_SEQ_LEN = 32
 VOCAB_SIZE = 10000
 D_MODEL = 256
-NUM_LAYERS = 8
-NUM_HEADS = 8
+
+NUM_LAYERS = 2
+NUM_HEADS = 2
 DROPOUT_RATE = 0.1
-EPOCHS = 1
-BATCH_SIZE = 512
+
+EPOCHS = 3
 LEARNING_RATE = 0.001
+
+BATCH_SIZE = 2304
+ACCUMULATE_GRAD_BATCHES = 4
+
+TRAINING_SET_SIZE = 1792
+VALIDATION_SET_SIZE = 256
 
 CLEARML_PROJECT_NAME = 'GigMate'
 CLEARML_DATASET_NAME = 'LakhMidiClean'
@@ -27,6 +34,9 @@ PARAMS = {
     'max_seq_len': MAX_SEQ_LEN,
     'batch_size': BATCH_SIZE,
     'learning_rate': LEARNING_RATE,
+    'accumulate_grad_batches': ACCUMULATE_GRAD_BATCHES,
+    'training_set_size': TRAINING_SET_SIZE,
+    'validation_set_size': VALIDATION_SET_SIZE,
 }
 
 def get_random_seed() -> int:

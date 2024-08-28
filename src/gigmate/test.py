@@ -28,15 +28,13 @@ def sample_from_logits(logits, temperature):
         next_token = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
     return next_token
 
-def predict_next_note(model, input_sequence, temperature=0, past_key_values=None):
+def predict_next_note(model, input_sequence, temperature=0):
     inp = input_sequence.unsqueeze(0)
     with torch.no_grad():
         outputs = model(inp)
-        #logits, key_values = model(inp, past_key_values=past_key_values, use_cache=True)
     predicted_tokens = sample_from_logits(outputs[0], temperature)
-    next_token = predicted_tokens[-1].squeeze()
-    key_values = None
-    return next_token, key_values
+    next_token = predicted_tokens.squeeze()
+    return next_token
 
 def get_data_loader():
     _, validation_loader, _ = get_data_loaders()
@@ -64,9 +62,8 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
 
     next_note = -1
     i = 0
-    key_values = None
     while i < OUTPUT_TOKENS_COUNT and next_note != 2:  # 2 is the end of sequence code
-        next_note, key_values = predict_next_note(model, next_sequence, temperature=0.2, past_key_values=key_values)
+        next_note = predict_next_note(model, next_sequence, temperature=0.2)
         meaning = ''
         try:
             sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
