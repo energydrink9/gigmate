@@ -1,15 +1,20 @@
 workerPoolSpecs:
   - machineSpec:
-      machineType: n1-standard-8
-      acceleratorType: NVIDIA_TESLA_T4
+      #machineType: n1-standard-4
+      # acceleratorType: NVIDIA_TESLA_T4
+      # acceleratorCount: 1
+      machineType: a2-highgpu-1g
+      acceleratorType: NVIDIA_TESLA_A100
       acceleratorCount: 1
-      #machineType: a2-highgpu-1g
     replicaCount: 1
     containerSpec:
-      imageUri: us-central1-docker.pkg.dev/${PROJECT_ID}/gigmate-training/training-image:${COMMIT_SHA}
-      command:
-        - python
-        - -m
-        - gigmate.train
+      imageUri: ${IMAGE_NAME}
       args:
-        - --job-dir=gs://${GCP_BUCKET}/gigmate_training_${COMMIT_SHA}
+        - --job-dir=gs://$GCP_BUCKET/gigmate_training_$COMMIT_SHA
+      env:
+        - name: PROJECT_ID
+          value: $PROJECT_ID
+        - name: COMMIT_SHA
+          value: $COMMIT_SHA
+        - name: GCP_BUCKET
+          value: $GCP_BUCKET

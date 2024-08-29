@@ -39,7 +39,7 @@ jobs:
         fi
 
     - name: Build and push Docker image
-    #   if: steps.dockerfile_changes.outputs.changed == 'true'
+      if: steps.dockerfile_changes.outputs.changed == 'true'
       env:
         IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image:${{ github.sha }}
       run: |
@@ -52,16 +52,19 @@ jobs:
         if [ "${{ steps.dockerfile_changes.outputs.changed }}" == "true" ]; then
         echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
         else
-        LATEST_TAG=$(gcloud artifacts docker tags list us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image --limit=1 --format='get(tag)' 2>/dev/null || echo "latest")
+        LATEST_TAG=$(gcloud artifacts docker tags list us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image --limit=1 --format='value(TAG)')
         echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
         fi
 
     - name: Submit Vertex AI training job
       env:
+        PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        COMMIT_SHA: ${{ steps.get_tag.outputs.image_tag }}
+        GCP_BUCKET: ${{ env.GCP_BUCKET }}
         IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image:${{ steps.get_tag.outputs.image_tag }}
       run: |
+        envsubst < vertex_config.yaml > vertex_config_temp.yaml
         gcloud ai custom-jobs create \
           --region=us-central1 \
           --display-name=gigmate_training_job_${{ github.sha }} \
-          --config=vertex_config.yaml \
-          --set-env-variables=PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},COMMIT_SHA=${{ steps.get_tag.outputs.image_tag }},GCP_BUCKET=${{ env.GCP_BUCKET }}
+          --config=vertex_config_temp.yaml
