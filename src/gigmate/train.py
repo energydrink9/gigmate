@@ -128,9 +128,7 @@ class ModelTraining(L.LightningModule):
 
         return loss
 
-def train_model(params, device, output_dir):
-    print('Loading dataset...')
-    train_loader, validation_loader, _ = get_data_loaders()
+def train_model(params, device, output_dir, train_loader, validation_loader):
 
     print('Loading model...')
     model = get_model()
@@ -172,10 +170,13 @@ if __name__ == '__main__':
 
     task = init_clearml_task(params)
 
-    model = train_model(params, device, WEIGHTS_FILE)
+    print('Loading dataset...')
+    train_loader, validation_loader, _ = get_data_loaders()
+
+    model = train_model(params, device, WEIGHTS_FILE, train_loader, validation_loader)
     task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)
 
-    output_midis = test_model(model, device)
+    output_midis = test_model(model, device, validation_loader)
 
     for midi in output_midis:
         task.upload_artifact(name=midi['name'], artifact_object=midi['file'])

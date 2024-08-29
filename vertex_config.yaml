@@ -1,0 +1,15 @@
+workerPoolSpecs:
+  - machineSpec:
+      machineType: n1-standard-8
+      acceleratorType: NVIDIA_TESLA_T4
+      acceleratorCount: 1
+      #machineType: a2-highgpu-1g
+    replicaCount: 1
+    containerSpec:
+      imageUri: gcr.io/${PROJECT_ID}/gigmate-training:${COMMIT_SHA}
+      command:
+        - python
+        - -m
+        - gigmate.train
+      args:
+        - --job-dir=gs://${GCP_BUCKET}/gigmate_training_${COMMIT_SHA}

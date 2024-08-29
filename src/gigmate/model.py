@@ -87,5 +87,4 @@ def get_model(params = get_params()):
         params['dropout_rate']
     )
 
-    #model.load_state_dict(torch.load(MODEL_FILE_NAME))
     return model

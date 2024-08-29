@@ -25,7 +25,7 @@ def sample_from_logits(logits, temperature):
     # If temp is not 0 then next_token is sampled out of logits
     else:
         logits = logits / temperature
-        next_token = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
+        next_token = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1).squeeze()
     return next_token
 
 def predict_next_note(model, input_sequence, temperature=0):
@@ -56,7 +56,7 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
     return out_file
 
 def get_input_sequence(batch):
-    return torch.cat([torch.tensor([0]), batch[0][:INPUT_TOKENS_COUNT]]) # TODO: remove 0 that is added for the start token
+    return torch.cat([torch.tensor([0]).to(batch.device), batch[0][:INPUT_TOKENS_COUNT]]) # TODO: remove 0 that is added for the start token
 
 def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
@@ -66,7 +66,7 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     next_note = -1
     i = 0
     while i < OUTPUT_TOKENS_COUNT and next_note != EOS_TOKEN_ID:
-        next_note = predict_next_note(model, next_sequence, temperature=0)
+        next_note = predict_next_note(model, next_sequence, temperature=0.3)
         meaning = ''
         try:
             sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
@@ -86,14 +86,13 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
 
     return output_sequence
 
-def test_model(model, device):
+def test_model(model, device, data_loader):
     tokenizer = get_tokenizer()
-    data_loader = get_data_loader()
     data_items = list(itertools.islice(iter(data_loader), NUM_OUTPUT_FILES))
 
     files = []
     for i in list(range(NUM_OUTPUT_FILES)):
-        next_item = data_items[i]['input_ids']
+        next_item = data_items[i]['input_ids'].to(device)
         input_sequence = get_input_sequence(next_item).to(device)
         output_sequence = compute_output_sequence(model, tokenizer, input_sequence)
 
@@ -107,6 +106,9 @@ def test_model(model, device):
 if __name__ == '__main__':
     device = get_device()
     model = get_model()
+    model.load_state_dict(torch.load('output/gigmate.weights', map_location=torch.device(device), weights_only=True), strict=False)
     model.to(device)
-    test_model(model, device)
+
+    data_loader = get_data_loader()
+    test_model(model, device, data_loader)
 

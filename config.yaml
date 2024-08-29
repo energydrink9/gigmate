@@ -1,0 +1,8 @@
+trainingInput:
+  pythonModule: gigmate.train
+  region: us-central1
+  masterConfig:
+    imageUri: gcr.io/${PROJECT_ID}/gigmate-training
+  environmentVariables:
+    CLEARML_API_ACCESS_KEY: ${CLEARML_API_ACCESS_KEY}
+    CLEARML_API_SECRET_KEY: ${CLEARML_API_SECRET_KEY}
