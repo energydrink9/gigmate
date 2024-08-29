@@ -128,12 +128,7 @@ class ModelTraining(L.LightningModule):
 
         return loss
 
-def train_model(device):
-    params = get_params()
-    print(f'Running with parameters: {params}')
-
-    task = init_clearml_task(params)
-
+def train_model(params, device, output_dir):
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
@@ -163,15 +158,24 @@ def train_model(device):
     )
     
     trainer.fit(model_training, train_loader, validation_loader)
-    trainer.save_checkpoint(WEIGHTS_FILE)
-    task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)
+    trainer.save_checkpoint(output_dir)
 
     return model
 
 
 if __name__ == '__main__':
-    device = get_device()    
+    device = get_device()
     print(f'Running on device: {device}')
 
-    model = train_model(device)
-    test_model(model, device)
+    params = get_params()
+    print(f'Running with parameters: {params}')
+
+    task = init_clearml_task(params)
+
+    model = train_model(params, device, WEIGHTS_FILE)
+    task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)
+
+    output_midis = test_model(model, device)
+
+    for midi in output_midis:
+        task.upload_artifact(name=midi['name'], artifact_object=midi['file'])

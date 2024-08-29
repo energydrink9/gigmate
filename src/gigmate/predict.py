@@ -53,6 +53,7 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
     midi_path = convert_to_midi(tokenizer, sequence)
     midi_path.dump_midi(out_file)
     print(f'created midi file: {out_file}')
+    return out_file
 
 def get_input_sequence(batch):
     return torch.cat([torch.tensor([0]), batch[0][:INPUT_TOKENS_COUNT]]) # TODO: remove 0 that is added for the start token
@@ -90,13 +91,18 @@ def test_model(model, device):
     data_loader = get_data_loader()
     data_items = list(itertools.islice(iter(data_loader), NUM_OUTPUT_FILES))
 
+    files = []
     for i in list(range(NUM_OUTPUT_FILES)):
         next_item = data_items[i]['input_ids']
         input_sequence = get_input_sequence(next_item).to(device)
         output_sequence = compute_output_sequence(model, tokenizer, input_sequence)
 
-        create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
-        create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
+        input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
+        output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
+        files.append({ 'name': f'input_{i}', 'file': input_file })
+        files.append({ 'name': f'output_{i}', 'file': output_file })
+
+    return files
 
 if __name__ == '__main__':
     device = get_device()
