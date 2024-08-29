@@ -13,6 +13,7 @@ import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.device import get_device
+from gigmate.predict import test_model
 
 WEIGHTS_FILE = 'output/gigmate.weights'
 LOG_INTERVAL = 5
@@ -24,8 +25,8 @@ L.seed_everything(get_random_seed())
 
 def init_clearml_task(params):
     task = Task.init(
-        project_name=get_clearml_project_name(),
-        task_name='training',
+            project_name=get_clearml_project_name(),
+            task_name=f'train seq {params["max_seq_len"]} batch {params["batch_size"]} layers {params["num_layers"]} heads {params["num_heads"]} lr {params["learning_rate"]} dff {params["dff"]}',
     )
 
     task.connect(params)
@@ -127,15 +128,11 @@ class ModelTraining(L.LightningModule):
 
         return loss
 
-def train_model():
+def train_model(device):
     params = get_params()
     print(f'Running with parameters: {params}')
 
     task = init_clearml_task(params)
-
-    device = get_device()    
-    print(f'Running on device: {device}')
-    #torch.set_default_device(device)
 
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
@@ -173,4 +170,8 @@ def train_model():
 
 
 if __name__ == '__main__':
-    train_model()
+    device = get_device()    
+    print(f'Running on device: {device}')
+
+    model = train_model(device)
+    test_model(model, device)

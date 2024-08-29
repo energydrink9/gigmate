@@ -7,9 +7,10 @@ from miditok import TokSequence
 from gigmate.constants import get_params
 from gigmate.device import get_device
 
-INPUT_TOKENS_COUNT = 250
+INPUT_TOKENS_COUNT = min(get_params()['max_seq_len'], 256)
 OUTPUT_TOKENS_COUNT = 5000
 NUM_OUTPUT_FILES = 5
+EOS_TOKEN_ID = 2
 
 def get_input_midi_file_name(i: int) -> str:
     return f'output/input_{i}.mid'
@@ -20,8 +21,7 @@ def get_output_midi_file_name(i: int) -> str:
 def sample_from_logits(logits, temperature):
     # If temp is 0 then next_token is the argmax of logits
     if temperature == 0.0:
-        next_token = torch.argmax(logits, dim=1)
-    
+        next_token = torch.argmax(logits, dim=-1)
     # If temp is not 0 then next_token is sampled out of logits
     else:
         logits = logits / temperature
@@ -29,11 +29,11 @@ def sample_from_logits(logits, temperature):
     return next_token
 
 def predict_next_note(model, input_sequence, temperature=0):
-    inp = input_sequence.unsqueeze(0)
     with torch.no_grad():
-        outputs = model(inp)
-    predicted_tokens = sample_from_logits(outputs[0], temperature)
-    next_token = predicted_tokens.squeeze()
+        outputs = model(input_sequence)
+        outputs = outputs.squeeze() # remove batch dimension
+    predicted_tokens = sample_from_logits(outputs, temperature)
+    next_token = predicted_tokens[-1] # take last token
     return next_token
 
 def get_data_loader():
@@ -52,18 +52,20 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
     sequence = get_sequence(sequence)
     midi_path = convert_to_midi(tokenizer, sequence)
     midi_path.dump_midi(out_file)
+    print(f'created midi file: {out_file}')
 
 def get_input_sequence(batch):
-    return batch[0][INPUT_TOKENS_COUNT:]
+    return torch.cat([torch.tensor([0]), batch[0][:INPUT_TOKENS_COUNT]]) # TODO: remove 0 that is added for the start token
 
 def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
-    next_sequence = output_sequence[-min(len(output_sequence), get_params()['max_seq_len']) - 1:]
+    length_to_keep = min(len(output_sequence), get_params()['max_seq_len'])
+    next_sequence = output_sequence[-length_to_keep:]
 
     next_note = -1
     i = 0
-    while i < OUTPUT_TOKENS_COUNT and next_note != 2:  # 2 is the end of sequence code
-        next_note = predict_next_note(model, next_sequence, temperature=0.2)
+    while i < OUTPUT_TOKENS_COUNT and next_note != EOS_TOKEN_ID:
+        next_note = predict_next_note(model, next_sequence, temperature=0)
         meaning = ''
         try:
             sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
@@ -85,13 +87,11 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
 
 def test_model(model, device):
     tokenizer = get_tokenizer()
-
-    buffer_size = 1000
     data_loader = get_data_loader()
-    data_items = list(itertools.islice(iter(data_loader), NUM_OUTPUT_FILES * buffer_size))
+    data_items = list(itertools.islice(iter(data_loader), NUM_OUTPUT_FILES))
 
-    for i in range(NUM_OUTPUT_FILES):
-        next_item = data_items[i * buffer_size]['input_ids']
+    for i in list(range(NUM_OUTPUT_FILES)):
+        next_item = data_items[i]['input_ids']
         input_sequence = get_input_sequence(next_item).to(device)
         output_sequence = compute_output_sequence(model, tokenizer, input_sequence)
 
@@ -103,3 +103,4 @@ if __name__ == '__main__':
     model = get_model()
     model.to(device)
     test_model(model, device)
+

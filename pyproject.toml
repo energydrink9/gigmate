@@ -44,6 +44,12 @@ Documentation = "https://github.com/Michele Lugano/gigmate#readme"
 Issues = "https://github.com/Michele Lugano/gigmate/issues"
 Source = "https://github.com/Michele Lugano/gigmate"
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+
 [tool.hatch.version]
 path = "src/gigmate/__about__.py"
 
@@ -55,7 +61,7 @@ extra-dependencies = [
 check = "mypy --install-types --non-interactive {args:src/gigmate tests}"
 
 [tool.coverage.run]
-source_pkgs = ["gigmate", "tests"]
+source_pkgs = ["src/gigmate"]
 branch = true
 parallel = true
 omit = [
@@ -79,8 +85,14 @@ exclude_lines = [
 [tool.hatch.envs.default.scripts]
 train = "python -m gigmate.train"
 dataset = "python -m gigmate.dataset"
-test = "python -m gigmate.test"
+test = "pytest"
 process = "python -m gigmate.processing.pipeline"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = [
+  "src"
+]

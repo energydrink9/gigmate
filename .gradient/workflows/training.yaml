@@ -41,6 +41,5 @@ jobs:
           python -m pip install .
           echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
           python -m gigmate.train
-          python -m gigmate.test
           mv gigmate/outputs /outputs/training
       image: python:3.12
