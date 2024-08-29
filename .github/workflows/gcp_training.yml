@@ -25,21 +25,43 @@ jobs:
       uses: google-github-actions/setup-gcloud@v1
   
     - name: Configure Docker
-      run: gcloud auth configure-docker
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+    - name: Check for Dockerfile changes
+      id: dockerfile_changes
+      run: |
+        git fetch origin ${{ github.event.before }}
+        CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+        if echo "$CHANGED_FILES" | grep -q "Dockerfile" || echo "$CHANGED_FILES" | grep -q "requirements.txt"; then
+          echo "::set-output name=changed::true"
+        else
+          echo "::set-output name=changed::false"
+        fi
 
     - name: Build and push Docker image
+    #   if: steps.dockerfile_changes.outputs.changed == 'true'
       env:
-        IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/gigmate-training:${{ github.sha }}
+        IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image:${{ github.sha }}
       run: |
         docker build -t $IMAGE_NAME .
         docker push $IMAGE_NAME
 
+    - name: Get latest image tag
+      id: get_tag
+      run: |
+        if [ "${{ steps.dockerfile_changes.outputs.changed }}" == "true" ]; then
+        echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+        else
+        LATEST_TAG=$(gcloud artifacts docker tags list us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image --limit=1 --format='get(tag)' 2>/dev/null || echo "latest")
+        echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        fi
+
     - name: Submit Vertex AI training job
       env:
-        IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/gigmate-training:${{ github.sha }}
+        IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/training-image:${{ steps.get_tag.outputs.image_tag }}
       run: |
         gcloud ai custom-jobs create \
           --region=us-central1 \
           --display-name=gigmate_training_job_${{ github.sha }} \
           --config=vertex_config.yaml \
-          --set-env-variables=PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},COMMIT_SHA=${{ github.sha }},GCP_BUCKET=${{ env.GCP_BUCKET }}
+          --set-env-variables=PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},COMMIT_SHA=${{ steps.get_tag.outputs.image_tag }},GCP_BUCKET=${{ env.GCP_BUCKET }}

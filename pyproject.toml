@@ -29,7 +29,7 @@ dependencies = [
     "kaggle==1.6.17",
     "lightning==2.4.0",
     "miditok @ git+https://github.com/Natooz/MidiTok@2281c4ffc58030176fa2dbd25fb5e8d62345908b",
-    "symusic @ git+https://github.com/Yikai-Liao/symusic@cf52d3e5208f175b561934ab879ffa4c14564f89",
+    "symusic==0.5.2",
     "numpy==2.1.0",
     "scikit_learn==1.5.1",
     "torch==2.4.0",

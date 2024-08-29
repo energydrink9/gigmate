@@ -6,7 +6,7 @@ workerPoolSpecs:
       #machineType: a2-highgpu-1g
     replicaCount: 1
     containerSpec:
-      imageUri: gcr.io/${PROJECT_ID}/gigmate-training:${COMMIT_SHA}
+      imageUri: us-central1-docker.pkg.dev/${PROJECT_ID}/gigmate-training/training-image:${COMMIT_SHA}
       command:
         - python
         - -m
