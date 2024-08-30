@@ -66,7 +66,7 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     next_note = -1
     i = 0
     while i < OUTPUT_TOKENS_COUNT and next_note != EOS_TOKEN_ID:
-        next_note = predict_next_note(model, next_sequence, temperature=0.3)
+        next_note = predict_next_note(model, next_sequence, temperature=0.5)
         meaning = ''
         try:
             sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)

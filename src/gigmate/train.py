@@ -10,18 +10,22 @@ from gigmate.model import get_model
 import numpy as np
 from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id, get_random_seed
 import lightning as L
-from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.device import get_device
 from gigmate.predict import test_model
+import os
 
-WEIGHTS_FILE = 'output/gigmate.weights'
+OUTPUT_DIRECTORY = 'output'
 LOG_INTERVAL = 5
 
 pad_token_id = get_pad_token_id()
 batch_size = get_params()['batch_size']
 L.seed_everything(get_random_seed())
 #torch.use_deterministic_algorithms(True) # TODO: re-enable
+
+def get_weights_path(output_dir):
+    return os.path.join(output_dir, 'weights.ckpt')
 
 def init_clearml_task(params):
     task = Task.init(
@@ -133,16 +137,10 @@ def train_model(params, device, output_dir, train_loader, validation_loader):
 
     print('Loading model...')
     model = get_model(params)
-
-    state_dict = torch.load('gigmate.weights', map_location=torch.device(device), weights_only=True)['state_dict']
-    for key in list(state_dict.keys()):
-        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
-
-    model.load_state_dict(state_dict, strict=True)
-
     model.to(device)
 
     if device == 'cuda':
+        torch.set_float32_matmul_precision('high')
         model = torch.compile(model)
 
     model_training = ModelTraining(model, learning_rate = params['learning_rate'], vocab_size=params['vocab_size'])
@@ -153,9 +151,15 @@ def train_model(params, device, output_dir, train_loader, validation_loader):
 
     logger = TensorBoardLogger("tb_logs", name="GigMate")
     early_stopping = EarlyStopping('val_loss')
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=os.path.join(output_dir, 'checkpoints'),
+        filename='{epoch}-{val_loss:.2f}',
+        every_n_epochs=1,
+        enable_version_counter=True,
+    )
     
     trainer = L.Trainer(
-        callbacks=[early_stopping],
+        callbacks=[early_stopping, checkpoint_callback],
         logger=logger,
         max_epochs=params['epochs'],
         limit_train_batches=params['training_set_size'],
@@ -165,7 +169,8 @@ def train_model(params, device, output_dir, train_loader, validation_loader):
     )
     
     trainer.fit(model_training, train_loader, validation_loader)
-    trainer.save_checkpoint(output_dir)
+    weights_file = get_weights_path(output_dir)
+    trainer.save_checkpoint(weights_file)
 
     return model
 
@@ -183,9 +188,9 @@ if __name__ == '__main__':
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
-    model = train_model(params, device, WEIGHTS_FILE, train_loader, validation_loader)
+    model = train_model(params, device, OUTPUT_DIRECTORY, train_loader, validation_loader)
 
-    task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)
+    task.upload_artifact(name='weights', artifact_object=get_weights_path(OUTPUT_DIRECTORY))
 
     output_midis = test_model(model, device, validation_loader)
 
