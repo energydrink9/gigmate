@@ -26,12 +26,8 @@ class TransformerBlock(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, x):
-        sequence_length = x.size(1)
-        mask = look_ahead_mask(sequence_length).to(x.device)
-
+    def forward(self, x, mask):
         attn_output, _ = self.mha(x, x, x, attn_mask=mask, is_causal=True)
-
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)
         ffn_output = self.ffn(out1)
@@ -57,9 +53,12 @@ class TransformerModel(nn.Module):
         # Add positional encoding
         x = x + self.pos_encoding[:, :x.size(1), :].to(x.device)
         
+        sequence_length = x.size(1)
+        mask = look_ahead_mask(sequence_length).to(x.device)
+
         # Pass through transformer blocks
         for layer in self.transformer_layers:
-            x = layer(x)
+            x = layer(x, mask)
 
         # Final output layer
         x = self.dense(x)

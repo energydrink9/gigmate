@@ -82,12 +82,13 @@ def get_data_loaders():
         labels_pad_idx=get_pad_token_id(),
     )
 
-    num_workers = multiprocessing.cpu_count() - 1
+    num_workers = multiprocessing.cpu_count()
+    prefetch_factor = 4
 
     # The train dataset is already shuffled
-    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
-    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
-    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True)
+    train_loader = DataLoader(train_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True, prefetch_factor=prefetch_factor)
+    validation_loader = DataLoader(validation_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True, prefetch_factor=prefetch_factor)
+    test_loader = DataLoader(test_ds, batch_size=params['batch_size'], collate_fn=collator, pin_memory=True, num_workers=num_workers, persistent_workers=True, prefetch_factor=prefetch_factor)
 
     return train_loader, validation_loader, test_loader
 

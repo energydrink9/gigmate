@@ -9,9 +9,19 @@ from torch.utils.data import IterableDataset
 from miditok.utils.split import split_seq_in_subsequences
 import math
 
-from gigmate.constants import get_params
+from gigmate.constants import get_pad_token_id
 
 ITEMS_PER_FILE = 1024 * 16
+
+def pad(sequence, max_seq_len):
+    if len(sequence) < max_seq_len:
+        return sequence + [get_pad_token_id()] * (max_seq_len - len(sequence))
+    else:
+        return sequence
+
+def get_item(sequence):
+    return {"input_ids": LongTensor(sequence)}
+
 
 class DatasetPickle(_DatasetABC, IterableDataset):
     r"""
@@ -64,30 +74,40 @@ class DatasetPickle(_DatasetABC, IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
+        total_files = len(self.files_paths)
         if worker_info is None:  # single-process data loading
-            start, end = 0, len(self.files_paths)
+            start, end = 0, total_files
         else:  # in a worker process
-            per_worker = int(math.ceil(len(self.files_paths) / float(worker_info.num_workers)))
+            per_worker = int(math.ceil(total_files / float(worker_info.num_workers)))
             worker_id = worker_info.id
             start = worker_id * per_worker
-            end = min(start + per_worker, len(self.files_paths))
+            end = min(start + per_worker, total_files)
+        
+        acc = []
         
         for file_path in self.files_paths[start:end]:
             with open(file_path, 'rb') as file:
                 items = pickle.load(file)
+                
                 for item in items:
-                    if (self.max_seq_len < len(items)):
-                        sequences = split_seq_in_subsequences(item, 0, self._effective_max_seq_len)
+                    if len(item) > self.max_seq_len:
+                        sequences = split_seq_in_subsequences(item, 0, self.max_seq_len)
+                        for sequence in sequences:
+                            print(sequence)
+                            yield get_item(pad(sequence, self.max_seq_len))
+                    elif len(item) == self.max_seq_len:
+                        yield get_item(item)
                     else:
-                        sequences = [item]
-                    for sequence in sequences:
-                        token_ids = self._preprocess_token_ids(
-                            sequence,
-                            self.max_seq_len,
-                            self.bos_token_id,
-                            self.eos_token_id,
-                        )
-                        yield {"input_ids": LongTensor(token_ids)}
+                        concatenated = acc + item
+                        sequence_length = len(concatenated)
+                        if sequence_length < self.max_seq_len:
+                            acc = concatenated
+                        else:
+                            yield get_item(pad(acc, self.max_seq_len))
+                            acc = item
+
+        if len(acc) > 0:
+            yield get_item(pad(acc, self.max_seq_len))
 
     # def __len__(self) -> int:
     #     """

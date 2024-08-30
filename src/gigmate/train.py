@@ -108,8 +108,9 @@ class ModelTraining(L.LightningModule):
         inputs, targets = get_inputs_and_targets(batch, self.device)
         logits = self.model(inputs)
         transposed_logits = logits.transpose(1, 2)
+        #transposed_logits = logits.permute(0, 2, 1)
         loss = self.compute_train_loss(transposed_logits, targets)
-
+        
         if batch_idx % LOG_INTERVAL == 0:
             metrics = self.compute_train_metrics(transposed_logits, targets)
             self.log_metrics("train", loss=loss, **metrics)
