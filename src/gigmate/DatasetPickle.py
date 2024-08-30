@@ -93,7 +93,6 @@ class DatasetPickle(_DatasetABC, IterableDataset):
                     if len(item) > self.max_seq_len:
                         sequences = split_seq_in_subsequences(item, 0, self.max_seq_len)
                         for sequence in sequences:
-                            print(sequence)
                             yield get_item(pad(sequence, self.max_seq_len))
                     elif len(item) == self.max_seq_len:
                         yield get_item(item)

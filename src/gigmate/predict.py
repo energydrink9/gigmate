@@ -61,7 +61,7 @@ def get_input_sequence(batch):
 def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
     length_to_keep = min(len(output_sequence), get_params()['max_seq_len'])
-    next_sequence = output_sequence[-length_to_keep:].to(device)
+    next_sequence = output_sequence[-length_to_keep:].to(input_sequence.device)
 
     next_note = -1
     i = 0
@@ -77,8 +77,8 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
             print('Error', e)
         if verbose:
             print(f'token {i}: {next_note}, meaning: {meaning}')
-        output_sequence = torch.cat([output_sequence, next_note.unsqueeze(0)], 0).to(device)
-        next_sequence = torch.cat([next_sequence[1:], next_note.unsqueeze(0)], 0).to(device)
+        output_sequence = torch.cat([output_sequence, next_note.unsqueeze(0)], 0).to(input_sequence.device)
+        next_sequence = torch.cat([next_sequence[1:], next_note.unsqueeze(0)], 0).to(input_sequence.device)
         i += 1
 
     if verbose:
