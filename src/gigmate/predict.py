@@ -56,7 +56,7 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
     return out_file
 
 def get_input_sequence(batch):
-    return torch.cat([torch.tensor([0]).to(batch.device), batch[0][:INPUT_TOKENS_COUNT]]) # TODO: remove 0 that is added for the start token
+    return batch[0][:INPUT_TOKENS_COUNT]
 
 def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
@@ -106,7 +106,10 @@ def test_model(model, device, data_loader):
 if __name__ == '__main__':
     device = get_device()
     model = get_model()
-    model.load_state_dict(torch.load('output/gigmate.weights', map_location=torch.device(device), weights_only=True), strict=False)
+    state_dict = torch.load('output/gigmate.weights', map_location=torch.device(device), weights_only=True)['state_dict']
+    for key in list(state_dict.keys()):
+        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
+    model.load_state_dict(state_dict, strict=True)
     model.to(device)
 
     data_loader = get_data_loader()

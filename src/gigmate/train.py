@@ -132,7 +132,14 @@ class ModelTraining(L.LightningModule):
 def train_model(params, device, output_dir, train_loader, validation_loader):
 
     print('Loading model...')
-    model = get_model()
+    model = get_model(params)
+
+    state_dict = torch.load('gigmate.weights', map_location=torch.device(device), weights_only=True)['state_dict']
+    for key in list(state_dict.keys()):
+        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
+
+    model.load_state_dict(state_dict, strict=True)
+
     model.to(device)
 
     if device == 'cuda':
@@ -170,12 +177,14 @@ if __name__ == '__main__':
     params = get_params()
     print(f'Running with parameters: {params}')
 
+    model = get_model(params)    
     task = init_clearml_task(params)
 
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
     model = train_model(params, device, WEIGHTS_FILE, train_loader, validation_loader)
+
     task.upload_artifact(name='weights', artifact_object=WEIGHTS_FILE)
 
     output_midis = test_model(model, device, validation_loader)
