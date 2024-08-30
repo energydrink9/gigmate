@@ -11,7 +11,8 @@ NUM_HEADS = 4#232
 DROPOUT_RATE = 0.1
 
 EPOCHS = 8
-LEARNING_RATE = 0.00001#0.000003
+LEARNING_RATE = 0.001#0.000003
+GRADIENT_CLIP = 1.0
 
 BATCH_SIZE = 32
 ACCUMULATE_GRAD_BATCHES = 1
@@ -35,6 +36,7 @@ PARAMS = {
     'batch_size': BATCH_SIZE,
     'learning_rate': LEARNING_RATE,
     'accumulate_grad_batches': ACCUMULATE_GRAD_BATCHES,
+    'gradient_clip': GRADIENT_CLIP,
     'training_set_size': TRAINING_SET_SIZE,
     'validation_set_size': VALIDATION_SET_SIZE,
 }

@@ -110,7 +110,7 @@ class ModelTraining(L.LightningModule):
         transposed_logits = logits.transpose(1, 2)
         #transposed_logits = logits.permute(0, 2, 1)
         loss = self.compute_train_loss(transposed_logits, targets)
-        
+
         if batch_idx % LOG_INTERVAL == 0:
             metrics = self.compute_train_metrics(transposed_logits, targets)
             self.log_metrics("train", loss=loss, **metrics)
@@ -154,6 +154,7 @@ def train_model(params, device, output_dir, train_loader, validation_loader):
         limit_train_batches=params['training_set_size'],
         limit_val_batches=params['validation_set_size'],
         accumulate_grad_batches=params['accumulate_grad_batches'],
+        gradient_clip_val=params['gradient_clip'],
     )
     
     trainer.fit(model_training, train_loader, validation_loader)
