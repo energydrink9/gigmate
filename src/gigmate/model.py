@@ -50,7 +50,7 @@ class TransformerModel(nn.Module):
 
         # Combine embeddings
         x = self.embedding(inputs)
-
+        
         # Add positional encoding
         x = Summer(self.pos_encoding)(x).to(x.device)
 

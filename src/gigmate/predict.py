@@ -9,7 +9,7 @@ from gigmate.device import get_device
 
 INPUT_TOKENS_COUNT = min(get_params()['max_seq_len'], 256)
 OUTPUT_TOKENS_COUNT = 5000
-NUM_OUTPUT_FILES = 5
+NUM_OUTPUT_FILES = 6
 EOS_TOKEN_ID = 2
 
 def get_input_midi_file_name(i: int) -> str:
@@ -30,7 +30,7 @@ def sample_from_logits(logits, temperature):
 
 def predict_next_note(model, input_sequence, temperature=0):
     with torch.no_grad():
-        outputs = model(input_sequence)
+        outputs = model(input_sequence.unsqueeze(0))
         outputs = outputs.squeeze() # remove batch dimension
     predicted_tokens = sample_from_logits(outputs, temperature)
     next_token = predicted_tokens[-1] # take last token
@@ -58,7 +58,7 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
 def get_input_sequence(batch):
     return batch[0][:INPUT_TOKENS_COUNT]
 
-def compute_output_sequence(model, tokenizer, input_sequence, verbose=True):
+def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
     length_to_keep = min(len(output_sequence), get_params()['max_seq_len'])
     next_sequence = output_sequence[-length_to_keep:].to(input_sequence.device)
@@ -66,19 +66,18 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=True):
     next_note = -1
     i = 0
     while i < OUTPUT_TOKENS_COUNT and next_note != EOS_TOKEN_ID:
-        next_note = predict_next_note(model, next_sequence, temperature=0.3)
-        meaning = ''
-        try:
-            sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
-            tokenizer.decode_token_ids(sequence)
-            tokenizer.complete_sequence(sequence)
-            meaning = sequence.tokens
-        except Exception as e:
-            print('Error', e)
+        next_note = predict_next_note(model, next_sequence, temperature=i * 0.2)
         if verbose:
+            meaning = ''
+            try:
+                sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
+                tokenizer.decode_token_ids(sequence)
+                tokenizer.complete_sequence(sequence)
+            except Exception as e:
+                print('Error', e)
+            meaning = sequence.tokens
             print(f'token {i}: {next_note}, meaning: {meaning}')
-        print(output_sequence.device)
-        print(next_note.device)
+
         output_sequence = torch.cat([output_sequence, next_note.unsqueeze(0)], 0).to(input_sequence.device)
         next_sequence = torch.cat([next_sequence[1:], next_note.unsqueeze(0)], 0).to(input_sequence.device)
         i += 1

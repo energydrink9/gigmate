@@ -29,7 +29,7 @@ def get_checkpoint_dir(output_dir):
     return os.path.join(output_dir, 'checkpoints')
 
 def get_weights_path(output_dir):
-    return os.path.join(get_checkpoint_dir(output_dir), f'epoch={epoch}.ckpt')
+    return os.path.join(get_checkpoint_dir(output_dir), f'final.ckpt')
 
 def upload_weights(task, epoch, filepath):
     if UPLOAD_WEIGHTS:
@@ -190,6 +190,7 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
         every_n_epochs=1,
         enable_version_counter=True,
         save_top_k=1,
+        save_weights_only=True,
     )
     lr_monitor = LearningRateMonitor(logging_interval='step')
     
@@ -204,8 +205,6 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
     )
     
     trainer.fit(model_training, train_loader, validation_loader)
-    weights_file = get_weights_path(output_dir)
-    trainer.save_checkpoint(weights_file)
 
     return model
 
