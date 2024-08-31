@@ -59,8 +59,6 @@ def get_input_sequence(batch):
     return batch[0][:INPUT_TOKENS_COUNT]
 
 def compute_output_sequence(model, tokenizer, input_sequence, verbose=True):
-    print(model.device)
-    print(input_sequence.device)
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
     length_to_keep = min(len(output_sequence), get_params()['max_seq_len'])
     next_sequence = output_sequence[-length_to_keep:].to(input_sequence.device)
@@ -110,12 +108,12 @@ def test_model(model, device, data_loader):
 if __name__ == '__main__':
     device = get_device()
     model = get_model()
+    model.to(device)
 
     state_dict = torch.load('output/gigmate.ckpt', map_location=torch.device(device), weights_only=True)['state_dict']
     for key in list(state_dict.keys()):
         state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
     model.load_state_dict(state_dict, strict=True)
-    model.to(device)
 
     data_loader = get_data_loader()
     test_model(model, device, data_loader)

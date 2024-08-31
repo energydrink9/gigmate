@@ -7,7 +7,6 @@ from torchmetrics.text import Perplexity
 from torch.optim.lr_scheduler import CyclicLR
 from gigmate.dataset import get_data_loaders
 from gigmate.model import get_model
-import numpy as np
 from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id, get_random_seed
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
@@ -19,14 +18,22 @@ import os
 OUTPUT_DIRECTORY = 'output'
 LOG_INTERVAL = 5
 LOAD_TASK_WEIGHTS = None#'train seq 256 batch 128 layers 12 heads 8 lr 0.0001 dff 1024'
+UPLOAD_WEIGHTS = True
 
 pad_token_id = get_pad_token_id()
 batch_size = get_params()['batch_size']
 L.seed_everything(get_random_seed())
-#torch.use_deterministic_algorithms(True) # TODO: re-enable
+#torch.use_deterministic_algorithms(True) TODO: Enable this
+
+def get_checkpoint_dir(output_dir):
+    return os.path.join(output_dir, 'checkpoints')
 
 def get_weights_path(output_dir):
-    return os.path.join(output_dir, 'weights.ckpt')
+    return os.path.join(get_checkpoint_dir(output_dir), f'epoch={epoch}.ckpt')
+
+def upload_weights(task, epoch, filepath):
+    if UPLOAD_WEIGHTS:
+        task.upload_artifact(name=f'weights-epoch-{epoch}', artifact_object=filepath, wait_on_upload=False)
 
 def init_clearml_task(params):
     task = Task.init(
@@ -50,6 +57,16 @@ def load_ckpt(model, ckpt_path):
     for key in list(state_dict.keys()):
         state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
     model.load_state_dict(state_dict, strict=False)
+
+class ModelCheckpointUpload(ModelCheckpoint):
+    def __init__(self, task, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.task = task
+    
+    def _save_checkpoint(self, trainer, filepath) -> None:
+        super()._save_checkpoint(trainer, filepath)
+        upload_weights(self.task, trainer.current_epoch, filepath)
+
 
 class ModelTraining(L.LightningModule):
     def __init__(self, model, learning_rate, max_learning_rate, step_size_up, vocab_size):
@@ -144,7 +161,7 @@ class ModelTraining(L.LightningModule):
 
         return loss
 
-def train_model(params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
+def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
 
     print('Loading model...')
     model = get_model(params)
@@ -166,11 +183,13 @@ def train_model(params, device, output_dir, train_loader, validation_loader, ckp
 
     logger = TensorBoardLogger("tb_logs", name="GigMate")
     early_stopping = EarlyStopping('val_loss')
-    checkpoint_callback = ModelCheckpoint(
+    checkpoint_callback = ModelCheckpointUpload(
+        task=task,
         dirpath=os.path.join(output_dir, 'checkpoints'),
-        filename='{epoch}-{val_loss:.2f}',
+        filename='{epoch}',
         every_n_epochs=1,
         enable_version_counter=True,
+        save_top_k=1,
     )
     lr_monitor = LearningRateMonitor(logging_interval='step')
     
@@ -206,9 +225,7 @@ if __name__ == '__main__':
 
     ckpt_path = get_task_artifact(LOAD_TASK_WEIGHTS, 'weights') if LOAD_TASK_WEIGHTS is not None else None
 
-    model = train_model(params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
-
-    task.upload_artifact(name='weights', artifact_object=get_weights_path(OUTPUT_DIRECTORY))
+    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
 
     output_midis = test_model(model, device, validation_loader)
 
