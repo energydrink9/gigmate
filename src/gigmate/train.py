@@ -4,7 +4,6 @@ import torchmetrics
 import torch
 from torch import nn
 from torchmetrics.text import Perplexity
-from torchmetrics import F1Score, Precision, Recall
 from gigmate.dataset import get_data_loaders
 from gigmate.model import get_model
 import numpy as np
@@ -18,6 +17,7 @@ import os
 
 OUTPUT_DIRECTORY = 'output'
 LOG_INTERVAL = 5
+LOAD_TASK_WEIGHTS = 'train seq 256 batch 128 layers 12 heads 8 lr 0.0001 dff 1024'
 
 pad_token_id = get_pad_token_id()
 batch_size = get_params()['batch_size']
@@ -37,8 +37,18 @@ def init_clearml_task(params):
 
     return task
 
+def get_task_artifact(task_name: str, artifact_name: str):
+    preprocess_task = Task.get_task(task_name=task_name, project_name=get_clearml_project_name())
+    return preprocess_task.artifacts[artifact_name].get_local_copy()
+
 def get_inputs_and_targets(batch, device):
     return batch['input_ids'].to(device), batch['labels'].to(device)
+
+def load_ckpt(model, ckpt_path):
+    state_dict = torch.load(ckpt_path, map_location=torch.device(device), weights_only=True)['state_dict']
+    for key in list(state_dict.keys()):
+        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
+    model.load_state_dict(state_dict, strict=False)
 
 class ModelTraining(L.LightningModule):
     def __init__(self, model, learning_rate, vocab_size):
@@ -52,17 +62,8 @@ class ModelTraining(L.LightningModule):
         self.train_accuracy_metric = torchmetrics.classification.Accuracy(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
         self.val_accuracy_metric = torchmetrics.classification.Accuracy(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
 
-        # self.train_perplexity_metric = Perplexity(ignore_index=pad_token_id)
-        # self.val_perplexity_metric = Perplexity(ignore_index=pad_token_id)
-
-        self.train_f1_metric = F1Score(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
-        self.val_f1_metric = F1Score(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
-
-        self.train_precision_metric = Precision(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
-        self.val_precision_metric = Precision(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
-
-        self.train_recall_metric = Recall(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
-        self.val_recall_metric = Recall(task="multiclass", num_classes=vocab_size, ignore_index=pad_token_id)
+        self.train_perplexity_metric = Perplexity(ignore_index=pad_token_id)
+        self.val_perplexity_metric = Perplexity(ignore_index=pad_token_id)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
@@ -74,49 +75,40 @@ class ModelTraining(L.LightningModule):
 
     def log_metric(self, dataset: Literal['train', 'val', 'test'], metric_name: str, value):
         log_on_step = dataset == 'train'
-        self.log(f"{dataset}_{metric_name}", value, on_step=log_on_step, on_epoch=True, prog_bar=metric_name in ['loss', 'accuracy'])
+        self.log(f"{dataset}_{metric_name}", value, on_step=log_on_step, on_epoch=True, prog_bar=metric_name in ['loss', 'accuracy', 'perplexity'])
 
     def compute_train_loss(self, transposed_logits, targets):
         return self.train_loss(transposed_logits, targets)
     
-    def compute_train_metrics(self, transposed_logits, targets):
+    def compute_train_metrics(self, logits, transposed_logits, targets):
         accuracy = self.train_accuracy_metric(transposed_logits, targets)
-        f1_score = self.train_f1_metric(transposed_logits, targets)
-        precision = self.train_precision_metric(transposed_logits, targets)
-        recall = self.train_recall_metric(transposed_logits, targets)
+        perplexity = self.train_perplexity_metric(logits, targets)
 
         return dict({
             'accuracy': accuracy,
-            'f1_score': f1_score,
-            'precision': precision,
-            'recall': recall,
+            'perplexity': perplexity,
         })
 
     def compute_val_loss(self, transposed_logits, targets):
         return self.val_loss(transposed_logits, targets)
     
-    def compute_val_metrics(self, transposed_logits, targets):
+    def compute_val_metrics(self, logits, transposed_logits, targets):
         accuracy = self.val_accuracy_metric(transposed_logits, targets)
-        f1_score = self.val_f1_metric(transposed_logits, targets)
-        precision = self.val_precision_metric(transposed_logits, targets)
-        recall = self.val_recall_metric(transposed_logits, targets)
+        perplexity = self.val_perplexity_metric(logits, targets)
 
         return dict({
             'accuracy': accuracy,
-            'f1_score': f1_score,
-            'precision': precision,
-            'recall': recall,
+            'perplexity': perplexity,
         })
 
     def training_step(self, batch, batch_idx):
         inputs, targets = get_inputs_and_targets(batch, self.device)
         logits = self.model(inputs)
-        transposed_logits = logits.transpose(1, 2)
-        #transposed_logits = logits.permute(0, 2, 1)
+        transposed_logits = logits.transpose(1, 2) # Also equivalent to: transposed_logits = logits.permute(0, 2, 1)
         loss = self.compute_train_loss(transposed_logits, targets)
 
         if batch_idx % LOG_INTERVAL == 0:
-            metrics = self.compute_train_metrics(transposed_logits, targets)
+            metrics = self.compute_train_metrics(logits, transposed_logits, targets)
             self.log_metrics("train", loss=loss, **metrics)
 
         return loss
@@ -128,15 +120,19 @@ class ModelTraining(L.LightningModule):
         loss = self.compute_val_loss(transposed_logits, targets)
 
         if batch_idx % LOG_INTERVAL == 0:
-            metrics = self.compute_val_metrics(transposed_logits, targets)
+            metrics = self.compute_val_metrics(logits, transposed_logits, targets)
             self.log_metrics("val", loss=loss, **metrics)
 
         return loss
 
-def train_model(params, device, output_dir, train_loader, validation_loader):
+def train_model(params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
 
     print('Loading model...')
     model = get_model(params)
+
+    if ckpt_path is not None:
+        load_ckpt(model, ckpt_path)
+
     model.to(device)
 
     if device == 'cuda':
@@ -188,7 +184,9 @@ if __name__ == '__main__':
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
-    model = train_model(params, device, OUTPUT_DIRECTORY, train_loader, validation_loader)
+    ckpt_path = get_task_artifact(LOAD_TASK_WEIGHTS, 'weights') if LOAD_TASK_WEIGHTS is not None else None
+
+    model = train_model(params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
 
     task.upload_artifact(name='weights', artifact_object=get_weights_path(OUTPUT_DIRECTORY))
 

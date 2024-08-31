@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from torchinfo import summary
 import math
 from gigmate.constants import get_params
+from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
 MODEL_FILE_NAME = 'output/model.chk'
 
@@ -22,8 +23,8 @@ class TransformerBlock(nn.Module):
             nn.Linear(dff, d_model)
         )
         self.layernorm1 = nn.LayerNorm(d_model, eps=1e-6)
-        self.layernorm2 = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout1 = nn.Dropout(dropout)
+        self.layernorm2 = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, x, mask):
@@ -43,7 +44,7 @@ class TransformerModel(nn.Module):
         self.max_seq_len = max_seq_len
         self.transformer_layers = nn.ModuleList([TransformerBlock(d_model, num_heads, dff, dropout) for _ in range(num_layers)])
         self.dense = nn.Linear(d_model, vocab_size)
-        self.pos_encoding = positional_encoding(max_seq_len, d_model)
+        self.pos_encoding = PositionalEncoding1D(d_model)
 
     def forward(self, inputs):
 
@@ -51,8 +52,8 @@ class TransformerModel(nn.Module):
         x = self.embedding(inputs)
 
         # Add positional encoding
-        x = x + self.pos_encoding[:, :x.size(1), :].to(x.device)
-        
+        x = Summer(self.pos_encoding)(x).to(x.device)
+
         sequence_length = x.size(1)
         mask = look_ahead_mask(sequence_length).to(x.device)
 
@@ -64,16 +65,6 @@ class TransformerModel(nn.Module):
         x = self.dense(x)
 
         return x
-
-def positional_encoding(seq_len, d_model):
-    position = torch.arange(seq_len, dtype=torch.float).unsqueeze(1)
-    div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float) * -(math.log(10000.0) / d_model))
-    
-    pos_encoding = torch.zeros(1, seq_len, d_model)
-    pos_encoding[0, :, 0::2] = torch.sin(position * div_term)
-    pos_encoding[0, :, 1::2] = torch.cos(position * div_term)
-    
-    return pos_encoding
 
 def get_model(params = get_params()):
     model = TransformerModel(

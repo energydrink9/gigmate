@@ -58,7 +58,9 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
 def get_input_sequence(batch):
     return batch[0][:INPUT_TOKENS_COUNT]
 
-def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
+def compute_output_sequence(model, tokenizer, input_sequence, verbose=True):
+    print(model.device)
+    print(input_sequence.device)
     output_sequence = input_sequence.clone().detach().to(input_sequence.device)
     length_to_keep = min(len(output_sequence), get_params()['max_seq_len'])
     next_sequence = output_sequence[-length_to_keep:].to(input_sequence.device)
@@ -66,7 +68,7 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
     next_note = -1
     i = 0
     while i < OUTPUT_TOKENS_COUNT and next_note != EOS_TOKEN_ID:
-        next_note = predict_next_note(model, next_sequence, temperature=0.5)
+        next_note = predict_next_note(model, next_sequence, temperature=0.3)
         meaning = ''
         try:
             sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
@@ -77,6 +79,8 @@ def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
             print('Error', e)
         if verbose:
             print(f'token {i}: {next_note}, meaning: {meaning}')
+        print(output_sequence.device)
+        print(next_note.device)
         output_sequence = torch.cat([output_sequence, next_note.unsqueeze(0)], 0).to(input_sequence.device)
         next_sequence = torch.cat([next_sequence[1:], next_note.unsqueeze(0)], 0).to(input_sequence.device)
         i += 1
@@ -106,7 +110,8 @@ def test_model(model, device, data_loader):
 if __name__ == '__main__':
     device = get_device()
     model = get_model()
-    state_dict = torch.load('output/gigmate.weights', map_location=torch.device(device), weights_only=True)['state_dict']
+
+    state_dict = torch.load('output/gigmate.ckpt', map_location=torch.device(device), weights_only=True)['state_dict']
     for key in list(state_dict.keys()):
         state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
     model.load_state_dict(state_dict, strict=True)
@@ -114,4 +119,4 @@ if __name__ == '__main__':
 
     data_loader = get_data_loader()
     test_model(model, device, data_loader)
-
+    

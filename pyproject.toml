@@ -37,6 +37,7 @@ dependencies = [
     "torchmetrics==1.4.1",
     "tqdm==4.66.5",
     "tensorboard==2.17.1",
+    "positional-encodings[pytorch]==6.0.3"
 ]
 
 [project.urls]
