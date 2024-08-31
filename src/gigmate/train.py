@@ -18,7 +18,7 @@ import os
 
 OUTPUT_DIRECTORY = 'output'
 LOG_INTERVAL = 5
-LOAD_TASK_WEIGHTS = 'train seq 256 batch 128 layers 12 heads 8 lr 0.0001 dff 1024'
+LOAD_TASK_WEIGHTS = None#'train seq 256 batch 128 layers 12 heads 8 lr 0.0001 dff 1024'
 
 pad_token_id = get_pad_token_id()
 batch_size = get_params()['batch_size']

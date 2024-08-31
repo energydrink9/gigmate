@@ -49,9 +49,13 @@ def split_midi_files():
     if not os.path.exists(BASE_DATASET_DIR):
         os.makedirs(BASE_DATASET_DIR, exist_ok=True)
 
+    print('Downloading raw dataset')
     raw_dataset_dir = download_raw_dataset(BASE_DATASET_DIR)
+    print(f'Downloaded raw dataset to {raw_dataset_dir}')
     tokenizer = get_tokenizer()
+    print(f'Splitting dataset from {raw_dataset_dir} to {SPLIT_DATASET_DIR}')
     split_files(raw_dataset_dir, SPLIT_DATASET_DIR, tokenizer)
+    print(f'Split dataset to {SPLIT_DATASET_DIR}')
     return SPLIT_DATASET_DIR
 
 if __name__ == '__main__':
