@@ -4,12 +4,13 @@ import torchmetrics
 import torch
 from torch import nn
 from torchmetrics.text import Perplexity
+from torch.optim.lr_scheduler import CyclicLR
 from gigmate.dataset import get_data_loaders
 from gigmate.model import get_model
 import numpy as np
 from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id, get_random_seed
 import lightning as L
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.device import get_device
 from gigmate.predict import test_model
@@ -51,10 +52,12 @@ def load_ckpt(model, ckpt_path):
     model.load_state_dict(state_dict, strict=False)
 
 class ModelTraining(L.LightningModule):
-    def __init__(self, model, learning_rate, vocab_size):
+    def __init__(self, model, learning_rate, max_learning_rate, step_size_up, vocab_size):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
+        self.step_size_up = step_size_up
+        self.max_learning_rate = max_learning_rate
 
         self.train_loss = nn.CrossEntropyLoss(ignore_index=pad_token_id)  # Ignore padding index
         self.val_loss = nn.CrossEntropyLoss(ignore_index=pad_token_id)  # Ignore padding index
@@ -67,8 +70,24 @@ class ModelTraining(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        return optimizer
-    
+        step_size_up = self.step_size_up
+
+        scheduler = CyclicLR(
+            optimizer,
+            base_lr=self.learning_rate,
+            max_lr=self.max_learning_rate,
+            step_size_up=step_size_up,
+            mode='triangular2',
+            cycle_momentum=False
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            },
+        }
+
     def log_metrics(self, dataset, **kwargs):
         for (key, value) in kwargs.items():
             self.log_metric(dataset, key, value)
@@ -139,7 +158,7 @@ def train_model(params, device, output_dir, train_loader, validation_loader, ckp
         torch.set_float32_matmul_precision('high')
         model = torch.compile(model)
 
-    model_training = ModelTraining(model, learning_rate = params['learning_rate'], vocab_size=params['vocab_size'])
+    model_training = ModelTraining(model, learning_rate = params['learning_rate'], step_size_up=params['step_size_up'], max_learning_rate=params['max_learning_rate'], vocab_size=params['vocab_size'])
 
     #summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
     print('Loaded model:')
@@ -153,9 +172,10 @@ def train_model(params, device, output_dir, train_loader, validation_loader, ckp
         every_n_epochs=1,
         enable_version_counter=True,
     )
+    lr_monitor = LearningRateMonitor(logging_interval='step')
     
     trainer = L.Trainer(
-        callbacks=[early_stopping, checkpoint_callback],
+        callbacks=[early_stopping, checkpoint_callback, lr_monitor],
         logger=logger,
         max_epochs=params['epochs'],
         limit_train_batches=params['training_set_size'],

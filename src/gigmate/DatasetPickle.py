@@ -108,6 +108,8 @@ class DatasetPickle(_DatasetABC, IterableDataset):
         if len(acc) > 0:
             yield get_item(pad(acc, self.max_seq_len))
 
+    def get_appoximate_number_of_samples(self):
+        return round(self.total_files * self.max_seq_len / 128)
     # def __len__(self) -> int:
     #     """
     #     Return the size of the dataset.

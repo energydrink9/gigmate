@@ -12,9 +12,11 @@ DROPOUT_RATE = 0.1
 
 EPOCHS = 1
 LEARNING_RATE = 0.00003
+MAX_LEARNING_RATE = 0.001
+STEP_SIZE_UP = 5000
 GRADIENT_CLIP = 1.0
 
-BATCH_SIZE = 128
+BATCH_SIZE = 16
 ACCUMULATE_GRAD_BATCHES = 1
 
 TRAINING_SET_SIZE = 1024 * 24
@@ -35,6 +37,8 @@ PARAMS = {
     'max_seq_len': MAX_SEQ_LEN,
     'batch_size': BATCH_SIZE,
     'learning_rate': LEARNING_RATE,
+    'max_learning_rate': MAX_LEARNING_RATE,
+    'step_size_up': STEP_SIZE_UP,
     'accumulate_grad_batches': ACCUMULATE_GRAD_BATCHES,
     'gradient_clip': GRADIENT_CLIP,
     'training_set_size': TRAINING_SET_SIZE,
