@@ -3,10 +3,10 @@ name: Deploy model on Serverless platform
 on:
   push:
     branches:
-      - 'deployment/**'
+      - 'release'
 
 jobs:
-  train-model:
+  build-image:
     runs-on: ubuntu-latest
     env:
       GCP_BUCKET: gigmate-deployment-outputs
@@ -27,24 +27,12 @@ jobs:
     - name: Configure Docker
       run: gcloud auth configure-docker us-central1-docker.pkg.dev
 
-    - name: Check for Dockerfile changes
-      id: dockerfile_changes
-      run: |
-        git fetch origin ${{ github.event.before }}
-        CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
-        if echo "$CHANGED_FILES" | grep -q "Dockerfile.serve" || echo "$CHANGED_FILES" | grep -q "requirements.txt"; then
-          echo "::set-output name=changed::true"
-        else
-          echo "::set-output name=changed::false"
-        fi
-
     - name: Build and push Docker image
-      if: steps.dockerfile_changes.outputs.changed == 'true'
       env:
-        IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/deployment-image:${{ github.sha }}
+        IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gigmate-training/deployment-image
       run: |
-        docker build -t $IMAGE_NAME -f Dockerfile.serve .
-        docker push $IMAGE_NAME
+        docker build -t $IMAGE_NAME:${{ github.sha }} -t $IMAGE_NAME:latest -f Dockerfile.serve .
+        docker push $IMAGE_NAME --all-tags
 
     # - name: Get latest image tag
     #   id: get_tag

@@ -1,14 +1,12 @@
 import itertools
 import torch
 from tqdm import tqdm
-from gigmate.dataset import get_data_loader, get_data_loaders
-from gigmate.model import get_latest_model_checkpoint, get_model
+from gigmate.dataset import get_data_loader
+from gigmate.model import get_latest_model_checkpoint
 from gigmate.tokenizer import get_tokenizer
 from miditok import TokSequence
-from gigmate.constants import get_pad_token_id, get_params
+from gigmate.constants import get_params
 from gigmate.device import get_device
-from basic_pitch.inference import predict
-from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 
 INPUT_TOKENS_COUNT = min(get_params()['max_seq_len'], 127)
 OUTPUT_TOKENS_COUNT = 1000
@@ -136,18 +134,6 @@ def complete_midi(model, midi_file, tokenizer, max_seq_len, start_after_idx = -1
     input_sequence = torch.tensor(score.ids[0: start_after_idx]).to(device)
     create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(output_file_name))
     return compute_output_sequence(model, tokenizer, input_sequence, max_seq_len)
-
-def complete_audio(model, audio_file_path, tokenizer, max_seq_len, start_after_idx = -1, output_file_name = 'output'):
-    import time
-
-    start_time = time.time()
-    model_output, midi_data, note_events = predict(audio_file_path, build_icassp_2022_model_path(FilenameSuffix.onnx))
-    end_time = time.time()
-    print(f"Prediction took {end_time - start_time} seconds.")
-    midi_data.write('output/midi_data.tmp.mid')
-
-    output_sequence = complete_midi(model, 'output/midi_data.tmp.mid', tokenizer, max_seq_len, start_after_idx, output_file_name)
-    create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(output_file_name))
 
 if __name__ == '__main__':
     device = get_device()

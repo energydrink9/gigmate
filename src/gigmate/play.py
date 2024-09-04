@@ -1,7 +1,6 @@
 # In the main function, record audio from the microphone, then, every N milliseconds, convert the audio to a MIDI file using basic pitch.
 # Pass the MIDI file to the model, and get a prediction to complete the MIDI file. Play the completed MIDI file.
 
-from threading import Thread
 import time
 from gigmate.model import get_latest_model_checkpoint
 import sounddevice as sd
