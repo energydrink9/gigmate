@@ -1,16 +1,20 @@
 import itertools
 import torch
-from gigmate.dataset import get_data_loaders
-from gigmate.model import get_model
+from tqdm import tqdm
+from gigmate.dataset import get_data_loader, get_data_loaders
+from gigmate.model import get_latest_model_checkpoint, get_model
 from gigmate.tokenizer import get_tokenizer
 from miditok import TokSequence
-from gigmate.constants import get_params
+from gigmate.constants import get_pad_token_id, get_params
 from gigmate.device import get_device
+from basic_pitch.inference import predict
+from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 
-INPUT_TOKENS_COUNT = min(get_params()['max_seq_len'], 256)
-OUTPUT_TOKENS_COUNT = 5000
+INPUT_TOKENS_COUNT = min(get_params()['max_seq_len'], 127)
+OUTPUT_TOKENS_COUNT = 1000
 NUM_OUTPUT_FILES = 6
 EOS_TOKEN_ID = 2
+SET = 2
 
 def get_input_midi_file_name(i: int) -> str:
     return f'output/input_{i}.mid'
@@ -25,20 +29,16 @@ def sample_from_logits(logits, temperature):
     # If temp is not 0 then next_token is sampled out of logits
     else:
         logits = logits / temperature
-        next_token = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1).squeeze()
+        next_token = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
     return next_token
 
-def predict_next_note(model, input_sequence, temperature=0):
-    with torch.no_grad():
+def predict_next_note(model, input_sequence, next_note_idx = -1, temperature=0):
+    with torch.inference_mode():
         outputs = model(input_sequence.unsqueeze(0))
-        outputs = outputs.squeeze() # remove batch dimension
+        outputs = outputs.squeeze(0) # remove batch dimension
     predicted_tokens = sample_from_logits(outputs, temperature)
-    next_token = predicted_tokens[-1] # take last token
+    next_token = predicted_tokens[next_note_idx] # take last token
     return next_token
-
-def get_data_loader():
-    _, validation_loader, _ = get_data_loaders()
-    return validation_loader
 
 def convert_to_midi(tokenizer, predicted_notes):
     return tokenizer.decode(predicted_notes)
@@ -58,62 +58,102 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
 def get_input_sequence(batch):
     return batch[0][:INPUT_TOKENS_COUNT]
 
-def compute_output_sequence(model, tokenizer, input_sequence, verbose=False):
-    output_sequence = input_sequence.clone().detach().to(input_sequence.device)
-    length_to_keep = min(len(output_sequence), get_params()['max_seq_len'])
-    next_sequence = output_sequence[-length_to_keep:].to(input_sequence.device)
+def compute_output_sequence(model, tokenizer, input_sequence, max_seq_len, verbose=False, include_input=True, output_tokens=OUTPUT_TOKENS_COUNT):
+    def update_next_sequence(seq, note, max_len):
+        if len(seq) == max_len:
+            return torch.cat([seq[1:], note], 0).to(seq.device)
+        else:
+            return torch.cat([seq, note], 0).to(seq.device)
 
-    next_note = -1
-    i = 0
-    while i < OUTPUT_TOKENS_COUNT and next_note != EOS_TOKEN_ID:
-        next_note = predict_next_note(model, next_sequence, temperature=i * 0.2)
+    def decode_and_print(tokenizer, note, tokens):
+        try:
+            sequence = TokSequence(ids=[note.item()], are_ids_encoded=True)
+            tokenizer.decode_token_ids(sequence)
+            tokenizer.complete_sequence(sequence)
+            tokens += sequence.tokens
+            print(f'{tokens}', end='\r')
+        except Exception as e:
+            print('Error', e)
+
+    def process_next_note_sequence(model, next_sequence, output_sequence, max_seq_len):
+        next_note = predict_next_note(model, next_sequence, temperature=0.3)
+        output_sequence = torch.cat([output_sequence, next_note], 0).to(next_sequence.device)
+        next_sequence = update_next_sequence(next_sequence, next_note, max_seq_len)
+        return next_note, next_sequence, output_sequence
+    
+    def get_initial_next_sequence(initial_sequence, max_seq_len, device):
+        length_to_keep = min(len(initial_sequence), max_seq_len)
+        return initial_sequence[-length_to_keep:].to(device)
+
+    model.eval()
+    initial_sequence = input_sequence.clone().detach().to(input_sequence.device)
+
+    if len(initial_sequence) == 0:
         if verbose:
-            meaning = ''
-            try:
-                sequence = TokSequence(ids=[next_note.item()], are_ids_encoded=True)
-                tokenizer.decode_token_ids(sequence)
-                tokenizer.complete_sequence(sequence)
-            except Exception as e:
-                print('Error', e)
-            meaning = sequence.tokens
-            print(f'token {i}: {next_note}, meaning: {meaning}')
+            print('No initial sequence')
+        return torch.tensor([], dtype=input_sequence.dtype).to(input_sequence.device)
 
-        output_sequence = torch.cat([output_sequence, next_note.unsqueeze(0)], 0).to(input_sequence.device)
-        next_sequence = torch.cat([next_sequence[1:], next_note.unsqueeze(0)], 0).to(input_sequence.device)
-        i += 1
+    output_sequence = initial_sequence if include_input else torch.tensor([], dtype=input_sequence.dtype).to(input_sequence.device)
+    next_sequence = get_initial_next_sequence(initial_sequence, max_seq_len, input_sequence.device)
+    next_note = -1
+    tokens = []
+
+    for _ in tqdm(range(output_tokens)):
+        if next_note == EOS_TOKEN_ID:
+            break
+
+        next_note, next_sequence, output_sequence = process_next_note_sequence(model, next_sequence, output_sequence, max_seq_len)
+        if verbose:
+            print(f'Next sequence: {next_sequence}')
+            decode_and_print(tokenizer, next_note, tokens)
 
     if verbose:
         print(f'output: {output_sequence}')
 
-    return output_sequence
+    return output_sequence.detach().cpu().numpy()
 
 def test_model(model, device, data_loader):
+    max_seq_len = get_params()['max_seq_len']
     tokenizer = get_tokenizer()
-    data_items = list(itertools.islice(iter(data_loader), NUM_OUTPUT_FILES))
+    data_items = list(itertools.islice(iter(data_loader), SET * NUM_OUTPUT_FILES, (SET + 1) * NUM_OUTPUT_FILES))
 
     files = []
-    for i in list(range(NUM_OUTPUT_FILES)):
+    for i in list(range(0, NUM_OUTPUT_FILES)):
+        print(f'Generating MIDI output {i}:')
         next_item = data_items[i]['input_ids'].to(device)
         input_sequence = get_input_sequence(next_item).to(device)
-        output_sequence = compute_output_sequence(model, tokenizer, input_sequence)
-
         input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
-        output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
         files.append({ 'name': f'input_{i}', 'file': input_file })
+
+        output_sequence = compute_output_sequence(model, tokenizer, input_sequence, max_seq_len)
+        output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
         files.append({ 'name': f'output_{i}', 'file': output_file })
 
     return files
 
+def complete_midi(model, midi_file, tokenizer, max_seq_len, start_after_idx = -1, output_file_name = 'output'):
+    score = tokenizer.encode(midi_file)
+    input_sequence = torch.tensor(score.ids[0: start_after_idx]).to(device)
+    create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(output_file_name))
+    return compute_output_sequence(model, tokenizer, input_sequence, max_seq_len)
+
+def complete_audio(model, audio_file_path, tokenizer, max_seq_len, start_after_idx = -1, output_file_name = 'output'):
+    import time
+
+    start_time = time.time()
+    model_output, midi_data, note_events = predict(audio_file_path, build_icassp_2022_model_path(FilenameSuffix.onnx))
+    end_time = time.time()
+    print(f"Prediction took {end_time - start_time} seconds.")
+    midi_data.write('output/midi_data.tmp.mid')
+
+    output_sequence = complete_midi(model, 'output/midi_data.tmp.mid', tokenizer, max_seq_len, start_after_idx, output_file_name)
+    create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(output_file_name))
+
 if __name__ == '__main__':
     device = get_device()
-    model = get_model()
-    model.to(device)
+    model = get_latest_model_checkpoint(device)
+    
+    data_loader = get_data_loader('validation')
 
-    state_dict = torch.load('output/gigmate.ckpt', map_location=torch.device(device), weights_only=True)['state_dict']
-    for key in list(state_dict.keys()):
-        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
-    model.load_state_dict(state_dict, strict=True)
-
-    data_loader = get_data_loader()
     test_model(model, device, data_loader)
     

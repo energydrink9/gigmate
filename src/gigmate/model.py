@@ -2,15 +2,13 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torchinfo import summary
-import math
 from gigmate.constants import get_params
 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
 MODEL_FILE_NAME = 'output/model.chk'
 
-def look_ahead_mask(size: int) -> torch.FloatTensor:  
-    mask = torch.triu(torch.ones(size, size), diagonal=1)
-    mask[mask.bool()] = -float('inf')
+def look_ahead_mask(size: int) -> torch.BoolTensor:  
+    mask = torch.triu(torch.ones(size, size), diagonal=1).bool()
     return mask
 
 class TransformerBlock(nn.Module):
@@ -28,7 +26,7 @@ class TransformerBlock(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, x, mask):
-        attn_output, _ = self.mha(x, x, x, attn_mask=mask, is_causal=True)
+        attn_output, _ = self.mha(x, x, x, attn_mask=mask, is_causal=True, need_weights=False)
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)
         ffn_output = self.ffn(out1)
@@ -50,7 +48,7 @@ class TransformerModel(nn.Module):
 
         # Combine embeddings
         x = self.embedding(inputs)
-        
+
         # Add positional encoding
         x = Summer(self.pos_encoding)(x).to(x.device)
 
@@ -78,3 +76,12 @@ def get_model(params = get_params()):
     )
 
     return model
+
+def get_latest_model_checkpoint(device):
+    model = get_model()
+    state_dict = torch.load('output/gigmate.ckpt', map_location=torch.device(device), weights_only=True)['state_dict']
+    for key in list(state_dict.keys()):
+        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    return model;
