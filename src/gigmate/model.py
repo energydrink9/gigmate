@@ -64,7 +64,7 @@ class TransformerModel(nn.Module):
 
         return x
 
-def get_model(params = get_params()):
+def get_model(params = get_params(), checkpoint_path = None, device = None):
     model = TransformerModel(
         params['num_layers'],
         params['d_model'],
@@ -75,13 +75,12 @@ def get_model(params = get_params()):
         params['dropout_rate']
     )
 
-    return model
-
-def get_latest_model_checkpoint(device):
-    model = get_model()
-    state_dict = torch.load('output/gigmate.ckpt', map_location=torch.device(device), weights_only=True)['state_dict']
-    for key in list(state_dict.keys()):
-        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
-    model.load_state_dict(state_dict, strict=True)
     model.to(device)
-    return model;
+
+    if checkpoint_path is not None:
+        state_dict = torch.load(checkpoint_path, map_location=torch.device(device), weights_only=True)['state_dict']
+        for key in list(state_dict.keys()):
+            state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
+        model.load_state_dict(state_dict, strict=True)
+
+    return model

@@ -12,12 +12,12 @@ import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.device import get_device
+from gigmate.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.predict import test_model
 import os
 
 OUTPUT_DIRECTORY = 'output'
 LOG_INTERVAL = 5
-LOAD_TASK_WEIGHTS = None#'train seq 256 batch 128 layers 12 heads 8 lr 0.0001 dff 1024'
 UPLOAD_WEIGHTS = True
 
 pad_token_id = get_pad_token_id()
@@ -44,10 +44,6 @@ def init_clearml_task(params):
     task.connect(params)
 
     return task
-
-def get_task_artifact(task_name: str, artifact_name: str):
-    preprocess_task = Task.get_task(task_name=task_name, project_name=get_clearml_project_name())
-    return preprocess_task.artifacts[artifact_name].get_local_copy()
 
 def get_inputs_and_targets(batch, device):
     return batch['input_ids'].to(device), batch['labels'].to(device)
@@ -164,10 +160,7 @@ class ModelTraining(L.LightningModule):
 def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
 
     print('Loading model...')
-    model = get_model(params)
-
-    if ckpt_path is not None:
-        load_ckpt(model, ckpt_path)
+    model = get_model(params, checkpoint_path=ckpt_path)
 
     model.to(device)
 
@@ -222,9 +215,7 @@ if __name__ == '__main__':
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
-    ckpt_path = get_task_artifact(LOAD_TASK_WEIGHTS, 'weights') if LOAD_TASK_WEIGHTS is not None else None
-
-    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
+    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=get_latest_model_checkpoint_path())
 
     output_midis = test_model(model, device, validation_loader)
 

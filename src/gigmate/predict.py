@@ -2,7 +2,8 @@ import itertools
 import torch
 from tqdm import tqdm
 from gigmate.dataset import get_data_loader
-from gigmate.model import get_latest_model_checkpoint
+from gigmate.model import get_model
+from gigmate.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.tokenizer import get_tokenizer
 from miditok import TokSequence
 from gigmate.constants import get_params
@@ -137,8 +138,7 @@ def complete_midi(model, midi_file, tokenizer, max_seq_len, start_after_idx = -1
 
 if __name__ == '__main__':
     device = get_device()
-    model = get_latest_model_checkpoint(device)
-    
+    model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())    
     data_loader = get_data_loader('validation')
 
     test_model(model, device, data_loader)

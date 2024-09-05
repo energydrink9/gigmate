@@ -4,7 +4,8 @@ import symusic
 import torch
 from gigmate.constants import get_params
 from gigmate.device import get_device
-from gigmate.model import get_latest_model_checkpoint
+from gigmate.model import get_model
+from gigmate.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.predict import compute_output_sequence
 from gigmate.tokenizer import get_tokenizer
 from fastapi import UploadFile, Response
@@ -14,7 +15,7 @@ OUTPUT_TOKENS_COUNT = 15
 class SimpleLitAPI(ls.LitAPI):
     def setup(self, device):
         # Setup the model so it can be called in `predict`.
-        self.model = get_latest_model_checkpoint(device)
+        self.model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())
         self.device = get_device()
         self.tokenizer = get_tokenizer()
         self.max_seq_len = get_params()['max_seq_len']
