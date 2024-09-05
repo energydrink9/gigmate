@@ -4,9 +4,9 @@ WORKDIR /app
 
 COPY . /app
 
-RUN python -m pip install .
-
 RUN echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
+
+RUN python -m pip install .
 
 EXPOSE 8000
 

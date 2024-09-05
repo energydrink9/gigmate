@@ -10,7 +10,7 @@ from gigmate.predict import compute_output_sequence
 from gigmate.tokenizer import get_tokenizer
 from fastapi import UploadFile, Response
 
-OUTPUT_TOKENS_COUNT = 15
+DEFAULT_OUTPUT_TOKENS_COUNT = 40
 
 class SimpleLitAPI(ls.LitAPI):
     def setup(self, device):
@@ -31,7 +31,7 @@ class SimpleLitAPI(ls.LitAPI):
         start_time = time.time()
         # Run the model on the input and return the output.
         input_sequence = torch.tensor(x).to(self.device)
-        prediction = compute_output_sequence(self.model, self.tokenizer, input_sequence, self.max_seq_len, output_tokens=OUTPUT_TOKENS_COUNT)
+        prediction = compute_output_sequence(self.model, self.tokenizer, input_sequence, self.max_seq_len, output_tokens=DEFAULT_OUTPUT_TOKENS_COUNT)
         end_time = time.time()
         print(f"Predicted {len(prediction)} in {end_time - start_time} seconds.")
     

@@ -1,14 +1,17 @@
 # In the main function, record audio from the microphone, then, every N milliseconds, convert the audio to a MIDI file using basic pitch.
 # Pass the MIDI file to the model, and get a prediction to complete the MIDI file. Play the completed MIDI file.
 
+import io
 import time
+
+import requests
 from gigmate.model import get_model
 import sounddevice as sd
 import torch
 from basic_pitch.inference import predict as basic_pitch_predict, Model
 from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.predict import compute_output_sequence, create_midi_from_sequence, get_tokenizer, get_params, get_device
+from gigmate.predict import compute_output_sequence, get_tokenizer, get_params, get_device
 from pretty_midi import PrettyMIDI
 from multiprocessing import Process, Queue
 import numpy as np
@@ -16,9 +19,9 @@ from scipy.io import wavfile
 
 CHANNELS = 1
 SAMPLE_RATE = 22050
-OUTPUT_SAMPLE_RATE = 44100
-OUTPUT_TOKENS_COUNT = 5
-BUFFER_SIZE_IN_SECONDS = 10
+OUTPUT_SAMPLE_RATE = 22050
+OUTPUT_TOKENS_COUNT = 20
+BUFFER_SIZE_IN_SECONDS = 20
 DEBUG = False
 
 tokenizer = get_tokenizer()
@@ -65,42 +68,81 @@ def listen(conversion_queue):
         audio_buffer = np.concatenate(incoming_audio['audio_buffer'], axis=0).reshape(-1, 1).astype(np.float32)
         audio_start_time = incoming_audio['audio_start_time'][0]
 
-        conversion_queue.put((audio_buffer, audio_start_time), block=False)
-        
+        try:
+            conversion_queue.put((audio_buffer, audio_start_time), block=False)
+        except Exception as e:
+            print('Error while inserting audio buffer in queue', e)
+
     while True:
         # Decrease the block size to reduce latency
-        with sd.InputStream(samplerate=SAMPLE_RATE, blocksize=int(SAMPLE_RATE / 10), channels=CHANNELS, latency='low', callback=callback):
-            sd.sleep(10000)
+        try:
+            with sd.InputStream(samplerate=SAMPLE_RATE, blocksize=int(SAMPLE_RATE / 10), channels=CHANNELS, latency='low', callback=callback):
+                sd.sleep(10000)
+        except Exception as e:
+            print(f"Error while listening: {e}")
+            
 
 def convert_audio_to_midi(conversion_queue, prediction_queue):
 
     while True:
+    
+        (audio_buffer, time_zero) = conversion_queue.get()
+        audio_buffer_length_in_seconds = get_audio_buffer_length_in_seconds(audio_buffer)
+        
+        if audio_buffer_length_in_seconds < 0.1:
+            continue
+
+        start_time = time.time()
+        # Write audio buffer to file
+        audio_file = 'output/recorded_audio.wav'
+        wavfile.write(audio_file, SAMPLE_RATE, audio_buffer)
+        _, midi_data, _ = basic_pitch_predict(audio_file, basic_pitch_model)
+        midi_file = 'output/recorded_audio.mid'
+        midi_data.write(midi_file)
+        sequence = tokenizer.encode(midi_file)
+        end_time = time.time()
+        midi_conversion_time = end_time - start_time
+
+        empty_queue(prediction_queue)
+        #prediction_queue.put((sequence.ids, time_zero), block=False)
+        
+        in_memory_file = io.BytesIO()
+        midi_data.write(in_memory_file)
+
         try:
-            (audio_buffer, time_zero) = conversion_queue.get()
-            audio_buffer_length_in_seconds = get_audio_buffer_length_in_seconds(audio_buffer)
-            
-            if audio_buffer_length_in_seconds < 0.1:
-                continue
+            prediction_queue.put((in_memory_file, time_zero), block=False)
+        except Exception as e:
+            print('Error while inserting midi in queue', e)
 
-            start_time = time.time()
-            # Write audio buffer to file
-            audio_file = 'output/recorded_audio.wav'
-            wavfile.write(audio_file, SAMPLE_RATE, audio_buffer)
-            _, midi_data, _ = basic_pitch_predict(audio_file, basic_pitch_model)
-            midi_file = 'output/recorded_audio.mid'
-            midi_data.write(midi_file)
-            sequence = tokenizer.encode(midi_file)
+        if DEBUG:
+            print(f"Midi conversion took {midi_conversion_time} seconds.")
+
+PREDICTION_URL = 'https://tfnzed1i77afp1-8000.proxy.runpod.net/predict'
+
+def predict_client(prediction_queue, playback_queue):
+
+    while True:
+        converted_midi, time_zero = prediction_queue.get()
+        start_time = time.time()
+        midi_file = converted_midi.getvalue()
+        files = {'request': midi_file}
+        try:
+            response = requests.post(PREDICTION_URL + '?output_tokens=2', files=files)
+
             end_time = time.time()
-            midi_conversion_time = end_time - start_time
-
-            empty_queue(prediction_queue)
-            prediction_queue.put((sequence.ids, time_zero), block=False)
-
             if DEBUG:
-                print(f"Midi conversion took {midi_conversion_time} seconds.")
+                print(f"Request took {end_time - start_time} seconds.")
+            midi_file = io.BytesIO(response.content)
+
+            try:
+                playback_queue.put((midi_file, time_zero), block=False)
+            except Exception as e:
+                print('Error while inserting in playback queue', e)
 
         except Exception as e:
-            print('Error', e)
+            print(f"Error while calling prediction API: {e}")
+
+        time.sleep(1)
 
 def predict(prediction_queue, playback_queue):
     device = get_device()
@@ -129,37 +171,35 @@ def playback(playback_queue):
 
         (prediction, time_zero) = prediction_message
 
-        if len(prediction) != 0:
-            print(f'Generating audio from prediction {prediction}...')
-            start_time = time.time()
-            output_midi_file = 'output/completed_midi.mid'
-            create_midi_from_sequence(tokenizer, prediction, output_midi_file)
-            audio = PrettyMIDI(output_midi_file)
-            audio_data = audio.synthesize(fs=OUTPUT_SAMPLE_RATE)
-            wavfile.write('output/completed_audio_wav.wav', SAMPLE_RATE, audio_data)
-            end_time = time.time()
-            audio_synthesis_time = end_time - start_time
-            playback_time = time.time() - time_zero
+        #if len(prediction) != 0:
+        print(f'Generating audio from prediction...')
+        start_time = time.time()
+        #output_midi_file = 'output/completed_midi.mid'
+        #create_midi_from_sequence(tokenizer, prediction, output_midi_file)
+        audio = PrettyMIDI(prediction)
+        audio_data = audio.synthesize(fs=OUTPUT_SAMPLE_RATE)
+        wavfile.write('output/completed_audio_wav.wav', SAMPLE_RATE, audio_data)
+        end_time = time.time()
+        audio_synthesis_time = end_time - start_time
+        playback_time = time.time() - time_zero
 
-            print(audio_data.shape)
-
-            samples_to_remove = int(playback_time * OUTPUT_SAMPLE_RATE)
-            print(samples_to_remove)
-            audio_length_seconds = len(audio_data) / OUTPUT_SAMPLE_RATE
-            print(f'Playback time: {playback_time:.2f} seconds')
-            print(f"Lunghezza dell'audio generato: {audio_length_seconds:.2f} secondi")
-            if DEBUG:
-                print(f"Audio synthesis time: {audio_synthesis_time:.2f} seconds")
-            audio_data = audio_data[samples_to_remove:]
+        samples_to_remove = int(playback_time * OUTPUT_SAMPLE_RATE)
+        print(samples_to_remove)
+        audio_length_seconds = len(audio_data) / OUTPUT_SAMPLE_RATE
+        print(f'Playback time: {playback_time:.2f} seconds')
+        print(f"Lunghezza dell'audio generato: {audio_length_seconds:.2f} secondi")
+        if DEBUG:
+            print(f"Audio synthesis time: {audio_synthesis_time:.2f} seconds")
+        audio_data = audio_data[samples_to_remove:]
+        print(audio_data.shape)
+        remaining_length_seconds = len(audio_data) / OUTPUT_SAMPLE_RATE
+        print(f"Lunghezza rimanente dell'audio dopo la rimozione dei campioni: {remaining_length_seconds:.2f} secondi")
+        
+        if DEBUG:
+            print(f"Playing generated audio...")
+        if remaining_length_seconds > 0:
             wavfile.write('output/completed_audio_wav_short.wav', SAMPLE_RATE, audio_data)
-            print(audio_data.shape)
-            remaining_length_seconds = len(audio_data) / OUTPUT_SAMPLE_RATE
-            print(f"Lunghezza rimanente dell'audio dopo la rimozione dei campioni: {remaining_length_seconds:.2f} secondi")
-            
-            if DEBUG:
-                print(f"Playing generated audio...")
-            if remaining_length_seconds > 0:
-                sd.play(audio_data, SAMPLE_RATE, blocking=True)
+            sd.play(audio_data, SAMPLE_RATE, blocking=True)
 
 def main():
 
@@ -175,7 +215,7 @@ def main():
     converter_thread.daemon = True
     converter_thread.start()
 
-    predictor_thread = Process(target=predict, args=(prediction_queue, playback_queue), name='predictor')
+    predictor_thread = Process(target=predict_client, args=(prediction_queue, playback_queue), name='predictor')
     predictor_thread.daemon = True
     predictor_thread.start()
 
