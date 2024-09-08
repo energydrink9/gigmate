@@ -52,7 +52,7 @@ def test_model(model, device, data_loader):
         input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
         files.append({ 'name': f'input_{i}', 'file': input_file })
 
-        output_sequence = compute_output_sequence(model, tokenizer, input_sequence, max_seq_len=max_seq_len)
+        output_sequence = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len)
         output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
         files.append({ 'name': f'output_{i}', 'file': output_file })
 

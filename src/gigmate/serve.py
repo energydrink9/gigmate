@@ -1,7 +1,6 @@
 import time
 import litserve as ls
 import symusic
-import torch
 from gigmate.constants import get_params
 from gigmate.device import get_device
 from gigmate.model import get_model
@@ -10,8 +9,9 @@ from gigmate.predict import compute_output_sequence
 from gigmate.tokenizer import get_tokenizer
 from fastapi import Request, Response
 
-DEFAULT_OUTPUT_TOKENS_COUNT = 40
-INCLUDE_INPUT = False
+DEFAULT_MAX_OUTPUT_TOKENS_COUNT = 1000
+DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
+INCLUDE_INPUT = True
 
 class SimpleLitAPI(ls.LitAPI):
     def setup(self, device):
@@ -21,17 +21,18 @@ class SimpleLitAPI(ls.LitAPI):
         self.max_seq_len = get_params()['max_seq_len']
 
     def decode_request(self, request: Request):
-        output_tokens_count = int(request['output_tokens_count']) if 'output_tokens_count' in request else DEFAULT_OUTPUT_TOKENS_COUNT
+        max_output_tokens_count = int(request['max_output_tokens_count']) if 'max_output_tokens_count' in request else DEFAULT_MAX_OUTPUT_TOKENS_COUNT
+        max_output_length_in_seconds = int(request['max_output_length_in_seconds']) if 'max_output_length_in_seconds' in request else DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS
         bytes = request['request'].file.read()
         score = symusic.Score.from_midi(bytes)
         sequence = self.tokenizer.encode(score)
-        return sequence.ids, output_tokens_count
+        return sequence.ids, max_output_tokens_count, max_output_length_in_seconds
     
     def predict(self, input):
-        x, output_tokens_count = input
+        x, max_output_tokens_count, max_output_length_in_seconds = input
+        print(max_output_tokens_count, max_output_length_in_seconds)
         start_time = time.perf_counter()
-        input_sequence = torch.tensor(x).to(self.device)
-        prediction = compute_output_sequence(self.model, self.tokenizer, input_sequence, self.max_seq_len, include_input=INCLUDE_INPUT, output_tokens=output_tokens_count)
+        prediction = compute_output_sequence(self.model, self.device, self.tokenizer, x, self.max_seq_len, include_input=INCLUDE_INPUT, max_output_tokens=max_output_tokens_count, max_output_length_in_seconds=max_output_length_in_seconds, verbose=False)
         end_time = time.perf_counter()
         print(f"Predicted {len(prediction)} in {end_time - start_time:.2f} seconds.")
     

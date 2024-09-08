@@ -17,16 +17,16 @@ import soundfile as sf
 CHANNELS = 1
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 22050
-OUTPUT_TOKENS_COUNT = 20
 BUFFER_SIZE_IN_SECONDS = 25
 #PREDICTION_HOST = 'https://liqyj0y9eogrl7-8000.proxy.runpod.net'
 PREDICTION_HOST = 'http://localhost:8000'
 PREDICTION_URL = PREDICTION_HOST + '/predict'
 MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS = 3
 DEBUG = False
-MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 168
+MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 168 # Use audio_delay_measurement.py to estimate
 OUTPUT_BLOCK_SIZE = int(OUTPUT_SAMPLE_RATE / 10)
 OUTPUT_PLAYBACK_DELAY = OUTPUT_BLOCK_SIZE / OUTPUT_SAMPLE_RATE
+MAX_OUTPUT_LENGTH_IN_SECONDS = 5
 
 def measure_time(func):
     def wrapper(*args, **kwargs):
@@ -128,11 +128,11 @@ def convert_audio_to_midi_loop(conversion_queue, prediction_queue):
         except Exception as e:
             print('Error while inserting midi in queue', e)
 
-def predict(converted_midi):
+def predict(converted_midi, max_output_length_in_seconds):
     midi_file = converted_midi.getvalue()
     files = {'request': midi_file}
     try:
-        response = requests.post(PREDICTION_URL, files=files, data={ 'output_tokens_count': OUTPUT_TOKENS_COUNT })
+        response = requests.post(PREDICTION_URL, files=files, data={ 'max_output_length_in_seconds': max_output_length_in_seconds })
         prediction_file = io.BytesIO(response.content)
         return prediction_file
 
@@ -143,7 +143,7 @@ def predict_loop(prediction_queue, playback_queue):
 
     while True:
         converted_midi, record_end_time, converted_midi_length = prediction_queue.get()
-        prediction_file = predict(converted_midi)
+        prediction_file = predict(converted_midi, MAX_OUTPUT_LENGTH_IN_SECONDS)
         try:
             empty_queue(playback_queue)
             playback_queue.put((prediction_file, record_end_time, converted_midi_length), block=False)

@@ -4,13 +4,13 @@ from gigmate.constants import get_params
 from gigmate.midi_conversion import convert_wav_to_midi
 from gigmate.model import get_model
 from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.play import convert_to_int_16, get_audio_buffer_length_in_seconds, get_audio_to_play
+from gigmate.play import convert_to_int_16, get_audio_to_play
 from gigmate.prediction import complete_midi
 from gigmate.tokenizer import get_tokenizer
 from gigmate.device import get_device
 from scipy.io import wavfile
 
-OUTPUT_TOKENS = 20
+OUTPUT_TOKENS = 100
 SAMPLE_RATE = 22050
 device = get_device()
 model = get_model(checkpoint_path=get_latest_model_checkpoint_path(), device=device)
@@ -29,10 +29,12 @@ def test_timing_of_generated_audio():
     midi_from_wav_length = midi_from_wav.get_end_time()
 
     # predict the next tokens
-    prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, output_tokens=OUTPUT_TOKENS, temperature=0)
+    prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, max_output_tokens=OUTPUT_TOKENS, temperature=0)
 
     # get the audio to play
-    generated_audio = convert_to_int_16(get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 0))
+    generated_audio = get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 0)
+    if generated_audio is not None:
+        generated_audio = convert_to_int_16(generated_audio)
 
     # join original and generated audio
     merged_audio = np.concatenate((original_audio, generated_audio))
@@ -70,10 +72,12 @@ def test_timing_of_generated_audio_with_processing_time():
     midi_from_wav_length = midi_from_wav.get_end_time()
 
     # predict the next tokens
-    prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, output_tokens=OUTPUT_TOKENS, temperature=0)
+    prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, max_output_tokens=OUTPUT_TOKENS, temperature=0)
 
     # get the audio to play
-    generated_audio = convert_to_int_16(get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 1.5))
+    generated_audio = get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 1.5)
+    if generated_audio is not None:
+        generated_audio = convert_to_int_16(generated_audio)
 
     # join original and generated audio
     merged_audio = np.concatenate((complete_audio, generated_audio))

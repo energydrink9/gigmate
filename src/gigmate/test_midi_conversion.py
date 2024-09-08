@@ -117,8 +117,8 @@ def predict(prediction_queue, playback_queue):
     if converted_midi is not None:
         input_sequence = converted_midi
         start_time = time.time()
-        input_sequence = torch.tensor(input_sequence).to(device)
-        prediction = compute_output_sequence(model, tokenizer, input_sequence, max_seq_len=max_seq_len, output_tokens=OUTPUT_TOKENS_COUNT)
+        input_sequence = input_sequence
+        prediction = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=OUTPUT_TOKENS_COUNT)
         end_time = time.time()
         prediction_time = end_time - start_time
         score = tokenizer.decode(prediction)
