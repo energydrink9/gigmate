@@ -93,7 +93,7 @@ exclude_lines = [
 [tool.hatch.envs.default.scripts]
 train = "python -m gigmate.train"
 dataset = "python -m gigmate.dataset"
-test = "pytest"
+test = "pytest --disable-warnings"
 process = "python -m gigmate.processing.pipeline"
 
 [tool.hatch.metadata]
