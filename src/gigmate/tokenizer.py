@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import glob
-from miditok import REMI, TokenizerConfig
+from miditok import REMI, MusicTokenizer, TokenizerConfig
 from gigmate.constants import get_params
 
 SAMPLE_COUNT = 5000
@@ -43,7 +43,14 @@ def train_tokenizer(mid_files_directory: str):
     )
     return tokenizer
 
+def get_tokens_to_ids_dict(tokenizer: MusicTokenizer):
+    tokens_to_ids = dict()
+    for byte, tokens in tokenizer._vocab_learned_bytes_to_tokens.items():
+        id = tokenizer._model.token_to_id(byte)
+        for token in tokens:
+            if token in tokens_to_ids:
+                tokens_to_ids[token] = tokens_to_ids[token] + [id]
+            else:
+                tokens_to_ids[token] = [id]
 
-
-
-
+    return tokens_to_ids

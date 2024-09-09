@@ -4,6 +4,7 @@
 import io
 import os
 import time
+from typing import Callable, Optional
 import requests
 from gigmate.audio_utils import generate_random_filename
 from gigmate.midi_conversion import convert_wav_to_midi
@@ -18,17 +19,18 @@ CHANNELS = 1
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 22050
 BUFFER_SIZE_IN_SECONDS = 25
-#PREDICTION_HOST = 'https://liqyj0y9eogrl7-8000.proxy.runpod.net'
-PREDICTION_HOST = 'http://localhost:8000'
+PREDICTION_HOST = 'https://e568kawv1q1tub-8000.proxy.runpod.net'
+#PREDICTION_HOST = 'http://localhost:8000'
 PREDICTION_URL = PREDICTION_HOST + '/predict'
 MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS = 3
 DEBUG = False
 MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 168 # Use audio_delay_measurement.py to estimate
 OUTPUT_BLOCK_SIZE = int(OUTPUT_SAMPLE_RATE / 10)
 OUTPUT_PLAYBACK_DELAY = OUTPUT_BLOCK_SIZE / OUTPUT_SAMPLE_RATE
-MAX_OUTPUT_LENGTH_IN_SECONDS = 5
+MAX_OUTPUT_LENGTH_IN_SECONDS = 8
+MIDI_PROGRAM = -1
 
-def measure_time(func):
+def measure_time(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         start_time = time.time()
         result = func(*args, **kwargs)
@@ -38,17 +40,17 @@ def measure_time(func):
         return result
     return wrapper
 
-def get_audio_buffer_length_in_seconds(audio_buffer):
+def get_audio_buffer_length_in_seconds(audio_buffer: np.ndarray) -> float:
     return len(audio_buffer) / SAMPLE_RATE
 
-def empty_queue(queue):
+def empty_queue(queue: Queue) -> None:
     while not queue.empty():
         try:
             queue.get_nowait()
         except Exception:
             break
 
-def listen(conversion_queue, incoming_audio):
+def listen(conversion_queue: Queue, incoming_audio: Optional[dict]) -> None:
     
     def callback(indata, frames, audio_time, status):
         nonlocal incoming_audio
@@ -93,21 +95,21 @@ def listen(conversion_queue, incoming_audio):
     except Exception as e:
         print(f"Error while listening: {e}")
 
-def listen_loop(conversion_queue):
+def listen_loop(conversion_queue: Queue) -> None:
     incoming_audio = None
 
     while True:
         # Decrease the block size to reduce latency
         listen(conversion_queue, incoming_audio)
             
-def convert_audio_to_midi(audio_buffer):
+def convert_audio_to_midi(audio_buffer: np.ndarray) -> PrettyMIDI:
     audio_file = generate_random_filename(extension='.wav')
     wavfile.write(audio_file, SAMPLE_RATE, audio_buffer)
     midi = convert_wav_to_midi(audio_file)
     os.remove(audio_file)
     return midi
 
-def convert_audio_to_midi_loop(conversion_queue, prediction_queue):
+def convert_audio_to_midi_loop(conversion_queue: Queue, prediction_queue: Queue) -> None:
 
     while True:
         (audio_buffer, record_end_time) = conversion_queue.get()
@@ -128,18 +130,21 @@ def convert_audio_to_midi_loop(conversion_queue, prediction_queue):
         except Exception as e:
             print('Error while inserting midi in queue', e)
 
-def predict(converted_midi, max_output_length_in_seconds):
+def predict(converted_midi: io.BytesIO, max_output_length_in_seconds: float) -> io.BytesIO:
     midi_file = converted_midi.getvalue()
     files = {'request': midi_file}
     try:
-        response = requests.post(PREDICTION_URL, files=files, data={ 'max_output_length_in_seconds': max_output_length_in_seconds })
-        prediction_file = io.BytesIO(response.content)
-        return prediction_file
+        data = {
+            'max_output_length_in_seconds': max_output_length_in_seconds,
+            'midi_program': MIDI_PROGRAM
+        }
+        response = requests.post(PREDICTION_URL, files=files, data=data)
+        return io.BytesIO(response.content)
 
     except Exception as e:
         print(f"Error while calling prediction API: {e}")
 
-def predict_loop(prediction_queue, playback_queue):
+def predict_loop(prediction_queue: Queue, playback_queue: Queue) -> None:
 
     while True:
         converted_midi, record_end_time, converted_midi_length = prediction_queue.get()
@@ -152,16 +157,23 @@ def predict_loop(prediction_queue, playback_queue):
 
         time.sleep(0)
 
-def convert_to_int_16(audio_data):
+def convert_to_int_16(audio_data: np.ndarray) -> np.ndarray:
     max_16bit = 2**15
     raw_data = audio_data * max_16bit
     raw_data = raw_data.astype(np.int16)
     return raw_data
 
-def get_processing_time(record_end_time, current_time):
+def get_processing_time(record_end_time: float, current_time: float) -> float:
     return current_time - record_end_time
 
-def get_audio_to_play(prediction_file, record_end_time: float, input_length: float, sample_rate=OUTPUT_SAMPLE_RATE, playback_delay: float = 0, get_current_time=lambda: time.time()):
+def get_audio_to_play(
+    prediction_file: io.BytesIO,
+    record_end_time: float,
+    input_length: float,
+    sample_rate: int = OUTPUT_SAMPLE_RATE,
+    playback_delay: float = 0,
+    get_current_time: Callable[[], float] = lambda: time.time()
+) -> Optional[np.ndarray]:
     
     audio = PrettyMIDI(prediction_file)
     audio_data = audio.fluidsynth(fs=sample_rate)
@@ -186,7 +198,7 @@ def get_audio_to_play(prediction_file, record_end_time: float, input_length: flo
     return None
 
 
-def playback_loop(playback_queue):
+def playback_loop(playback_queue: Queue) -> None:
     audio_buffer = None
     audio_index = 0
 
@@ -232,7 +244,7 @@ def playback_loop(playback_queue):
             except Exception as e:
                 print('Error while playing audio', e)
 
-def main():
+def main() -> None:
 
     conversion_queue = Queue(maxsize=1)
     prediction_queue = Queue(maxsize=1)

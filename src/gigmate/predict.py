@@ -24,10 +24,8 @@ def get_output_midi_file_name(i: int) -> str:
 def get_input_sequence(batch):
     return batch[0][:NUMBER_OF_INPUT_TOKENS_FOR_PREDICTION]
 
-def get_sequence(prediction):
-    token_ids = prediction.tolist()
-    sequence = TokSequence(ids=token_ids, are_ids_encoded=True)
-    return sequence
+def get_sequence(token_ids):
+    return TokSequence(ids=token_ids, are_ids_encoded=True)
 
 def convert_to_midi(tokenizer, predicted_notes):
     return tokenizer.decode(predicted_notes)
@@ -47,12 +45,12 @@ def test_model(model, device, data_loader):
     files = []
     for i in list(range(0, NUM_OUTPUT_FILES)):
         print(f'Generating MIDI output {i}:')
-        next_item = data_items[i]['input_ids'].to(device)
-        input_sequence = get_input_sequence(next_item).to(device)
+        next_item = data_items[i]['input_ids'].tolist()
+        input_sequence = get_input_sequence(next_item)
         input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
         files.append({ 'name': f'input_{i}', 'file': input_file })
 
-        output_sequence = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len)
+        output_sequence = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=200, max_output_length_in_seconds=20, show_progress=True)
         output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
         files.append({ 'name': f'output_{i}', 'file': output_file })
 

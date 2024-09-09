@@ -38,3 +38,10 @@ def test_loss():
     print(loss_value)
     print('computed: ', log_softmax)
     assert math.isclose(loss_value, log_softmax, rel_tol=1e-05)
+
+def test_remove_forbidden_tokens(mock_model):
+    input_sequence = torch.tensor([[[1, 2, 3]]])
+    result = predict_next_token(mock_model, input_sequence, temperature=0, forbidden_tokens=[1, 2])
+    
+    assert isinstance(result, torch.Tensor)
+    assert result.item() == 0  # argmax of [0.1, 0, 0]
