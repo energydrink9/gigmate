@@ -20,6 +20,7 @@ class SimpleLitAPI(ls.LitAPI):
         self.device = get_device()
         self.tokenizer = get_tokenizer()
         self.max_seq_len = get_params()['max_seq_len']
+        print(f'Using device: {device}')
 
     def decode_request(self, request: Request) -> tuple[list[int], int, float, Optional[int]]:
         max_output_tokens_count = int(request['max_output_tokens_count']) if 'max_output_tokens_count' in request else DEFAULT_MAX_OUTPUT_TOKENS_COUNT

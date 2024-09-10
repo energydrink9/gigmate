@@ -1,0 +1,65 @@
+import pyaudio
+import numpy as np
+import time
+from scipy import signal
+
+class AudioSyncTester:
+    def __init__(self):
+        self.CHUNK = 1024
+        self.FORMAT = pyaudio.paFloat32
+        self.CHANNELS = 1
+        self.RATE = 44100
+        self.RECORD_SECONDS = 5
+
+        self.p = pyaudio.PyAudio()
+        self.stream = self.p.open(format=self.FORMAT,
+                                  channels=self.CHANNELS,
+                                  rate=self.RATE,
+                                  input=True,
+                                  output=True,
+                                  frames_per_buffer=self.CHUNK)
+
+    def generate_test_tone(self, duration, frequency):
+        t = np.linspace(0, duration, int(self.RATE * duration), False)
+        return np.sin(2 * np.pi * frequency * t).astype(np.float32)
+
+    def play_and_record(self):
+        print("Playing test tone and recording from microphone...")
+        test_tone = self.generate_test_tone(self.RECORD_SECONDS, 440)  # 440 Hz tone
+        recorded_audio = np.array([], dtype=np.float32)
+
+        for i in range(0, len(test_tone), self.CHUNK):
+            chunk = test_tone[i:i+self.CHUNK]
+            self.stream.write(chunk.tobytes())
+            recorded_chunk = np.frombuffer(self.stream.read(self.CHUNK), dtype=np.float32)
+            recorded_audio = np.concatenate((recorded_audio, recorded_chunk))
+
+        return test_tone, recorded_audio
+
+    def calculate_delay(self, original, recorded):
+        correlation = signal.correlate(recorded, original, mode='full')
+        delay_samples = np.argmax(correlation) - (len(original) - 1)
+        delay_seconds = delay_samples / self.RATE
+        return delay_seconds
+
+    def test_sync(self):
+        original, recorded = self.play_and_record()
+        delay = self.calculate_delay(original, recorded)
+        print(f"Estimated delay: {delay:.3f} seconds")
+
+        if abs(delay) < 0.1:  # Allow for 100ms delay
+            print("Audio synchronization test PASSED")
+        else:
+            print("Audio synchronization test FAILED")
+
+    def close(self):
+        self.stream.stop_stream()
+        self.stream.close()
+        self.p.terminate()
+
+if __name__ == "__main__":
+    tester = AudioSyncTester()
+    try:
+        tester.test_sync()
+    finally:
+        tester.close()

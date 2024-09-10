@@ -13,22 +13,23 @@ from pretty_midi import PrettyMIDI
 from multiprocessing import Process, Queue
 import numpy as np
 from scipy.io import wavfile
-import soundfile as sf
 
+PREDICTION_HOST = 'https://rqjohth8l0r3q1-8000.proxy.runpod.net'
+#PREDICTION_HOST = 'http://localhost:8000'
+PREDICTION_URL = PREDICTION_HOST + '/predict'
 CHANNELS = 1
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 22050
-BUFFER_SIZE_IN_SECONDS = 25
-PREDICTION_HOST = 'https://e568kawv1q1tub-8000.proxy.runpod.net'
-#PREDICTION_HOST = 'http://localhost:8000'
-PREDICTION_URL = PREDICTION_HOST + '/predict'
-MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS = 3
+BUFFER_SIZE_IN_SECONDS = 18
+MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS = 5
 DEBUG = False
 MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 168 # Use audio_delay_measurement.py to estimate
 OUTPUT_BLOCK_SIZE = int(OUTPUT_SAMPLE_RATE / 10)
 OUTPUT_PLAYBACK_DELAY = OUTPUT_BLOCK_SIZE / OUTPUT_SAMPLE_RATE
-MAX_OUTPUT_LENGTH_IN_SECONDS = 8
-MIDI_PROGRAM = -1
+MAX_OUTPUT_LENGTH_IN_SECONDS = 7
+MAX_OUTPUT_TOKENS_COUNT = 100
+SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'# Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
+MIDI_PROGRAM = None# https://wiki.musink.net/doku.php/midi/instrument
 
 def measure_time(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
@@ -130,15 +131,19 @@ def convert_audio_to_midi_loop(conversion_queue: Queue, prediction_queue: Queue)
         except Exception as e:
             print('Error while inserting midi in queue', e)
 
-def predict(converted_midi: io.BytesIO, max_output_length_in_seconds: float) -> io.BytesIO:
+def predict(converted_midi: io.BytesIO, max_output_length_in_seconds: float, max_output_tokens_count: int, midi_program: int) -> io.BytesIO:
     midi_file = converted_midi.getvalue()
     files = {'request': midi_file}
     try:
         data = {
             'max_output_length_in_seconds': max_output_length_in_seconds,
-            'midi_program': MIDI_PROGRAM
+            'max_output_tokens_count': max_output_tokens_count,
+            'midi_program': midi_program
         }
+        start_time = time.perf_counter()
         response = requests.post(PREDICTION_URL, files=files, data=data)
+        end_time = time.perf_counter()
+        print(f'Inference time: {end_time - start_time:.2f}')
         return io.BytesIO(response.content)
 
     except Exception as e:
@@ -148,14 +153,14 @@ def predict_loop(prediction_queue: Queue, playback_queue: Queue) -> None:
 
     while True:
         converted_midi, record_end_time, converted_midi_length = prediction_queue.get()
-        prediction_file = predict(converted_midi, MAX_OUTPUT_LENGTH_IN_SECONDS)
+        prediction_file = predict(converted_midi, MAX_OUTPUT_LENGTH_IN_SECONDS, MAX_OUTPUT_TOKENS_COUNT, MIDI_PROGRAM)
         try:
             empty_queue(playback_queue)
             playback_queue.put((prediction_file, record_end_time, converted_midi_length), block=False)
         except Exception as e:
             print('Error while inserting in playback queue', e)
 
-        time.sleep(0)
+        time.sleep(0.2)
 
 def convert_to_int_16(audio_data: np.ndarray) -> np.ndarray:
     max_16bit = 2**15
@@ -166,6 +171,21 @@ def convert_to_int_16(audio_data: np.ndarray) -> np.ndarray:
 def get_processing_time(record_end_time: float, current_time: float) -> float:
     return current_time - record_end_time
 
+def get_program_midi(predicted_midi: PrettyMIDI, midi_program: int) -> PrettyMIDI:
+    filtered_midi = PrettyMIDI()
+
+    instrument_code = midi_program if midi_program != -1 else 0
+    
+    print(f'Predicted instruments: {predicted_midi.instruments}')
+    
+    # Iterate through all instruments in the predicted MIDI
+    for instrument in predicted_midi.instruments:
+        if instrument.program == instrument_code:
+            # Add the instrument to the filtered MIDI
+            filtered_midi.instruments.append(instrument)
+
+    return filtered_midi
+
 def get_audio_to_play(
     prediction_file: io.BytesIO,
     record_end_time: float,
@@ -175,22 +195,24 @@ def get_audio_to_play(
     get_current_time: Callable[[], float] = lambda: time.time()
 ) -> Optional[np.ndarray]:
     
-    audio = PrettyMIDI(prediction_file)
-    audio_data = audio.fluidsynth(fs=sample_rate)
+    predicted_midi = PrettyMIDI(prediction_file)
+    predicted_program_midi = get_program_midi(predicted_midi, MIDI_PROGRAM) if MIDI_PROGRAM is not None else predicted_midi
+    sf2_path = SOUNDFONT_PATH if os.path.exists(SOUNDFONT_PATH) else None
+    audio_data = predicted_program_midi.fluidsynth(fs=sample_rate, sf2_path=sf2_path)
     processing_time = get_processing_time(record_end_time, get_current_time())
 
-    playback_start_time = input_length + processing_time - playback_delay
+    playback_start_time = input_length + processing_time + playback_delay
     input_samples_to_remove = int(playback_start_time * OUTPUT_SAMPLE_RATE)
     cut_audio_data = audio_data[input_samples_to_remove:]
     remaining_length_seconds = len(cut_audio_data) / OUTPUT_SAMPLE_RATE
 
-#    if DEBUG:
-    audio_length_seconds = len(audio_data) / OUTPUT_SAMPLE_RATE
-    print(f"Generated audio length: {audio_length_seconds:.2f} seconds")
-    print(f'Input length to remove: {input_length:.2f} seconds')
-    print(f'Processing time to remove: {processing_time:.2f} seconds')
-    print(f'Playback delay: {playback_delay:.2f} seconds')
-    print(f"Remaining length after samples removal: {remaining_length_seconds:.2f} seconds")
+    if DEBUG:
+        audio_length_seconds = len(audio_data) / OUTPUT_SAMPLE_RATE
+        print(f"Generated audio length: {audio_length_seconds:.2f} seconds")
+        print(f'Input length to remove: {input_length:.2f} seconds')
+        print(f'Processing time to remove: {processing_time:.2f} seconds')
+        print(f'Playback delay: {playback_delay:.2f} seconds')
+        print(f"Remaining length after samples removal: {remaining_length_seconds:.2f} seconds")
 
     if remaining_length_seconds > 0:
         return cut_audio_data

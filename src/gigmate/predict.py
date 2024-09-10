@@ -11,7 +11,7 @@ from gigmate.device import get_device
 
 NUMBER_OF_INPUT_TOKENS_FOR_PREDICTION = min(get_params()['max_seq_len'], 127)
 OUTPUT_TOKENS_COUNT = 1000
-NUM_OUTPUT_FILES = 6
+NUM_OUTPUT_FILES = 2
 EOS_TOKEN_ID = 2
 SUBSET_OF_TEST_DATASET_NUMBER = 2
 

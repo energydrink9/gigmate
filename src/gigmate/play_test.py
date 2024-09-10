@@ -29,7 +29,7 @@ def test_timing_of_generated_audio():
     midi_from_wav_length = midi_from_wav.get_end_time()
 
     # predict the next tokens
-    prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, max_output_tokens=OUTPUT_TOKENS, temperature=0)
+    prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=False, max_output_tokens=OUTPUT_TOKENS, temperature=0)
 
     # get the audio to play
     generated_audio = get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 0)

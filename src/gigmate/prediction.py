@@ -4,14 +4,13 @@ import torch
 from tqdm import tqdm
 from gigmate.audio_utils import generate_random_filename
 from pretty_midi import PrettyMIDI
-
 from gigmate.tokenizer import get_tokenizer, get_tokens_to_ids_dict
 
 DEFAULT_MAX_OUTPUT_TOKENS = 1000
 EOS_TOKEN_ID = 0
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 20
-DEFAULT_MIDI_PROGRAM = -1
+DEFAULT_MIDI_PROGRAM = None
 
 def sample_from_logits(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     # If temp is 0 then next_token is the argmax of logits
@@ -97,17 +96,14 @@ def compute_output_sequence(
         return initial_sequence[-length_to_keep:]
 
     model.eval()
-    tokens_to_ids = get_tokens_to_ids_dict(tokenizer)
     initial_sequence = input_sequence.copy()
     initial_sequence_length_in_seconds = get_length_in_seconds(tokenizer, initial_sequence) 
-    forbidden_tokens = []
     
     if midi_program is not None:
         if verbose:
             print(f'Using midi program {midi_program}')
         current_program_change_token = get_program_change_token(midi_program, tokenizer)
         initial_sequence = initial_sequence + [current_program_change_token]
-        forbidden_tokens = get_all_program_change_tokens(tokens_to_ids, except_for_program=midi_program)
 
     output_sequence = initial_sequence.copy() if include_input else []
     next_sequence = torch.tensor(get_initial_next_sequence(initial_sequence, max_seq_len)).to(device)
@@ -120,7 +116,7 @@ def compute_output_sequence(
         if next_note == EOS_TOKEN_ID:
             break
 
-        next_note, next_sequence, new_output_sequence = process_next_note_sequence(model, next_sequence, output_sequence, max_seq_len, temperature, forbidden_tokens=forbidden_tokens)
+        next_note, next_sequence, new_output_sequence = process_next_note_sequence(model, next_sequence, output_sequence, max_seq_len, temperature)
         
         new_output_sequence_length_in_seconds = get_length_in_seconds(tokenizer, new_output_sequence) if include_input else get_length_in_seconds(tokenizer, initial_sequence + output_sequence)
         generated_sequence_length = new_output_sequence_length_in_seconds - initial_sequence_length_in_seconds

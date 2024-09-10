@@ -7,6 +7,7 @@ workerPoolSpecs:
       # acceleratorType: NVIDIA_L4
       # acceleratorCount: 1
     replicaCount: 1
+    location: australia-southeast1  
     containerSpec:
       imageUri: ${IMAGE_NAME}
       args:
