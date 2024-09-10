@@ -1,4 +1,4 @@
-name: Deploy model on AWS
+name: Deploy model on Docker Hub
 
 on:
   push:
@@ -9,35 +9,28 @@ jobs:
   build-image:
     runs-on: ubuntu-latest
     env:
-      AWS_ECR_URI: 634570909930.dkr.ecr.ap-southeast-2.amazonaws.com/gigmate/model
+      DOCKER_HUB_URI: energydrink9/gigmate
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-
     - name: Build and push Docker image
       env:
-        IMAGE_NAME: $AWS_ECR_URI
+        IMAGE_NAME: $DOCKER_HUB_URI
       run: |
-        aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin $AWS_ECR_URI
+        echo "${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}" | docker login --username energydrink9 --password-stdin
         docker build -t "${{ env.IMAGE_NAME }}:${{ github.sha }}" -t "${{ env.IMAGE_NAME }}:latest" -f Dockerfile.serve .
         docker push ${{ env.IMAGE_NAME }} --all-tags
 
     # - name: Get latest image tag
     #   id: get_tag
     #   run: |
-    #     LATEST_TAG=$(aws ecr describe-images --repository-name gigmate --query 'imageDetails[0].imageTag' --output text)
+    #     LATEST_TAG=$(docker pull $DOCKER_HUB_URI | grep -oP '(?<=:)[^ ]+')
     #     echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
     # - name: Submit deployment
     #   env:
-    #     IMAGE_NAME: $AWS_ECR_URI:${{ steps.get_tag.outputs.image_tag }}
+    #     IMAGE_NAME: $DOCKER_HUB_URI:${{ steps.get_tag.outputs.image_tag }}
     #   run: |
-    #     aws ecs update-service --cluster arn:aws:ecs:ap-southeast-2:634570909930:cluster/gigmate --service gigmate-model-inference --force-new-deployment
+    #     # Deployment commands for your service
