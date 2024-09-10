@@ -30,15 +30,14 @@ jobs:
         docker build -t "${{ env.IMAGE_NAME }}:${{ github.sha }}" -t "${{ env.IMAGE_NAME }}:latest" -f Dockerfile.serve .
         docker push ${{ env.IMAGE_NAME }} --all-tags
 
-    - name: Get latest image tag
-      id: get_tag
-      run: |
-        LATEST_TAG=$(aws ecr describe-images --repository-name gigmate --query 'imageDetails[0].imageTag' --output text)
-        echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+    # - name: Get latest image tag
+    #   id: get_tag
+    #   run: |
+    #     LATEST_TAG=$(aws ecr describe-images --repository-name gigmate --query 'imageDetails[0].imageTag' --output text)
+    #     echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-    - name: Submit deployment
-      env:
-        IMAGE_NAME: $AWS_ECR_URI:${{ steps.get_tag.outputs.image_tag }}
-      run: |
-        # Add your deployment command here for AWS
-        echo "Deploying image $IMAGE_NAME"
+    # - name: Submit deployment
+    #   env:
+    #     IMAGE_NAME: $AWS_ECR_URI:${{ steps.get_tag.outputs.image_tag }}
+    #   run: |
+    #     aws ecs update-service --cluster arn:aws:ecs:ap-southeast-2:634570909930:cluster/gigmate --service gigmate-model-inference --force-new-deployment

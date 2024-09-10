@@ -1,4 +1,4 @@
-import pyaudio
+import sounddevice as sd  # Changed from pyaudio to sounddevice
 import numpy as np
 import time
 from scipy import signal
@@ -6,18 +6,13 @@ from scipy import signal
 class AudioSyncTester:
     def __init__(self):
         self.CHUNK = 1024
-        self.FORMAT = pyaudio.paFloat32
+        self.FORMAT = 'float32'  # Updated format for sounddevice
         self.CHANNELS = 1
         self.RATE = 44100
-        self.RECORD_SECONDS = 5
+        self.RECORD_SECONDS = 2
 
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=self.FORMAT,
-                                  channels=self.CHANNELS,
-                                  rate=self.RATE,
-                                  input=True,
-                                  output=True,
-                                  frames_per_buffer=self.CHUNK)
+        self.stream = sd.OutputStream(samplerate=self.RATE, channels=self.CHANNELS, dtype=self.FORMAT, latency='low')
+        self.recording_stream = sd.InputStream(samplerate=self.RATE, channels=self.CHANNELS, dtype=self.FORMAT, latency='low')
 
     def generate_test_tone(self, duration, frequency):
         t = np.linspace(0, duration, int(self.RATE * duration), False)
@@ -28,11 +23,17 @@ class AudioSyncTester:
         test_tone = self.generate_test_tone(self.RECORD_SECONDS, 440)  # 440 Hz tone
         recorded_audio = np.array([], dtype=np.float32)
 
+        self.stream.start()
+        self.recording_stream.start()
+
         for i in range(0, len(test_tone), self.CHUNK):
             chunk = test_tone[i:i+self.CHUNK]
-            self.stream.write(chunk.tobytes())
-            recorded_chunk = np.frombuffer(self.stream.read(self.CHUNK), dtype=np.float32)
+            self.stream.write(chunk)
+            recorded_chunk = self.recording_stream.read(self.CHUNK)[0].flatten()  # Flatten the recorded chunk
             recorded_audio = np.concatenate((recorded_audio, recorded_chunk))
+
+        self.stream.stop()
+        self.recording_stream.stop()
 
         return test_tone, recorded_audio
 
@@ -53,9 +54,8 @@ class AudioSyncTester:
             print("Audio synchronization test FAILED")
 
     def close(self):
-        self.stream.stop_stream()
+        self.stream.stop()
         self.stream.close()
-        self.p.terminate()
 
 if __name__ == "__main__":
     tester = AudioSyncTester()

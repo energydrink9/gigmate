@@ -1,9 +1,7 @@
-import io
 from miditok import TokSequence, MusicTokenizer
 import torch
 from tqdm import tqdm
-from gigmate.audio_utils import generate_random_filename
-from pretty_midi import PrettyMIDI
+from gigmate.audio_utils import calculate_score_length_in_seconds, generate_random_filename
 from gigmate.tokenizer import get_tokenizer, get_tokens_to_ids_dict
 
 DEFAULT_MAX_OUTPUT_TOKENS = 1000
@@ -39,10 +37,7 @@ def predict_next_token(model: torch.nn.Module, input_sequence: torch.Tensor, tem
 
 def get_length_in_seconds(tokenizer: MusicTokenizer, sequence: torch.Tensor) -> float:
     score = tokenizer.decode(sequence)
-    bytes = score.dumps_midi()
-    in_memory_file = io.BytesIO(bytes)
-    midi = PrettyMIDI(in_memory_file)
-    return midi.get_end_time()
+    return calculate_score_length_in_seconds(score)
 
 def get_program_change_token(midi_program: int, tokenizer: MusicTokenizer) -> int:
     token = tokenizer.vocab[f'Program_{midi_program}']

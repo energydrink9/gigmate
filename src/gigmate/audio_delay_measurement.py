@@ -8,7 +8,7 @@ def generate_tone(duration, frequency, sample_rate):
     t = np.linspace(0, duration, int(sample_rate * duration), False)
     return (0.5 * np.sin(2 * np.pi * frequency * t)).astype(np.float32)
 
-def measure_audio_delay(duration=0.5, frequency=1000, sample_rate=44100):
+def measure_audio_delay(duration=1, frequency=1000, sample_rate=44100):
     tone = generate_tone(duration, frequency, sample_rate)
     
     # Prepare the output stream
@@ -35,11 +35,9 @@ def measure_audio_delay(duration=0.5, frequency=1000, sample_rate=44100):
     
     # Find the start of the tone in the recorded audio
     correlation = correlate(recorded_audio, tone)
-    peaks, _ = find_peaks(correlation, height=0.5*np.max(correlation))
+    peaks, _ = find_peaks(correlation, height=0.88*np.max(correlation))
     if len(peaks) > 0:
         start_sample = peaks[0]
-        print(start_sample)
-        print(len(peaks))
     else:
         raise ValueError("Could not detect the tone in the recorded audio")
     
@@ -70,6 +68,5 @@ if playback_delays and total_delays:
     avg_total_delay = sum(total_delays) / len(total_delays)
     print(f"\nAverage playback delay: {avg_playback_delay:.3f} seconds")
     print(f"Average total delay: {avg_total_delay:.3f} seconds")
-    print(f"Estimated hardware delay: {(avg_playback_delay - 0.001):.3f} seconds")
 else:
     print("No valid measurements were obtained.")
