@@ -1,17 +1,14 @@
 # In the main function, record audio from the microphone, then, every N milliseconds, convert the audio to a MIDI file using basic pitch.
 # Pass the MIDI file to the model, and get a prediction to complete the MIDI file. Play the completed MIDI file.
 
-import io
 import time
 
-import requests
 from gigmate.model import get_model
 import sounddevice as sd
-import torch
 from basic_pitch.inference import predict as basic_pitch_predict, Model
 from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
-from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.predict import compute_output_sequence, get_tokenizer, get_params, get_device
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
+from gigmate.domain.predict import compute_output_sequence, get_tokenizer, get_params, get_device
 from pretty_midi import PrettyMIDI
 from multiprocessing import Process, Queue
 import numpy as np

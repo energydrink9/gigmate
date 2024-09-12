@@ -1,7 +1,7 @@
 import torch
 import pytest
 from unittest.mock import Mock, patch
-from gigmate.prediction import predict_next_token
+from gigmate.domain.prediction import predict_next_token
 
 @pytest.fixture
 def mock_model():

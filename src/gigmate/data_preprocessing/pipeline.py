@@ -1,10 +1,10 @@
 from clearml import PipelineDecorator
-from gigmate.constants import get_clearml_project_name
+from gigmate.utils.constants import get_clearml_project_name
 
-from gigmate.constants import get_clearml_project_name
-from gigmate.processing.steps.split import split_midi_files
-from gigmate.processing.steps.augment import augment_midi_files
-from gigmate.processing.steps.tokenize import tokenize_midi_files
+from gigmate.utils.constants import get_clearml_project_name
+from gigmate.data_preprocessing.steps.split import split_midi_files
+from gigmate.data_preprocessing.steps.augment import augment_midi_files
+from gigmate.data_preprocessing.steps.tokenize import tokenize_midi_files
 
 AUGMENT_MIDI_FILES = False
 

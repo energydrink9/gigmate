@@ -3,8 +3,8 @@ from clearml.automation import HyperParameterOptimizer
 from clearml.automation.optuna import OptunaObjective
 from clearml.automation.parameters import UniformIntegerParameterRange, UniformParameterRange
 from clearml.automation.job import LocalClearmlJob
-from train import train_model
-from gigmate.constants import get_clearml_project_name, get_params
+from gigmate.training.train import train_model
+from gigmate.utils.constants import get_clearml_project_name, get_params
 
 def objective(params):
     task = Task.init(

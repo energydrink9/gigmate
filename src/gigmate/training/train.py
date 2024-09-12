@@ -5,15 +5,15 @@ import torch
 from torch import nn
 from torchmetrics.text import Perplexity
 from torch.optim.lr_scheduler import CyclicLR
-from gigmate.dataset import get_data_loaders
-from gigmate.model import get_model
-from gigmate.constants import get_clearml_project_name, get_params, get_pad_token_id, get_random_seed
+from gigmate.dataset.dataset import get_data_loaders
+from gigmate.model.model import get_model
+from gigmate.utils.constants import get_clearml_project_name, get_params, get_pad_token_id, get_random_seed
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
-from gigmate.device import get_device
-from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.predict import test_model
+from gigmate.utils.device import get_device
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
+from gigmate.domain.predict import test_model
 import os
 
 OUTPUT_DIRECTORY = 'output'

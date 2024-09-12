@@ -2,7 +2,6 @@ import sounddevice as sd
 import numpy as np
 import time
 from scipy.signal import correlate, find_peaks
-import soundfile as sf
 
 def generate_tone(duration, frequency, sample_rate):
     t = np.linspace(0, duration, int(sample_rate * duration), False)

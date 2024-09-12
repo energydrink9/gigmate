@@ -1,13 +1,13 @@
 import numpy as np
-from gigmate.audio_utils import generate_random_filename
-from gigmate.constants import get_params
-from gigmate.midi_conversion import convert_wav_to_midi
-from gigmate.model import get_model
-from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.play import convert_to_int_16, get_audio_to_play
-from gigmate.prediction import complete_midi
-from gigmate.tokenizer import get_tokenizer
-from gigmate.device import get_device
+from gigmate.utils.audio_utils import calculate_score_length_in_seconds, convert_audio_to_int_16, generate_random_filename
+from gigmate.utils.constants import get_params
+from gigmate.domain.midi_conversion import convert_wav_to_midi
+from gigmate.model.model import get_model
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
+from gigmate.play import get_audio_to_play
+from gigmate.domain.prediction import complete_midi
+from gigmate.model.tokenizer import get_tokenizer
+from gigmate.utils.device import get_device
 from scipy.io import wavfile
 
 OUTPUT_TOKENS = 100
@@ -25,8 +25,8 @@ def test_timing_of_generated_audio():
 
     midi_from_wav = convert_wav_to_midi(TEST_TIMING_FILE)
     midi_from_wav_file = generate_random_filename(extension='.mid')
-    midi_from_wav.write(midi_from_wav_file)
-    midi_from_wav_length = midi_from_wav.get_end_time()
+    midi_from_wav.dump_midi(midi_from_wav_file)
+    midi_from_wav_length = calculate_score_length_in_seconds(midi_from_wav)
 
     # predict the next tokens
     prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=False, max_output_tokens=OUTPUT_TOKENS, temperature=0)
@@ -34,7 +34,7 @@ def test_timing_of_generated_audio():
     # get the audio to play
     generated_audio = get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 0)
     if generated_audio is not None:
-        generated_audio = convert_to_int_16(generated_audio)
+        generated_audio = convert_audio_to_int_16(generated_audio)
 
     # join original and generated audio
     merged_audio = np.concatenate((original_audio, generated_audio))
@@ -68,8 +68,8 @@ def test_timing_of_generated_audio_with_processing_time():
 
     midi_from_wav = convert_wav_to_midi(TEST_TIMING_FILE)
     midi_from_wav_file = generate_random_filename(extension='.mid')
-    midi_from_wav.write(midi_from_wav_file)
-    midi_from_wav_length = midi_from_wav.get_end_time()
+    midi_from_wav.dump_midi(midi_from_wav_file)
+    midi_from_wav_length = calculate_score_length_in_seconds(midi_from_wav)
 
     # predict the next tokens
     prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, max_output_tokens=OUTPUT_TOKENS, temperature=0)
@@ -77,7 +77,7 @@ def test_timing_of_generated_audio_with_processing_time():
     # get the audio to play
     generated_audio = get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 1.5)
     if generated_audio is not None:
-        generated_audio = convert_to_int_16(generated_audio)
+        generated_audio = convert_audio_to_int_16(generated_audio)
 
     # join original and generated audio
     merged_audio = np.concatenate((complete_audio, generated_audio))

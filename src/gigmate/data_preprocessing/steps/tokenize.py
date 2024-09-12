@@ -8,12 +8,12 @@ import pickle
 import json
 from sklearn.model_selection import train_test_split
 from pathlib import PurePath
-from gigmate.DatasetPickle import ITEMS_PER_FILE
-from gigmate.constants import get_clearml_dataset_version, get_random_seed
-from gigmate.processing.steps.augment import AUGMENTED_DATASET_DIR
-from gigmate.processing.steps.split import SEQUENCE_LENGTH
-from gigmate.tokenizer import get_tokenizer
-from gigmate.processing.process import upload_dataset
+from gigmate.dataset.DatasetPickle import ITEMS_PER_FILE
+from gigmate.utils.constants import get_clearml_dataset_version, get_random_seed
+from gigmate.data_preprocessing.steps.augment import AUGMENTED_DATASET_DIR
+from gigmate.data_preprocessing.steps.split import SEQUENCE_LENGTH
+from gigmate.model.tokenizer import get_tokenizer
+from gigmate.data_preprocessing.process import upload_dataset
 
 FINAL_DATASET_DIR = 'dataset/lakh-midi-clean-final'
 

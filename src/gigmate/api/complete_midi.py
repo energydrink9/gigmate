@@ -2,19 +2,19 @@ import time
 from typing import Optional
 import litserve as ls
 import symusic
-from gigmate.constants import get_params
-from gigmate.device import get_device
-from gigmate.model import get_model
-from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.predict import compute_output_sequence
-from gigmate.tokenizer import get_tokenizer
+from gigmate.utils.constants import get_params
+from gigmate.utils.device import get_device
+from gigmate.model.model import get_model
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
+from gigmate.domain.predict import compute_output_sequence
+from gigmate.model.tokenizer import get_tokenizer
 from fastapi import Request, Response
 
 DEFAULT_MAX_OUTPUT_TOKENS_COUNT = 1000
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
 INCLUDE_INPUT = True
 
-class SimpleLitAPI(ls.LitAPI):
+class CompleteMidiAPI(ls.LitAPI):
     def setup(self, device: str) -> None:
         self.model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())
         self.device = get_device()
@@ -48,6 +48,6 @@ class SimpleLitAPI(ls.LitAPI):
 
 
 if __name__ == "__main__":
-    api = SimpleLitAPI()
-    server = ls.LitServer(api, accelerator="auto")
+    api = CompleteMidiAPI()
+    server = ls.LitServer(api, accelerator="auto", api_path='/complete-midi')
     server.run(port=8000)

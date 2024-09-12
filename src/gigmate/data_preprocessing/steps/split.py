@@ -1,8 +1,7 @@
 from pathlib import Path
 import miditok
-from gigmate.constants import get_params
-from gigmate.tokenizer import get_tokenizer
-from gigmate.processing.process import get_files_in_directory
+from gigmate.model.tokenizer import get_tokenizer
+from gigmate.data_preprocessing.process import get_files_in_directory
 import random
 import kaggle
 import os

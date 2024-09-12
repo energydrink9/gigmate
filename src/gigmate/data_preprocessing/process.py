@@ -1,7 +1,7 @@
 from zipfile import ZipFile
 from clearml import Dataset
 from pathlib import Path
-from gigmate.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_clearml_project_name
+from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_clearml_project_name
 import time
 
 def measure_time(method_name: str, func):

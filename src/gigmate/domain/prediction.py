@@ -1,8 +1,8 @@
 from miditok import TokSequence, MusicTokenizer
 import torch
 from tqdm import tqdm
-from gigmate.audio_utils import calculate_score_length_in_seconds, generate_random_filename
-from gigmate.tokenizer import get_tokenizer, get_tokens_to_ids_dict
+from gigmate.utils.audio_utils import calculate_score_length_in_seconds, generate_random_filename
+from gigmate.model.tokenizer import get_tokenizer, get_tokens_to_ids_dict
 
 DEFAULT_MAX_OUTPUT_TOKENS = 1000
 EOS_TOKEN_ID = 0

@@ -3,8 +3,8 @@ import os
 from tqdm.contrib.concurrent import thread_map
 import multiprocessing
 from miditok import data_augmentation
-from gigmate.processing.process import directory_has_files
-from gigmate.processing.steps.split import SPLIT_DATASET_DIR
+from gigmate.data_preprocessing.process import directory_has_files
+from gigmate.data_preprocessing.steps.split import SPLIT_DATASET_DIR
 
 AUGMENTED_DATASET_DIR = 'dataset/lakh-midi-clean-augmented'
 

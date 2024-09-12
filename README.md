@@ -17,7 +17,7 @@ python -m gigmate.test
 
 Create dataset
 ```
-python -m gigmate.processing.pipeline
+python -m gigmate.data_preprocessing.pipeline
 ```
 
 
@@ -40,12 +40,6 @@ Jupyter
 ### Auth
 
 CLI:
-
-Run the following command to add gigmate to your path.
-
-```sh
-export PYTHONPATH="~/Dev/gigmate:$PYTHONPATH"
-```
 
 Run the following command to authenticate.
 

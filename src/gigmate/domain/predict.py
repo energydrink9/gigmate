@@ -1,16 +1,14 @@
 import itertools
-
 from miditok import TokSequence
-from gigmate.dataset import get_data_loader
-from gigmate.model import get_model
-from gigmate.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.prediction import compute_output_sequence
-from gigmate.tokenizer import get_tokenizer
-from gigmate.constants import get_params
-from gigmate.device import get_device
+from gigmate.dataset.dataset import get_data_loader
+from gigmate.model.model import get_model
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
+from gigmate.domain.prediction import compute_output_sequence
+from gigmate.model.tokenizer import get_tokenizer
+from gigmate.utils.constants import get_params
+from gigmate.utils.device import get_device
 
 NUMBER_OF_INPUT_TOKENS_FOR_PREDICTION = min(get_params()['max_seq_len'], 127)
-OUTPUT_TOKENS_COUNT = 1000
 NUM_OUTPUT_FILES = 5
 EOS_TOKEN_ID = 2
 SUBSET_OF_TEST_DATASET_NUMBER = 2
@@ -56,9 +54,10 @@ def test_model(model, device, data_loader):
 
     return files
 
+
 if __name__ == '__main__':
     device = get_device()
-    model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())    
+    model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())
     data_loader = get_data_loader('validation')
 
     test_model(model, device, data_loader)

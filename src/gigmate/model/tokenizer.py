@@ -2,7 +2,7 @@ import os
 import numpy as np
 import glob
 from miditok import REMI, MusicTokenizer, TokenizerConfig
-from gigmate.constants import get_params
+from gigmate.utils.constants import get_params
 
 SAMPLE_COUNT = 5000
 TOKENIZER_MODEL_FILE = 'tokenizer_model'

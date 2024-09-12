@@ -43,5 +43,5 @@ jobs:
           cd /tmp/gigmate
           python -m pip install .
           echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
-          python -m gigmate.processing.pipeline
+          python -m gigmate.data_preprocessing.pipeline
       image: python:3.12

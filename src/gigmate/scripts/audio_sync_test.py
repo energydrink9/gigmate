@@ -1,6 +1,5 @@
 import sounddevice as sd  # Changed from pyaudio to sounddevice
 import numpy as np
-import time
 from scipy import signal
 
 class AudioSyncTester:

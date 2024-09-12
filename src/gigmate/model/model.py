@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torchinfo import summary
-from gigmate.constants import get_params
+from gigmate.utils.constants import get_params
 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
 MODEL_FILE_NAME = 'output/model.chk'
