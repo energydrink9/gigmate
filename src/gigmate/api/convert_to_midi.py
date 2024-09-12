@@ -42,4 +42,4 @@ class ConvertToMidiAPI(ls.LitAPI):
 if __name__ == "__main__":
     api = ConvertToMidiAPI()
     server = ls.LitServer(api, accelerator="auto", api_path='/convert-to-midi')
-    server.run(port=8001)
+    server.run(port=8002)

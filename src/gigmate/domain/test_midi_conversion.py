@@ -8,7 +8,7 @@ import sounddevice as sd
 from basic_pitch.inference import predict as basic_pitch_predict, Model
 from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.domain.predict import compute_output_sequence, get_tokenizer, get_params, get_device
+from gigmate.domain.prediction import complete_sequence, get_tokenizer, get_params, get_device
 from pretty_midi import PrettyMIDI
 from multiprocessing import Process, Queue
 import numpy as np
@@ -115,7 +115,7 @@ def predict(prediction_queue, playback_queue):
         input_sequence = converted_midi
         start_time = time.time()
         input_sequence = input_sequence
-        prediction = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=OUTPUT_TOKENS_COUNT)
+        prediction = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=OUTPUT_TOKENS_COUNT)
         end_time = time.time()
         prediction_time = end_time - start_time
         score = tokenizer.decode(prediction)

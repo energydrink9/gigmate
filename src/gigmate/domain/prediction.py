@@ -48,7 +48,7 @@ def get_program_change_token(midi_program: int, tokenizer: MusicTokenizer) -> in
 def get_all_program_change_tokens(tokens_to_ids: dict[str, list[int]], except_for_program: int = None) -> list[int]:
     return [id for token, ids in tokens_to_ids.items() for id in ids if token.startswith('Program') and not token == f'Program_{except_for_program}']
 
-def compute_output_sequence(
+def complete_sequence(
     model: torch.nn.Module,
     device: torch.device,
     tokenizer: MusicTokenizer,
@@ -141,13 +141,8 @@ def complete_midi(
 ) -> str:
     score = tokenizer.encode(midi_file)
     input_sequence = score.ids
-    output_sequence = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, midi_program=midi_program, verbose=verbose, include_input=include_input, max_output_tokens=max_output_tokens, max_output_length_in_seconds=max_output_length_in_seconds, temperature=temperature)
+    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, midi_program=midi_program, verbose=verbose, include_input=include_input, max_output_tokens=max_output_tokens, max_output_length_in_seconds=max_output_length_in_seconds, temperature=temperature)
     midi_output = tokenizer.decode(output_sequence)
     temp_file = generate_random_filename(extension='.mid')
     midi_output.dump_midi(temp_file)
     return temp_file
-
-if __name__ == '__main__':
-    tokenizer = get_tokenizer()
-    d = get_tokens_to_ids_dict(tokenizer)
-    print('eos', d.get('BOS_None'))

@@ -21,4 +21,4 @@ RUN python -m pip install --no-cache-dir .
 
 EXPOSE 8000
 
-CMD ["python", "-m", "gigmate.api.convert_to_midi"]
+CMD ["python", "-m", "gigmate.api.complete_audio"]

@@ -3,7 +3,7 @@ from miditok import TokSequence
 from gigmate.dataset.dataset import get_data_loader
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.domain.prediction import compute_output_sequence
+from gigmate.domain.prediction import complete_sequence
 from gigmate.model.tokenizer import get_tokenizer
 from gigmate.utils.constants import get_params
 from gigmate.utils.device import get_device
@@ -48,7 +48,7 @@ def test_model(model, device, data_loader):
         input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
         files.append({ 'name': f'input_{i}', 'file': input_file })
 
-        output_sequence = compute_output_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=200, max_output_length_in_seconds=20, show_progress=True)
+        output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=200, max_output_length_in_seconds=20, show_progress=True)
         output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
         files.append({ 'name': f'output_{i}', 'file': output_file })
 

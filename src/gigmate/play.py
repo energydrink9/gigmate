@@ -7,16 +7,12 @@ from gigmate.utils.audio_utils import convert_audio_to_int_16
 import sounddevice as sd
 from pretty_midi import PrettyMIDI
 from multiprocessing import Process, Queue
-from threading import Thread
 import numpy as np
 from pydub import AudioSegment
 
-CONVERSION_HOST = 'https://sh1qkip4z0etci-8001.proxy.runpod.net'
-#CONVERSION_HOST = 'http://localhost:8001'
-CONVERSION_URL = CONVERSION_HOST + '/convert-to-midi'
 PREDICTION_HOST = 'https://qqu8ody09ec7l4-8000.proxy.runpod.net'
-#PREDICTION_HOST = 'http://localhost:8000'
-PREDICTION_URL = PREDICTION_HOST + '/complete-midi'
+#PREDICTION_HOST = 'http://localhost:8001'
+PREDICTION_URL = PREDICTION_HOST + '/complete-audio'
 CHANNELS = 1
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 22050
@@ -118,98 +114,27 @@ def listen_loop(conversion_queue: Queue) -> None:
     incoming_audio = None
 
     listen(conversion_queue, incoming_audio)
-            
-# def convert_audio_to_midi(audio_buffer: np.ndarray) -> PrettyMIDI:
-#     audio_file = generate_random_filename(extension='.wav')
-#     wavfile.write(audio_file, SAMPLE_RATE, audio_buffer)
-#     midi = convert_wav_to_midi(audio_file)
-#     os.remove(audio_file)
-#     return midi
 
-# def convert_audio_to_midi_loop(conversion_queue: Queue, prediction_queue: Queue) -> None:
-
-#     while True:
-#         (audio_buffer, record_end_time) = conversion_queue.get()
-#         audio_buffer_length_in_seconds = get_audio_buffer_length_in_seconds(audio_buffer)
-    
-#         if audio_buffer_length_in_seconds < MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS:
-#             continue
-    
-#         score = convert_audio_to_midi(audio_buffer)
-#         converted_midi_length = calculate_score_length_in_seconds(score)
-#         in_memory_file = io.BytesIO()
-#         score.dump_midi(in_memory_file)
-
-#         try:
-#             empty_queue(prediction_queue)
-#             prediction_queue.put((in_memory_file, record_end_time, converted_midi_length), block=False)
-#             time.sleep(0)
-#         except Exception as e:
-#             print('Error while inserting midi in prediction queue', e)
-
-def convert_audio_to_midi_loop(conversion_queue: Queue, prediction_queue: Queue) -> None:
-
+def predict_loop(conversion_queue: Queue, playback_queue: Queue) -> None:
     while True:
         (audio_buffer, record_end_time) = conversion_queue.get()
 
         try:
             files = {'request': audio_buffer}
+            data = {
+                'max_output_length_in_seconds': MAX_OUTPUT_LENGTH_IN_SECONDS,
+                'max_output_tokens_count': MAX_OUTPUT_TOKENS_COUNT,
+                'midi_program': MIDI_PROGRAM
+            }
             start_time = time.perf_counter()
-            response = requests.post(CONVERSION_URL, files=files)
+            response = requests.post(PREDICTION_URL, data=data, files=files)
+            converted_midi = io.BytesIO(response.content)
+            converted_midi_length = PrettyMIDI(converted_midi).get_end_time()
             end_time = time.perf_counter()
-            print(f'Conversion time: {end_time - start_time:.2f}')
-            in_memory_file = io.BytesIO(response.content)
-            converted_midi_length = PrettyMIDI(in_memory_file).get_end_time()
-
-            try:
-                empty_queue(prediction_queue)
-                prediction_queue.put((in_memory_file, record_end_time, converted_midi_length), block=False)
-                time.sleep(0)
-            except Exception as e:
-                print('Error while inserting midi in prediction queue', e)
-
-        except Exception as e:
-            print(f"Error while calling conversion API: {e}")
-
-def predict(converted_midi: io.BytesIO, max_output_length_in_seconds: float, max_output_tokens_count: int, midi_program: int) -> io.BytesIO:
-    midi_file = converted_midi.getvalue()
-    files = {'request': midi_file}
-    try:
-        data = {
-            'max_output_length_in_seconds': max_output_length_in_seconds,
-            'max_output_tokens_count': max_output_tokens_count,
-            'midi_program': midi_program
-        }
-        start_time = time.perf_counter()
-        response = requests.post(PREDICTION_URL, files=files, data=data)
-        end_time = time.perf_counter()
-        print(f'Inference time: {end_time - start_time:.2f}')
-        return io.BytesIO(response.content)
-
-    except Exception as e:
-        print(f"Error while calling prediction API: {e}")
-
-def predict_thread(converted_midi, record_end_time, converted_midi_length, playback_queue):
-    prediction_file = predict(converted_midi, MAX_OUTPUT_LENGTH_IN_SECONDS, MAX_OUTPUT_TOKENS_COUNT, MIDI_PROGRAM)
-    empty_queue(playback_queue)
-    playback_queue.put((prediction_file, record_end_time, converted_midi_length), block=False)    
-
-def predict_loop(prediction_queue: Queue, playback_queue: Queue) -> None:
-
-    while True:
-        
-        try:
-            predict_threads = []
-            for _ in range(2):
-                converted_midi, record_end_time, converted_midi_length = prediction_queue.get()
-                thread = Thread(target=predict_thread, args=(converted_midi, record_end_time, converted_midi_length, playback_queue))
-                thread.daemon = True
-                thread.start()
-                predict_threads.append(thread)
-                time.sleep(2)
-
-            for thread in predict_threads:
-                thread.join()
+            prediction_file = io.BytesIO(response.content)
+            print(f'Completion time: {end_time - start_time:.2f}')
+            empty_queue(playback_queue)
+            playback_queue.put((prediction_file, record_end_time, converted_midi_length), block=False)    
 
         except Exception as e:
             print('Error while performing prediction loop', e)
@@ -317,18 +242,13 @@ def playback_loop(playback_queue: Queue) -> None:
 def main() -> None:
 
     conversion_queue = Queue(maxsize=1)
-    prediction_queue = Queue(maxsize=1)
     playback_queue = Queue(maxsize=1)
     
     listen_thread = Process(target=listen_loop, args=(conversion_queue,), name='listen')
     listen_thread.daemon = True
     listen_thread.start()
 
-    converter_thread = Process(target=convert_audio_to_midi_loop, args=(conversion_queue, prediction_queue), name='converter')
-    converter_thread.daemon = True
-    converter_thread.start()
-
-    predictor_thread = Process(target=predict_loop, args=(prediction_queue, playback_queue), name='predictor')
+    predictor_thread = Process(target=predict_loop, args=(conversion_queue, playback_queue), name='predictor')
     predictor_thread.daemon = True
     predictor_thread.start()
 
@@ -337,7 +257,6 @@ def main() -> None:
     playback_thread.start()
 
     listen_thread.join()
-    converter_thread.join()
     predictor_thread.join()
     playback_thread.join()
 
