@@ -10,22 +10,22 @@ from multiprocessing import Process, Queue
 import numpy as np
 from pydub import AudioSegment
 
-PREDICTION_HOST = 'https://qqu8ody09ec7l4-8000.proxy.runpod.net'
-#PREDICTION_HOST = 'http://localhost:8001'
+#PREDICTION_HOST = 'https://kib693pk4z7dei-8000.proxy.runpod.net'
+PREDICTION_HOST = 'http://localhost:8000'
 PREDICTION_URL = PREDICTION_HOST + '/complete-audio'
 CHANNELS = 1
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 22050
-BUFFER_SIZE_IN_SECONDS = 20
+BUFFER_SIZE_IN_SECONDS = 12
 MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS = 5
 MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 225 # Use audio_delay_measurement.py to estimate
 OUTPUT_BLOCK_SIZE = int(OUTPUT_SAMPLE_RATE / 10)
 OUTPUT_PLAYBACK_DELAY = OUTPUT_BLOCK_SIZE / OUTPUT_SAMPLE_RATE
-MAX_OUTPUT_LENGTH_IN_SECONDS = 10
-MAX_OUTPUT_TOKENS_COUNT = 90
+MAX_OUTPUT_LENGTH_IN_SECONDS = 20
+MAX_OUTPUT_TOKENS_COUNT = 100
 SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'# Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
 MIDI_PROGRAM = None# https://wiki.musink.net/doku.php/midi/instrument
-DEBUG = False
+DEBUG = True
 
 def measure_time(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
@@ -82,21 +82,21 @@ def listen(conversion_queue: Queue, incoming_audio: Optional[dict]) -> None:
         record_end_time = incoming_audio['record_end_time'][-1]
         audio_buffer = convert_audio_to_int_16(np.concatenate(incoming_audio['audio_buffer'], axis=0))
 
-        mp3_file = io.BytesIO()
+        audio_file = io.BytesIO()
         audio_segment = AudioSegment(
             audio_buffer.tobytes(),
             frame_rate=SAMPLE_RATE,
             sample_width=2,
             channels=CHANNELS
         )
-        audio_segment.export(mp3_file, format='mp3')
+        audio_segment.export(audio_file, format='ogg', codec='libvorbis')
 
         try:
             audio_buffer_length_in_seconds = get_audio_buffer_length_in_seconds(audio_buffer)
     
             if audio_buffer_length_in_seconds >= MINIMUM_AUDIO_BUFFER_LENGTH_IN_SECONDS:                
                 empty_queue(conversion_queue)
-                conversion_queue.put((mp3_file, record_end_time), block=False)
+                conversion_queue.put((audio_file, record_end_time), block=False)
 
         except Exception as e:
             print('Error while inserting audio buffer in conversion queue')
@@ -118,7 +118,7 @@ def listen_loop(conversion_queue: Queue) -> None:
 def predict_loop(conversion_queue: Queue, playback_queue: Queue) -> None:
     while True:
         (audio_buffer, record_end_time) = conversion_queue.get()
-
+        
         try:
             files = {'request': audio_buffer}
             data = {
@@ -169,6 +169,7 @@ def get_audio_to_play(
 ) -> Optional[np.ndarray]:
     
     predicted_midi = PrettyMIDI(prediction_file)
+    predicted_midi.write('output/prova123.mid')
     predicted_program_midi = get_program_midi(predicted_midi, MIDI_PROGRAM) if MIDI_PROGRAM is not None else predicted_midi
     sf2_path = SOUNDFONT_PATH if os.path.exists(SOUNDFONT_PATH) else None
     audio_data = predicted_program_midi.fluidsynth(fs=sample_rate, sf2_path=sf2_path)
@@ -223,7 +224,6 @@ def playback_loop(playback_queue: Queue) -> None:
     with sd.OutputStream(samplerate=OUTPUT_SAMPLE_RATE, channels=CHANNELS, callback=callback, blocksize=OUTPUT_BLOCK_SIZE, latency='low'):
 
         playback_delay = OUTPUT_PLAYBACK_DELAY + MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS / 1000
-
         while True:
             prediction_message = playback_queue.get()
 
@@ -244,21 +244,21 @@ def main() -> None:
     conversion_queue = Queue(maxsize=1)
     playback_queue = Queue(maxsize=1)
     
-    listen_thread = Process(target=listen_loop, args=(conversion_queue,), name='listen')
-    listen_thread.daemon = True
-    listen_thread.start()
+    listener = Process(target=listen_loop, args=(conversion_queue,), name='listen')
+    listener.daemon = True
+    listener.start()
 
-    predictor_thread = Process(target=predict_loop, args=(conversion_queue, playback_queue), name='predictor')
-    predictor_thread.daemon = True
-    predictor_thread.start()
+    predictor = Process(target=predict_loop, args=(conversion_queue, playback_queue), name='predictor')
+    predictor.daemon = True
+    predictor.start()
 
-    playback_thread = Process(target=playback_loop, args=(playback_queue,), name='playback')
-    playback_thread.daemon = True
-    playback_thread.start()
+    player = Process(target=playback_loop, args=(playback_queue,), name='playback')
+    player.daemon = True
+    player.start()
 
-    listen_thread.join()
-    predictor_thread.join()
-    playback_thread.join()
+    listener.join()
+    predictor.join()
+    player.join()
 
 if __name__ == '__main__':
     main()

@@ -1,4 +1,5 @@
 import random
+import time
 import numpy as np
 from symusic import Score, Note
 from pretty_midi import PrettyMIDI
@@ -15,7 +16,7 @@ def generate_random_dirname(prefix: str = 'tmp_', dir: str = '/tmp') -> str:
     Returns:
         str: A random directory name.
     """
-    return f'{os.join(dir, prefix)}{random.randint(0, 1000000)}'
+    return f'{os.path.join(dir, prefix)}{random.randint(0, 1000000)}'
 
 def generate_random_filename(prefix: str = 'tmp_', extension: str = '.wav', dir: str = '/tmp') -> str:
     """
@@ -31,42 +32,40 @@ def generate_random_filename(prefix: str = 'tmp_', extension: str = '.wav', dir:
     """
     return f'{os.path.join(dir, prefix)}{random.randint(0, 1000000)}{extension}'
 
-def calculate_mp3_length_in_seconds(file_path: str) -> float:
+def calculate_audio_length_in_seconds(file_path: str) -> float:
     """
-    Calculates the length of an MP3 file in seconds.
+    Calculates the length of an audio file in seconds.
 
     Args:
-        file_path (str): The path to the MP3 file.
+        file_path (str): The path to the audio file.
 
     Returns:
-        float: The length of the MP3 file in seconds.
+        float: The length of the audio file in seconds.
     """
-    return len(AudioSegment.from_mp3(file_path)) / 1000
+    return len(AudioSegment.from_file(file_path)) / 1000
 
-def calculate_wav_length_in_seconds(file_path: str) -> float:
+def cut_audio(file_path: str, end: int, out_file_path: str) -> None:
     """
-    Calculates the length of a WAV file in seconds.
+    Cuts an audio wav file up to a specified end time and saves it to a new file.
 
     Args:
-        file_path (str): The path to the WAV file.
-
-    Returns:
-        float: The length of the WAV file in seconds.
-    """
-    return len(AudioSegment.from_wav(file_path)) / 1000
-
-def cut_mp3(file_path: str, end: int, out_file_path: str) -> None:
-    """
-    Cuts an MP3 file up to a specified end time and saves it to a new file.
-
-    Args:
-        file_path (str): The path to the original MP3 file.
+        file_path (str): The path to the original wav file.
         end (int): The end time in milliseconds.
-        out_file_path (str): The path where the cut MP3 file will be saved.
+        out_file_path (str): The path where the cut file will be saved.
     """
-    cut = AudioSegment.from_mp3(file_path)[0:end]
-    cut.export(out_file_path, format='mp3')
-    return out_file_path
+    start_time = time.perf_counter()
+    audio = AudioSegment.from_wav(file_path)
+    if len(audio) > end:
+        cut = audio[0:end]
+        end_time = time.perf_counter()
+        print(f'Audio segment cut time: {end_time-start_time}')
+        start_time = time.perf_counter()
+        cut.export(out_file_path + '.wav', format='wav')
+        end_time = time.perf_counter()
+        print(f'Audio segment export time: {end_time-start_time}')
+        return out_file_path
+    else:
+        return file_path
 
 def calculate_score_length_in_seconds(score: Score) -> float:
     """

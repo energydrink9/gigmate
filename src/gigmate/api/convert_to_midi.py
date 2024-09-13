@@ -6,10 +6,6 @@ from gigmate.utils.audio_utils import generate_random_filename
 from fastapi import Request, Response
 from symusic import Score
 
-DEFAULT_MAX_OUTPUT_TOKENS_COUNT = 1000
-DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
-INCLUDE_INPUT = True
-
 class ConvertToMidiAPI(ls.LitAPI):
     def setup(self, devices):
         pass

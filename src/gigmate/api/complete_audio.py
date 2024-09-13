@@ -2,7 +2,6 @@ import time
 from typing import Optional
 import typing
 import litserve as ls
-import symusic
 from gigmate.domain.midi_conversion import convert_audio_to_midi
 from gigmate.utils.audio_utils import generate_random_filename
 from gigmate.utils.constants import get_params
@@ -34,11 +33,10 @@ class CompleteAudioAPI(ls.LitAPI):
     
     def predict(self, input: tuple[typing.Any, int, float, Optional[int]]) -> list:
         audio_data, max_output_tokens_count, max_output_length_in_seconds, midi_program = input
-        file_path = generate_random_filename(extension='.mp3')
+        file_path = generate_random_filename(extension='.ogg')
         with open(file_path, 'wb') as file:
             file.write(audio_data)
             score = convert_audio_to_midi(file_path)
-            score = symusic.Score.from_midi(bytes)
             sequence = self.tokenizer.encode(score).ids
             start_time = time.perf_counter()
             prediction = complete_sequence(self.model, self.device, self.tokenizer, sequence, self.max_seq_len, midi_program=midi_program, include_input=INCLUDE_INPUT, max_output_tokens=max_output_tokens_count, max_output_length_in_seconds=max_output_length_in_seconds, verbose=False)

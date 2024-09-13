@@ -14,15 +14,14 @@ def complete_midi_track(score: Score, model, device):
     score = tokenizer(score)
     input_sequence = score.ids
     input_sequence = input_sequence[:4096]
-    create_midi_from_sequence(tokenizer, input_sequence, 'output/input_nirvana.mid')
+    create_midi_from_sequence(tokenizer, input_sequence, 'output/input_creep.mid')
     output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=300, max_output_length_in_seconds=10, show_progress=True)
-    create_midi_from_sequence(tokenizer, output_sequence, 'output/output_nirvana.mid')
+    create_midi_from_sequence(tokenizer, output_sequence, 'output/output_creep.mid')
 
 def complete_track(file, model, device):
-    score = convert_audio_to_midi(file)
-    complete_midi_track(score, model, device)
+    convert_audio_to_midi(file)
 
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())    
-    complete_track('output/nirvana_cut.mp3', model, device)
+    complete_track('output/test_creep_cut.ogg', model, device)

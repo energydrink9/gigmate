@@ -4,14 +4,13 @@ from multiprocessing.pool import ThreadPool
 import os
 import shlex
 import shutil
-import time
 from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 from basic_pitch.inference import predict as basic_pitch_predict, Model
 import demucs.separate
 from scipy.io import wavfile
 from pretty_midi import PrettyMIDI
 from symusic import Score
-from gigmate.utils.audio_utils import calculate_mp3_length_in_seconds, cut_mp3, generate_random_dirname, generate_random_filename, pad_score_to_length
+from gigmate.utils.audio_utils import calculate_audio_length_in_seconds, cut_audio, generate_random_dirname, generate_random_filename, pad_score_to_length
 
 OUTPUT_SAMPLE_RATE = 22050
 DEFAULT_PROGRAM_CODE = 0
@@ -113,8 +112,8 @@ def separate_audio_tracks(filename: str) -> tuple[str, list[tuple[str, str]]]:
         and a list of tuples where each tuple contains the instrument name of a track and its file path.
     """
     temp_dir = generate_random_dirname()
-    demucs.separate.main(shlex.split(f'--mp3 -n htdemucs_6s --out "{temp_dir}" "{filename}"'))
-    return (temp_dir, [(os.path.splitext(os.path.basename(filename))[0], filename) for filename in glob.glob(os.path.join(temp_dir, '**', '*.mp3'), recursive=True)])
+    demucs.separate.main(shlex.split(f'-n htdemucs_6s --overlap 0.12 -j 4 --out "{temp_dir}" "{filename}"'))
+    return (temp_dir, [(os.path.splitext(os.path.basename(filename))[0], filename) for filename in glob.glob(os.path.join(temp_dir, '**', '*.wav'), recursive=True)])
 
 def merge_midi_files(files: list[tuple[str, Score]]) -> Score:
     """
@@ -130,7 +129,6 @@ def merge_midi_files(files: list[tuple[str, Score]]) -> Score:
     Returns:
         symusic.Score: The merged MIDI file.
     """
-
     def update_track(instrument_name, track):
         track.program = get_program_code(instrument_name)
         track.is_drum = instrument_name == 'drums'
@@ -141,7 +139,6 @@ def merge_midi_files(files: list[tuple[str, Score]]) -> Score:
     score.tempos = files[0][1].tempos
     tracks = [update_track(instrument_name, track) for (instrument_name, score) in files for track in score.tracks]
     score.tracks = tracks
-
     return score
 
 def _convert_entry(entry):
@@ -161,15 +158,15 @@ def convert_audio_to_midi(file_path: str) -> Score:
     Returns:
         symusic.Score: The merged MIDI file.
     """
-    original_audio_length = calculate_mp3_length_in_seconds(file_path)
+    original_audio_length = calculate_audio_length_in_seconds(file_path)
     temp_dir, separate_tracks = separate_audio_tracks(file_path)
     # Cut tracks to original audio length to ensure length consistency
-    cut_tracks = [(instrument_name, cut_mp3(track, int(original_audio_length * 1000), track)) for instrument_name, track in separate_tracks]
-
+    cut_tracks = [(instrument_name, cut_audio(track, int(original_audio_length * 1000), track)) for instrument_name, track in separate_tracks]
     try:
-        midi_tracks = map(_convert_entry, cut_tracks)
+        midi_tracks = list(ThreadPool(min(len(cut_tracks), multiprocessing.cpu_count())).map(_convert_entry, cut_tracks))
         merged_score = merge_midi_files(midi_tracks)
         score = pad_score_to_length(merged_score, original_audio_length) # Pad score to ensure length consistency with original audio
         return score
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+    
