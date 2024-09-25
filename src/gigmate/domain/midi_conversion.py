@@ -1,16 +1,18 @@
-import glob
 import multiprocessing
-from multiprocessing.pool import ThreadPool
 import os
-import shlex
 import shutil
+import tempfile
+import numpy as np
 from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 from basic_pitch.inference import predict as basic_pitch_predict, Model
-import demucs.separate
 from scipy.io import wavfile
 from pretty_midi import PrettyMIDI
-from symusic import Score
-from gigmate.utils.audio_utils import calculate_audio_length_in_seconds, cut_audio, generate_random_dirname, generate_random_filename, pad_score_to_length
+import spleeter.separator
+from symusic.types import Score, Track
+from symusic import Score as ScoreFactory
+from concurrent.futures import ThreadPoolExecutor
+from gigmate.utils.audio_utils import calculate_audio_length_in_seconds, convert_audio_to_float_32, convert_audio_to_int_16, cut_audio, cut_score_to_length, generate_random_dirname, generate_random_filename, pad_score_to_length
+from pydub import AudioSegment
 
 OUTPUT_SAMPLE_RATE = 22050
 DEFAULT_PROGRAM_CODE = 0
@@ -61,14 +63,16 @@ def convert_wav_to_midi(file_path: str) -> Score:
         symusic.Score: The MIDI object created.
     """
     global basic_pitch_model
-    
     _, midi_data, _ = basic_pitch_predict(file_path, basic_pitch_model, onset_threshold=2.0, minimum_note_length=80)
-    temp_file = generate_random_filename(extension='.mid')
-    midi_data.write(temp_file)
-    midi = Score(temp_file)
-    os.remove(temp_file)
-    
-    return midi
+    audio_length = calculate_audio_length_in_seconds(file_path)
+
+    with tempfile.NamedTemporaryFile(suffix='.mid', delete=True) as temp_file:
+        midi_data.write(temp_file.name)
+        temp_file.flush()
+        midi = ScoreFactory(temp_file.name)
+        midi = cut_score_to_length(midi, audio_length)
+        midi = pad_score_to_length(midi, audio_length)
+        return midi
 
 def get_program_code(instrument_name: str) -> int:
     """
@@ -96,26 +100,38 @@ def get_program_code(instrument_name: str) -> int:
         case _:
             return DEFAULT_PROGRAM_CODE
 
-def separate_audio_tracks(filename: str) -> tuple[str, list[tuple[str, str]]]:
+def separate_audio_tracks(audio_file: AudioSegment, device: str, separator: spleeter.separator.Separator) -> list[tuple[str, AudioSegment]]:
     """
     Separates an audio file into its individual tracks using the Demucs model.
 
     This function takes an audio file as input, separates it into its individual tracks using the Demucs model,
-    and returns the directory where the separated tracks are stored along with a list of tuples containing the
-    instrument name of each track and its corresponding file path.
+    and a list of tuples containing the instrument name of each track and the audio.
 
     Args:
-        filename (str): The path to the audio file to be separated.
+        audio_file (AudioSegment): The audio file to be separated.
 
     Returns:
-        tuple[str, list[tuple[str, str]]]: A tuple containing the directory path where the separated tracks are stored,
-        and a list of tuples where each tuple contains the instrument name of a track and its file path.
+        tuple[str, list[tuple[str, AudioSegment]]]: A list of tuples containing the stems (instrument, track)
     """
-    temp_dir = generate_random_dirname()
-    demucs.separate.main(shlex.split(f'-n htdemucs_6s --overlap 0.12 -j 4 --out "{temp_dir}" "{filename}"'))
-    return (temp_dir, [(os.path.splitext(os.path.basename(filename))[0], filename) for filename in glob.glob(os.path.join(temp_dir, '**', '*.wav'), recursive=True)])
+    # The separator requires a tensor composed of 2 channels
+    two_channels_audio_file = AudioSegment.from_mono_audiosegments(audio_file, audio_file) if audio_file.channels == 1 else audio_file
+    tensor = convert_audio_to_float_32(np.array(two_channels_audio_file.get_array_of_samples())).reshape((-1, 2)) # reshape 2, -1 for demuc
+    #tensor = torch.tensor(convert_audio_to_float_32(np.array(two_channels_audio_file.get_array_of_samples()))).reshape((2, -1))
+    #_, stems = separator.separate_tensor(tensor, audio_file.frame_rate)
+    stems = separator.separate(tensor)
 
-def merge_midi_files(files: list[tuple[str, Score]]) -> Score:
+    def get_audio_segment_demucs(track):
+        data = convert_audio_to_int_16(track.detach().cpu().numpy().reshape(-1))
+        data = convert_audio_to_int_16(track.reshape(-1))
+        return AudioSegment(data=data, sample_width=2, frame_rate=separator.model.samplerate, channels=separator.model.audio_channels)
+
+    def get_audio_segment_spleeter(track):
+        data = convert_audio_to_int_16(track.reshape(-1))
+        return AudioSegment(data=data, sample_width=2, frame_rate=audio_file.frame_rate, channels=audio_file.channels)
+
+    return [(instrument_name, get_audio_segment_spleeter(track)) for instrument_name, track in stems.items()]
+
+def merge_midis(midis: list[tuple[str, Score]]) -> Score:
     """
     Merges multiple MIDI files into a single one.
 
@@ -129,23 +145,25 @@ def merge_midi_files(files: list[tuple[str, Score]]) -> Score:
     Returns:
         symusic.Score: The merged MIDI file.
     """
-    def update_track(instrument_name, track):
+    def update_track(instrument_name: str, track: Track):
         track.program = get_program_code(instrument_name)
         track.is_drum = instrument_name == 'drums'
         track.name = instrument_name.capitalize()
         return track
-    
-    score = Score.from_tpq(files[0][1].tpq)
-    score.tempos = files[0][1].tempos
-    tracks = [update_track(instrument_name, track) for (instrument_name, score) in files for track in score.tracks]
+    first_score = midis[0][1]
+    score = ScoreFactory.from_tpq(first_score.tpq)
+    score.tempos = first_score.tempos
+    tracks = [update_track(instrument_name, track) for (instrument_name, midi_score) in midis for track in list(midi_score.tracks)]
     score.tracks = tracks
     return score
 
-def _convert_entry(entry):
-    instrument_name, file_path = entry
+def _convert_stem(instrument_name: str, file_path:str):
     return instrument_name, convert_wav_to_midi(file_path)
 
-def convert_audio_to_midi(file_path: str) -> Score:
+def convert_stems_to_midi(stems: dict[str, str], executor) -> dict[str, Score]:
+    return dict(executor.map(lambda item: _convert_stem(item[0], item[1]), stems.items()))
+
+def convert_audio_to_midi(audio_file: AudioSegment, device: str, separator) -> Score:
     """
     Converts an audio file to MIDI format.
 
@@ -158,15 +176,17 @@ def convert_audio_to_midi(file_path: str) -> Score:
     Returns:
         symusic.Score: The merged MIDI file.
     """
-    original_audio_length = calculate_audio_length_in_seconds(file_path)
-    temp_dir, separate_tracks = separate_audio_tracks(file_path)
+    temp_dir = generate_random_dirname()
+    os.makedirs(temp_dir, exist_ok=True)
+    original_audio_length = len(audio_file) / 1000
+    separate_tracks = separate_audio_tracks(audio_file, device, separator)
     # Cut tracks to original audio length to ensure length consistency
-    cut_tracks = [(instrument_name, cut_audio(track, int(original_audio_length * 1000), track)) for instrument_name, track in separate_tracks]
+    executor = ThreadPoolExecutor(min(len(cut_tracks), multiprocessing.cpu_count()))
+    cut_tracks = dict({instrument_name: cut_audio(track, int(original_audio_length * 1000), os.path.join(temp_dir, instrument_name + '.wav')) for instrument_name, track in separate_tracks})
     try:
-        midi_tracks = list(ThreadPool(min(len(cut_tracks), multiprocessing.cpu_count())).map(_convert_entry, cut_tracks))
-        merged_score = merge_midi_files(midi_tracks)
+        midi_tracks = convert_stems_to_midi(cut_tracks, executor)
+        merged_score = merge_midis(list(midi_tracks.items()))
         score = pad_score_to_length(merged_score, original_audio_length) # Pad score to ensure length consistency with original audio
         return score
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-    

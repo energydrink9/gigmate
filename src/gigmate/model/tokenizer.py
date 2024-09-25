@@ -8,11 +8,11 @@ SAMPLE_COUNT = 5000
 TOKENIZER_MODEL_FILE = 'tokenizer_model'
 TOKENIZER_CONFIGURATION_PATH = 'tokenizer.json'
 
-def new_tokenizer():
+def new_tokenizer() -> MusicTokenizer:
     tokenizer = REMI(TokenizerConfig(use_programs=True, use_rests = True, use_tempos=True, use_time_signatures=True, use_chords=True))
     return tokenizer
 
-def get_tokenizer():
+def get_tokenizer() -> MusicTokenizer:
     tokenizer = new_tokenizer()
     tokenizer = REMI(params = TOKENIZER_CONFIGURATION_PATH)
     if os.path.exists(TOKENIZER_MODEL_FILE):

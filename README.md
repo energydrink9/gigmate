@@ -23,26 +23,21 @@ python -m gigmate.data_preprocessing.pipeline
 
 ### Run
 
-
-Jupyter
-
-```
-!pip install clearml
-!pip install torch
-!pip install torchinfo
-!pip install torchmetrics
-!pip install git+https://github.com/Yikai-Liao/symusic
-!pip install git+https://github.com/Natooz/MidiTok
-!pip install scikit-learn
-!pip install lightning
+```sh
+python -m pip install .
+python -m gigmate.train # To start training
+python -m gigmate.test # To start evaluation
+python -m gigmate.api.complete_audio # To start the API
+python -m gigmate.play # To start the client
 ```
 
-### Auth
+### Environment Variables
 
 CLI:
 
-Run the following command to authenticate.
+Make sure the following environment variables are set before running the application (replace the <> tokens with the actual secrets):
 
 ```sh
-source clearml-auth.sh
+export CLEARML_API_ACCESS_KEY=<YOUR_CLEARML_API_ACCESS_KEY_HERE>
+export CLEARML_API_SECRET_KEY=<YOUR_CLEARML_API_SECRET_KEY_HERE>
 ```

@@ -1,18 +1,14 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
+[tool.poetry]
 name = "gigmate"
-dynamic = ["version"]
-description = 'MIDI generation'
+description = "MIDI generation"
 readme = "README.md"
-requires-python = ">=3.10,<3.11"
+version = "0.1.0"  # Set a static version or use versioning tool later
+authors = ["Michele Lugano <michele.lugano9@gmail.com>"]
 license = "MIT"
 keywords = []
-authors = [
-  { name = "Michele Lugano", email = "michele.lugano9@gmail.com" },
-]
+repository = "https://github.com/energydrink9/gigmate"
+homepage = "https://github.com/energydrink9/gigmate#readme"
+documentation = "https://github.com/energydrink9/gigmate#readme"
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
@@ -22,93 +18,74 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
-]
-dependencies = [
-    "clearml==1.16.3",
-    "kaggle==1.6.17",
-    "lightning==2.4.0",
-    "miditok @ git+https://github.com/Natooz/MidiTok@2281c4ffc58030176fa2dbd25fb5e8d62345908b",
-    "symusic==0.5.2",
-    "numpy<2.0.0",
-    "scipy==1.14.1",
-    "scikit_learn==1.5.2",
-    "torch==2.4.0",
-    "torchinfo==1.8.0",
-    "torchmetrics==1.4.1",
-    "tqdm==4.66.5",
-    "tensorboard==2.15.1",
-    "tensorflow==2.15.1",
-    "tensorrt; platform_system != 'Darwin'",
-    "positional-encodings[pytorch]==6.0.3",
-    "pyfluidsynth==1.3.3",
-    "litserve==0.2.2",
-    "onnx",
-    "uvloop",
-    "python-multipart==0.0.9",
-    "sounddevice==0.5.0",
-    "pretty-midi==0.2.10",
-    "positional_encodings==6.0.3",
-    "pydub==0.25.1",
-    "demucs==4.0.1",
-    "basic_pitch==0.4.0",
-    "basic-pitch[onnx]==0.4.0"
+  "Programming Language :: Python :: Implementation :: PyPy"
 ]
 
-[project.urls]
-Documentation = "https://github.com/Michele Lugano/gigmate#readme"
-Issues = "https://github.com/Michele Lugano/gigmate/issues"
-Source = "https://github.com/Michele Lugano/gigmate"
+[tool.poetry.dependencies]
+python = ">=3.10,<3.11"
+clearml = "1.16.3"
+kaggle = "1.6.17"
+lightning = "2.4.0"
+miditok = { git = "https://github.com/Natooz/MidiTok.git", rev = "2281c4ffc58030176fa2dbd25fb5e8d62345908b" }
+symusic = "0.5.2"
+numpy = "<2.0.0"
+scipy = "1.14.1"
+scikit-learn = "1.5.2"
+torch = "2.1.0"
+torchaudio = "2.1.0"
+torchinfo = "1.8.0"
+torchmetrics = "1.4.1"
+tqdm = "4.66.5"
+tensorboard = "2.15.1"
+tensorflow = "2.15.1"
+tensorrt = { version = "*", markers = "platform_system != 'Darwin'" }
+"positional-encodings" = {extras = ["pytorch"], version = "^6.0.3"}
+pyfluidsynth = "1.3.3"
+litserve = "0.2.2"
+onnx = "*"
+uvloop = "*"
+"python-multipart" = "0.0.9"
+sounddevice = "0.5.0"
+"pretty-midi" = "0.2.10"
+"positional_encodings" = "6.0.3"
+pydub = "0.25.1"
+demucs = { git = "https://github.com/adefossez/demucs.git", rev = "b9ab48cad45976ba42b2ff17b229c071f0df9390" }
+"basic_pitch" = {extras = ["onnx"], version = "^0.4.0"}
+#spleeter = "2.3.2"
+reactivex = { git = "https://github.com/ReactiveX/RxPY.git", rev = "be64ef3d759d38f4e0198704fe6578cff96ea21c" }
+websockets = "12.0"
+"websocket-client" = "1.8.0"
+soundfile = "*"
+pyaudio = "^0.2.14"
 
-[project.optional-dependencies]
-test = [
-    "pytest",
-    "pytest-cov",
-]
+[tool.poetry.extras]
+test = ["pytest", "pytest-cov"]
 
-[tool.hatch.version]
-path = "src/gigmate/__about__.py"
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
-[tool.hatch.envs.types]
-extra-dependencies = [
-  "mypy>=1.0.0",
-]
-[tool.hatch.envs.types.scripts]
-check = "mypy --install-types --non-interactive {args:src/gigmate tests}"
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = ["src"]
+testpaths = ["src"]
 
 [tool.coverage.run]
-source_pkgs = ["src/gigmate"]
+source = ["src/gigmate"]
 branch = true
 parallel = true
-omit = [
-  "src/gigmate/__about__.py",
-]
+omit = ["src/gigmate/__about__.py"]
 
 [tool.coverage.paths]
-gigmate = ["src/gigmate", "*/gigmate/src/gigmate"]
-tests = ["tests", "*/gigmate/tests"]
+source = ["src/gigmate", "*/gigmate/src/gigmate"]
+tests = ["tests", "*/gigmate/**/*_test.py"]
 
 [tool.coverage.report]
 exclude_lines = [
   "no cov",
   "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
+  "if TYPE_CHECKING:"
 ]
 
-
-[tool.hatch.envs.default]
-
-[tool.hatch.envs.default.scripts]
-train = "python -m gigmate.train"
-dataset = "python -m gigmate.dataset"
-test = "pytest --disable-warnings"
-process = "python -m gigmate.processing.pipeline"
-
-[tool.hatch.metadata]
-allow-direct-references = true
-
-[tool.pytest.ini_options]
-addopts = "--import-mode=importlib"
-pythonpath = [
-  "src"
-]
+[tool.poetry.scripts]
+train = "gigmate.train:main"

@@ -1,10 +1,13 @@
 import random
-import time
+from typing import Optional
 import numpy as np
-from symusic import Score, Note
+from symusic.types import Score
+from symusic import Score as ScoreFactory, Note as NoteFactory
 from pretty_midi import PrettyMIDI
 import os
 from pydub import AudioSegment
+
+SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'# Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
 
 def generate_random_dirname(prefix: str = 'tmp_', dir: str = '/tmp') -> str:
     """
@@ -44,7 +47,7 @@ def calculate_audio_length_in_seconds(file_path: str) -> float:
     """
     return len(AudioSegment.from_file(file_path)) / 1000
 
-def cut_audio(file_path: str, end: int, out_file_path: str) -> None:
+def cut_audio(audio: AudioSegment, end: int, out_file_path: str) -> None:
     """
     Cuts an audio wav file up to a specified end time and saves it to a new file.
 
@@ -53,19 +56,11 @@ def cut_audio(file_path: str, end: int, out_file_path: str) -> None:
         end (int): The end time in milliseconds.
         out_file_path (str): The path where the cut file will be saved.
     """
-    start_time = time.perf_counter()
-    audio = AudioSegment.from_wav(file_path)
     if len(audio) > end:
-        cut = audio[0:end]
-        end_time = time.perf_counter()
-        print(f'Audio segment cut time: {end_time-start_time}')
-        start_time = time.perf_counter()
-        cut.export(out_file_path + '.wav', format='wav')
-        end_time = time.perf_counter()
-        print(f'Audio segment export time: {end_time-start_time}')
-        return out_file_path
-    else:
-        return file_path
+        audio = audio[0:end]
+
+    audio.export(out_file_path, format='wav')
+    return out_file_path
 
 def calculate_score_length_in_seconds(score: Score) -> float:
     """
@@ -105,6 +100,10 @@ def calculate_score_length_in_seconds(score: Score) -> float:
 
     return total_seconds
 
+def calculate_audio_length(audio: np.ndarray, sample_rate: int) -> float:
+    duration = len(audio) / sample_rate
+    return duration
+
 def convert_pretty_midi_to_score(pretty_midi: PrettyMIDI) -> Score:
     """
     Converts a PrettyMIDI object to a Score object.
@@ -118,7 +117,7 @@ def convert_pretty_midi_to_score(pretty_midi: PrettyMIDI) -> Score:
     temp_file = generate_random_filename(extension='.mid')
     try:
         pretty_midi.write(temp_file)
-        return Score(temp_file)
+        return ScoreFactory(temp_file)
     finally:
         os.remove(temp_file)
 
@@ -156,13 +155,63 @@ def pad_score_to_length(score: Score, target_length: float) -> Score:
     
     if current_end < target_end:
         track = score.tracks[0] # Assuming we pad with the first track
-        silence = Note(velocity=0, pitch=60, time=track.end(), duration=int(target_end - track.end()))
+        silence = NoteFactory(velocity=0, pitch=60, time=track.end(), duration=int(target_end - track.end()))
         track.notes.append(silence)
 
     return score
 
+def cut_score_to_length(score: Score, target_length: float) -> Score:
+    """
+    Pads a musical score to a target length by adding silence.
+
+    Args:
+        score (Score): The musical score to pad.
+        target_length (float): The target length in seconds.
+
+    Returns:
+        PrettyMIDI: The padded musical score as a PrettyMIDI object.
+    """
+    current_length = calculate_score_length_in_seconds(score)
+    current_end = score.end()
+    target_end = target_length * current_end / current_length
+
+
+    if current_end <= target_end:
+        return score
+
+    for track in score.tracks:
+        for note in track.notes:
+            if note.time + note.duration > target_end:
+                note.duration = target_end - note.time
+                if note.duration < 0:
+                    track.notes.remove(note)
+
+    return score
+
 def convert_audio_to_int_16(audio_data: np.ndarray) -> np.ndarray:
-    max_16bit = 2**15
+    max_16bit = 2**15 - 1
     raw_data = audio_data * max_16bit
-    raw_data = raw_data.astype(np.int16)
-    return raw_data
+    return raw_data.astype(np.int16)
+
+def convert_audio_to_float_32(audio_data: np.ndarray) -> np.ndarray:
+    max_32bit = 2**31 - 1
+    raw_data = audio_data / max_32bit
+    return raw_data.astype(np.float32)
+
+def get_program_midi(predicted_midi: PrettyMIDI, midi_program: int) -> PrettyMIDI:
+    filtered_midi = PrettyMIDI()
+
+    instrument_code = midi_program if midi_program != -1 else 0
+    
+    # Iterate through all instruments in the predicted MIDI
+    for instrument in predicted_midi.instruments:
+        if instrument.program == instrument_code:
+            # Add the instrument to the filtered MIDI
+            filtered_midi.instruments.append(instrument)
+
+    return filtered_midi
+
+def synthesize_midi(midi: PrettyMIDI, midi_program: Optional[int], sample_rate: int, soundfont_path=SOUNDFONT_PATH) -> np.ndarray:
+    program_midi = get_program_midi(midi, midi_program) if midi_program is not None else midi
+    sf2_path = SOUNDFONT_PATH if os.path.exists(soundfont_path) else None
+    return program_midi.fluidsynth(fs=sample_rate, sf2_path=sf2_path)

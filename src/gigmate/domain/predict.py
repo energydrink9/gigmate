@@ -1,7 +1,7 @@
 import itertools
 from miditok import TokSequence
 from gigmate.dataset.dataset import get_data_loader
-from gigmate.model.model import get_model
+from gigmate.model.model import TransformerModel, get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.domain.prediction import complete_sequence
 from gigmate.model.tokenizer import get_tokenizer
@@ -35,7 +35,7 @@ def create_midi_from_sequence(tokenizer, sequence, out_file):
     print(f'created midi file: {out_file}')
     return out_file
 
-def test_model(model, device, data_loader):
+def test_model(model: TransformerModel, device: str, data_loader):
     max_seq_len = get_params()['max_seq_len']
     tokenizer = get_tokenizer()
     data_items = list(itertools.islice(iter(data_loader), SUBSET_OF_TEST_DATASET_NUMBER * NUM_OUTPUT_FILES, (SUBSET_OF_TEST_DATASET_NUMBER + 1) * NUM_OUTPUT_FILES))
@@ -48,7 +48,7 @@ def test_model(model, device, data_loader):
         input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
         files.append({ 'name': f'input_{i}', 'file': input_file })
 
-        output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=200, max_output_length_in_seconds=20, show_progress=True)
+        output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=1000, max_output_length_in_seconds=100, show_progress=True)
         output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
         files.append({ 'name': f'output_{i}', 'file': output_file })
 

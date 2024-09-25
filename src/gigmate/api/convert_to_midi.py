@@ -4,7 +4,7 @@ import litserve as ls
 from gigmate.domain.midi_conversion import convert_audio_to_midi
 from gigmate.utils.audio_utils import generate_random_filename
 from fastapi import Request, Response
-from symusic import Score
+from symusic.types import Score
 
 class ConvertToMidiAPI(ls.LitAPI):
     def setup(self, devices):

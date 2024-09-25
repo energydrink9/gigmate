@@ -1,3 +1,4 @@
+import math
 from typing import Any, Callable, Optional, Union
 import numpy as np
 import torch
@@ -5,8 +6,19 @@ import torch.nn as nn
 from gigmate.utils.constants import get_params
 from gigmate.model.cached_multihead_attention import CachedMultiheadAttention, look_ahead_mask
 
-MODEL_FILE_NAME = 'output/model.chk'
 ENABLE_TORCHSCRIPT = True
+
+# [1]. Use Alibi positional embeddings
+# 2. Use Local attention
+# 3. Use Meta Encodec for encoding to tokens and decoding back to audio
+# 4. Create music dataset
+# 5. Perform training
+# 6. Evaluate model
+# 7. Implement inference
+
+def fill_with_neg_inf(t):
+    """FP16-compatible function that fills a tensor with -inf."""
+    return t.float().fill_(float("-inf")).type_as(t)
 
 class TransformerBlock(nn.Module):
     
@@ -41,7 +53,7 @@ class TransformerBlock(nn.Module):
         return out2
 
 class TransformerModel(nn.Module):
-    def __init__(self, num_layers, d_model, num_heads, dff, vocab_size, max_seq_len, dropout=0.1):
+    def __init__(self, num_layers: int, d_model: int, num_heads: int, dff: int, vocab_size: int, max_seq_len: int, batch_size: int, dropout: float=0.1):
         super(TransformerModel, self).__init__()
         def get_transformer_block():
             return TransformerBlock(d_model, num_heads, dff, max_seq_len, dropout)
@@ -51,9 +63,44 @@ class TransformerModel(nn.Module):
         transformers = [get_transformer_block() for _ in range(num_layers)]
         self.transformer_layers = nn.ModuleList(transformers)
         self.dense = nn.Linear(d_model, vocab_size)
-        self.pos_encoding = PositionalEncoding1D(d_model)
         self.max_seq_len = max_seq_len
+
+        def get_slopes(n):
+            def get_slopes_power_of_2(n):
+                start = (2**(-2**-(math.log2(n)-3)))
+                ratio = start
+                return [start*ratio**i for i in range(n)]
+
+            if math.log2(n).is_integer():
+                return get_slopes_power_of_2(n)                   #In the paper, we only train models that have 2^a heads for some a. This function has
+            else:                                                 #some good properties that only occur when the input is a power of 2. To maintain that even
+                closest_power_of_2 = 2**math.floor(math.log2(n))  #when the number of heads is not a power of 2, we use this workaround. 
+                return get_slopes_power_of_2(closest_power_of_2) + get_slopes(2*closest_power_of_2)[0::2][:n-closest_power_of_2]
+ 
+
+        self.slopes = torch.Tensor(get_slopes(num_heads))
+        #In the next line, the part after the * is what constructs the diagonal matrix (right matrix in Figure 3 in the paper). 
+        #If you run it you'll see that it doesn't exactly print out the same matrix as we have in Figure 3, but one where all rows are identical.
+        #This works because the softmax operation is invariant to translation, and our bias functions are always linear. 
+        self.alibi = self.slopes.unsqueeze(1).unsqueeze(1) * torch.arange(max_seq_len).unsqueeze(0).unsqueeze(0).expand(num_heads, -1, -1)
+        self.alibi = self.alibi.view(num_heads, 1, max_seq_len)
+        self.alibi = self.alibi.repeat(batch_size//max_seq_len, 1, 1)  # batch_size, 1, 1
     
+    def buffered_future_mask(self, tensor):
+        dim = tensor.size(1)
+        # self._future_mask.device != tensor.device is not working in TorchScript. This is a workaround.
+        if (
+            self._future_mask.size(0) == 0
+            or (not self._future_mask.device == tensor.device)
+            or self._future_mask.size(1) < self.args.tokens_per_sample
+        ):
+            self._future_mask = torch.triu(
+                fill_with_neg_inf(torch.zeros([self.args.tokens_per_sample, self.args.tokens_per_sample])), 1
+            )
+            self._future_mask = self._future_mask.unsqueeze(0) + self.alibi
+        self._future_mask = self._future_mask.to(tensor)
+        return self._future_mask[:tensor.shape[0]*self.args.decoder_attention_heads, :dim, :dim]
+
     @torch.jit.export
     def reset_kv_cache(self):
         for transformer in self.transformer_layers.children():
@@ -61,26 +108,16 @@ class TransformerModel(nn.Module):
             
     def forward(self, input, use_cache: bool = False, current_token_index: Optional[int] = None):
         x = self.embedding(input)
-        
-        # Add positional encoding
-        # TODO: Fix positional encoding for sequences longer than max_seq_len, for example using relative positional encoding or updating the positional encodings of items in the cache
-        pos_encoding = self.pos_encoding
-        x = x + pos_encoding(x)
 
         if use_cache and current_token_index is not None:
             x = x[:, current_token_index:current_token_index + 1, :]
 
-        sequence_length = x.size(1)
-
-        attn_mask: Optional[torch.Tensor] = None
+        attn_mask: Optional[torch.Tensor] = self.buffered_future_mask(x)
         key_padding_mask: Optional[torch.Tensor] = None
 
         if use_cache and current_token_index is not None:
         # when we pass kvcache, we are passing single token as input which need to attend to all previous tokens, but not the tokens after it, the size of the mask should be equal to max seq len
-            attn_mask = look_ahead_mask(self.max_seq_len)[current_token_index:current_token_index + 1, :].to(x.device)
             key_padding_mask = look_ahead_mask(self.max_seq_len)[current_token_index:current_token_index + 1, :].to(x.device)
-        else:
-            attn_mask = look_ahead_mask(sequence_length).to(x.device)
 
         # Pass through transformer blocks
         for layer in self.transformer_layers:
@@ -106,7 +143,8 @@ def get_model(params = get_params(), checkpoint_path = None, device: str = 'cpu'
         params['dff'],
         params['vocab_size'],
         params['max_seq_len'],
-        params['dropout_rate']
+        params['dropout_rate'],
+        params['batch_size']
     )
     if ENABLE_TORCHSCRIPT:
         model = torch.jit.script(model)
@@ -122,51 +160,3 @@ def get_model(params = get_params(), checkpoint_path = None, device: str = 'cpu'
 
     return model
 
-def get_emb(sin_inp):
-    """
-    Gets a base embedding for one dimension with sin and cos intertwined
-    """
-    emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
-    return torch.flatten(emb, -2, -1)
-
-class PositionalEncoding1D(nn.Module):
-    
-    cached_penc: Optional[torch.Tensor]
-
-    def __init__(self, channels: int):
-        """
-        :param channels: The last dimension of the tensor you want to apply pos emb to.
-        """
-        super(PositionalEncoding1D, self).__init__()
-        self.org_channels = channels
-        channels = int(np.ceil(channels / 2) * 2)
-        self.channels = channels
-        inv_freq = 1.0 / (10000 ** (torch.arange(0, channels, 2).float() / channels))
-        self.register_buffer("inv_freq", inv_freq)
-        self.register_buffer("cached_penc", None, persistent=False)
-
-    def forward(self, tensor: torch.Tensor):
-        """
-        :param tensor: A 3d tensor of size (batch_size, x, ch)
-        :return: Positional Encoding Matrix of size (batch_size, x, ch)
-        """
-        if len(tensor.shape) != 3:
-            raise RuntimeError("The input tensor has to be 3d!")
-
-        cached_penc = self.cached_penc
-        if cached_penc is not None and cached_penc.shape == tensor.shape:
-            return cached_penc
-
-        cached_penc = None
-        batch_size, x, orig_ch = tensor.shape
-        pos_x = torch.arange(x, device=tensor.device, dtype=self.inv_freq.dtype)
-        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.inv_freq)
-        emb_x = get_emb(sin_inp_x)
-        emb = torch.zeros((x, self.channels), device=tensor.device, dtype=tensor.dtype)
-        emb[:, : self.channels] = emb_x
-
-        cached_penc = emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
-
-        self.cached_penc = cached_penc
-
-        return cached_penc
