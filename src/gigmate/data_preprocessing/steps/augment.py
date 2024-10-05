@@ -44,6 +44,8 @@ def augment_all(directory: str):
         audio = AudioSegment.from_ogg(filename)
         augmented = augment(audio)
         augmented.export(filename)
+    
+    return directory
 
 if __name__ == '__main__':
     #random.seed(get_random_seed())

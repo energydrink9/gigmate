@@ -120,6 +120,8 @@ def assort_and_merge_all(source_directory: str, output_directory: str, stem_name
                 merge(stems_to_merge, stem, song_directory, i)
                 shutil.copy(stem, os.path.join(song_directory, "stem.ogg"))
 
+    return output_directory
+
 
 if __name__ == '__main__':
     random.seed(get_random_seed())

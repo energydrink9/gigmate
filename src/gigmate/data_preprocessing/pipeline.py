@@ -1,44 +1,56 @@
+from typing import List
 from clearml import PipelineDecorator
+
+from gigmate.data_preprocessing.process import upload_dataset
+from gigmate.data_preprocessing.steps.convert_to_ogg import convert_to_ogg
+from gigmate.data_preprocessing.steps.merge import assort_and_merge_all
+from gigmate.data_preprocessing.steps.uncompress import uncompress_files
+from gigmate.utils.constants import get_clearml_dataset_version, get_clearml_project_name
 from gigmate.utils.constants import get_clearml_project_name
+from gigmate.data_preprocessing.steps.augment import augment_all
 
-from gigmate.utils.constants import get_clearml_project_name
-from gigmate.data_preprocessing.steps.split import split_midi_files
-from gigmate.data_preprocessing.steps.augment import augment_midi_files
-from gigmate.data_preprocessing.steps.tokenize import tokenize_midi_files
+SOURCE_DIR = '/Users/michele/Music/soundstripe/original'
+MERGED_FILES_DIR = '/Users/michele/Music/soundstripe/merged'
+STEM_NAME = ['guitar', 'gtr']
+BASIC_STEM_NAMES = ['guitar', 'drums', 'bass', 'perc']
+RANDOM_ASSORTMENTS_PER_SONG = 1
+DATASET_TAGS = ['small']
 
-AUGMENT_MIDI_FILES = False
+@PipelineDecorator.component(return_values=['uncompressed_dir'], cache=False)
+def uncompress_step(source_dir: str):
+    output_dir = uncompress_files(source_dir)
+    return output_dir
 
-@PipelineDecorator.component(return_values=['split_output_dir'], cache=False)
-def split_midi():
-    split_output_dir = split_midi_files()
-    return split_output_dir
+@PipelineDecorator.component(return_values=['converted_to_ogg_dir'], cache=False)
+def convert_to_ogg_step(split_output):
+    output_dir = convert_to_ogg(split_output)
+    return output_dir
 
-@PipelineDecorator.component(return_values=['augmented_output_dir'], cache=False)
-def augment_midi(split_output):
-    augmented_output_dir = augment_midi_files(split_output)
-    return augmented_output_dir
+@PipelineDecorator.component(return_values=['merged_dir'], cache=False)
+def assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song):
+    print(f'Creating assortment and merging {converted_to_ogg_dir}')
+    output_dir = assort_and_merge_all(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song)
+    return output_dir
 
-@PipelineDecorator.component(return_values=['tokenized_output_dir'], cache=False)
-def tokenize_midi(source_dir, is_augmented):
-    print(f'Tokenizing dataset from {source_dir}')
-    tokenized_output = tokenize_midi_files(source_dir, is_augmented=is_augmented)
-    print(f'Tokenized dataset to {tokenized_output}')
-    return tokenized_output
+@PipelineDecorator.component(return_values=['augmented_dir'], cache=False)
+def augment_step(merged_dir: str) -> str:
+    print(f'Augmenting dataset')
+    output_dir = augment_all(merged_dir)
+    return output_dir
 
 @PipelineDecorator.pipeline(
-    name='MIDI Processing Pipeline',
+    name='Dataset creation pipeline',
     project=get_clearml_project_name(),
     version='1.0'
 )
-def midi_processing_pipeline():
-    split_output_dir = split_midi()
-    if AUGMENT_MIDI_FILES:
-        augmented_output_dir = augment_midi(split_output_dir)
-        tokenize_midi(augmented_output_dir, is_augmented=True)
-    else:
-        tokenize_midi(split_output_dir, is_augmented=False)
+def dataset_creation_pipeline(source_dir: str, merged_dir: str, stem_name: List[str], random_assortments_per_song: int):
+    uncompressed_dir = uncompress_step(source_dir)
+    converted_to_ogg_dir = convert_to_ogg_step(uncompressed_dir)
+    merged_dir = assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song)
+    augmented_dir = augment_step(merged_dir)
+    upload_dataset(path=augmented_dir, version=get_clearml_dataset_version(), tags=DATASET_TAGS)
 
 if __name__ == '__main__':
     PipelineDecorator.run_locally()
-    midi_processing_pipeline()
+    dataset_creation_pipeline(SOURCE_DIR, MERGED_FILES_DIR, STEM_NAME, RANDOM_ASSORTMENTS_PER_SONG)
     print('Pipeline completed')
