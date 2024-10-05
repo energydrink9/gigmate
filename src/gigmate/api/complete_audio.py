@@ -58,13 +58,12 @@ def complete_midi_loop(prediction_queue: multiprocessing.Queue, synthesis_queue:
 
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())
     tokenizer = get_tokenizer()
-    max_seq_len = get_params()['max_seq_len']
 
     while True:
         chunk, temperature = prediction_queue.get()
         if chunk is None:
             break
-        completed_chunk = complete_midi_sequence(chunk, tokenizer, device, model, max_seq_len, temperature=temperature, show_progress=True)
+        completed_chunk = complete_midi_sequence(chunk, tokenizer, device, model, temperature=temperature, show_progress=True)
         synthesis_queue.put(completed_chunk)
 
 @asynccontextmanager
@@ -139,11 +138,11 @@ def merge_midi_chunks(chunk: AudioChunk[dict[str, Score]]) -> AudioChunk[Score]:
     score = merge_midis(list(chunk.data.items()))
     return AudioChunk(score, chunk.record_start_time, chunk.record_end_time)
 
-def complete_midi_sequence(chunk: AudioChunk[Score], tokenizer: MusicTokenizer, device: str, model: torch.nn.Module, max_seq_len, temperature, show_progress=False) -> AudioChunk[Score]:
+def complete_midi_sequence(chunk: AudioChunk[Score], tokenizer: MusicTokenizer, device: str, model: torch.nn.Module, temperature, show_progress=False) -> AudioChunk[Score]:
     start_time = time.perf_counter()
     token_sequence: TokSequence = cast(TokSequence, tokenizer.encode(chunk.data))
     input_sequence = cast(list[int], token_sequence.ids)
-    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=MAX_OUTPUT_TOKENS, max_output_length_in_seconds=MAX_OUTPUT_LENGTH_IN_SECONDS, temperature=temperature, show_progress=show_progress)
+    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_output_tokens=MAX_OUTPUT_TOKENS, max_output_length_in_seconds=MAX_OUTPUT_LENGTH_IN_SECONDS, temperature=temperature, show_progress=show_progress)
     sequence: Score = tokenizer.decode(output_sequence)
     end_time = time.perf_counter()
     print(f'4. Completed sequence in {end_time - start_time} seconds')

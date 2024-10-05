@@ -3,30 +3,24 @@ import multiprocessing
 import os
 import tempfile
 from typing import cast
-from miditok import TokSequence
 import numpy as np
 import pytest
-from gigmate.utils.audio_utils import calculate_audio_length, calculate_score_length_in_seconds, convert_audio_to_float_32, generate_random_filename, synthesize_midi
-from gigmate.utils.constants import get_params
+from gigmate.utils.audio_utils import calculate_audio_length, convert_audio_to_float_32, generate_random_filename
+from gigmate.utils.constants import get_pad_token_id, get_params
 from gigmate.domain.midi_conversion import convert_stems_to_midi, convert_wav_to_midi, merge_midis
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.play import get_audio_to_play
 from gigmate.domain.prediction import complete_sequence
-from gigmate.model.tokenizer import get_tokenizer
 from gigmate.utils.device import get_device
 from scipy.io import wavfile
 from spleeter.separator import Separator
 import soundfile as sf
-from symusic.types import Score
-from pretty_midi import PrettyMIDI
 
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 44100
 device = get_device()
 model = get_model(checkpoint_path=get_latest_model_checkpoint_path(), device=device)
-tokenizer = get_tokenizer()
-max_seq_len = get_params()['max_seq_len']
 TEST_GENERATION_FILE = 'resources/test_generation.wav'
 TEST_TIMING_FILE = 'resources/test_timing_2.wav'
 MIDI_PROGRAM = None
@@ -85,7 +79,7 @@ def test_generation_of_audio():
     token_sequence: TokSequence = cast(TokSequence, tokenizer.encode(score))
     input_sequence = cast(list[int], token_sequence.ids)
 
-    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=200, max_output_length_in_seconds=5, show_progress=False)
+    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_output_tokens=200, max_output_length_in_seconds=5, padding_value=get_pad_token_id(), show_progress=False)
     sequence: Score = tokenizer.decode(output_sequence)
     temp_file_name = generate_random_filename(extension='.mid')
     sequence.dump_midi(temp_file_name)
@@ -110,7 +104,7 @@ def test_timing_of_generated_audio():
     score = merge_midis(list(midis.items()))
     token_sequence: TokSequence = cast(TokSequence, tokenizer.encode(score))
     input_sequence = cast(list[int], token_sequence.ids)
-    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=200, max_output_length_in_seconds=8, show_progress=False)
+    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_output_tokens=200, max_output_length_in_seconds=8, padding_value=get_pad_token_id(), show_progress=False)
     sequence: Score = tokenizer.decode(output_sequence)
     temp_file_name = generate_random_filename(extension='.mid')
     sequence.dump_midi(temp_file_name)
@@ -138,7 +132,7 @@ def test_timing_of_generated_audio_with_processing_time():
     score = merge_midis(list(midis.items()))
     token_sequence: TokSequence = cast(TokSequence, tokenizer.encode(score))
     input_sequence = cast(list[int], token_sequence.ids)
-    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=100, max_output_length_in_seconds=10, show_progress=True)
+    output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_output_tokens=100, max_output_length_in_seconds=10, padding_value=get_pad_token_id(), show_progress=True)
     sequence: Score = tokenizer.decode(output_sequence)
     temp_file_name = generate_random_filename(extension='.mid')
     sequence.dump_midi(temp_file_name)
@@ -164,7 +158,7 @@ def test_timing_of_generated_audio_with_processing_time():
 #     midi_from_wav_length = calculate_score_length_in_seconds(midi_from_wav)
 
 #     # predict the next tokens
-#     prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, max_seq_len, verbose=False, include_input=True, max_output_tokens=OUTPUT_TOKENS, temperature=0)
+#     prediction_with_input_file = complete_midi(model, device, midi_from_wav_file, tokenizer, verbose=False, include_input=True, max_output_tokens=OUTPUT_TOKENS, temperature=0)
 
 #     # get the audio to play
 #     generated_audio = get_audio_to_play(prediction_with_input_file, 0, midi_from_wav_length, sample_rate=SAMPLE_RATE, get_current_time=lambda: 1.5)

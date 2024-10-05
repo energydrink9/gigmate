@@ -34,7 +34,7 @@ class CompleteMidiAPI(ls.LitAPI):
     def predict(self, input: tuple[list[int], int, float, Optional[int]]) -> list:
         x, max_output_tokens_count, max_output_length_in_seconds, midi_program = input
         start_time = time.perf_counter()
-        prediction = complete_sequence(self.model, self.device, self.tokenizer, x, self.max_seq_len, midi_program=midi_program, include_input=INCLUDE_INPUT, max_output_tokens=max_output_tokens_count, max_output_length_in_seconds=max_output_length_in_seconds, verbose=False)
+        prediction = complete_sequence(self.model, self.device, self.tokenizer, x, midi_program=midi_program, include_input=INCLUDE_INPUT, max_output_tokens=max_output_tokens_count, max_output_length_in_seconds=max_output_length_in_seconds, verbose=False)
         end_time = time.perf_counter()
         print(f"Predicted {len(prediction)} in {end_time - start_time:.2f} seconds.")
     

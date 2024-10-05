@@ -1,19 +1,48 @@
-from typing import Any, Callable, Optional, Union
-import numpy as np
+from typing import List, Optional
 import torch
 import torch.nn as nn
-from gigmate.utils.constants import get_params
-from gigmate.model.cached_multihead_attention import CachedMultiheadAttention, look_ahead_mask
+import torchao
+from gigmate.utils.constants import get_pad_token_id, get_params
+from gigmate.model.cached_multihead_attention import CachedMultiheadAttention
 
-MODEL_FILE_NAME = 'output/model.chk'
-ENABLE_TORCHSCRIPT = True
+ENABLE_TORCHSCRIPT = False
+
+# [1]. Use alibi positional embeddings
+# [2]. Use causal local attention
+# [3]. Fix torch compile optimization
+# [4]. Apply delay interleaving pattern
+# [5]. Use Meta Encodec 32khz for encoding to tokens and decoding back to audio
+# [6]. Apply quantization aware training: https://github.com/pytorch/ao
+# [7]. Add support for stems
+# 8. Handle padding using appropriate attention mask or builting pytorch nested tensors
+# 9. Create music dataset
+# # 1. Find platform
+# # 2. Download songs on online storage
+# # 3. Create metadata consisting in song (multiple versions), (guitar stem)
+# # 4. Create pipeline step to add noise to the song and save separately
+# # 5. Encode everything with EnCodec 32khz
+# # 6. Publish
+# # 7. Write code for the dataset (splitting and loading of song tracks for training, validation and test)
+# 10. Define evaluation metrics (Frechet Audio Distance)
+# 11. Finish flex attention implementation and check out grouped query attention
+# 12. Perform training
+# 13. Evaluate model
+# 14. Implement inference
+
+def fill_with_neg_inf(t: torch.Tensor):
+    """FP16-compatible function that fills a tensor with -inf."""
+    return t.float().fill_(float("-inf")).type_as(t)
+
+def look_ahead_mask(size: int) -> torch.Tensor:  
+    mask = torch.triu(torch.ones(size, size), diagonal=1) != 0
+    return mask
 
 class TransformerBlock(nn.Module):
     
-    def __init__(self, d_model, num_heads, dff, max_seq_len: int, dropout=0.1):
+    def __init__(self, d_model: int, num_heads: int, dff: int, sliding_window_size: int, dropout: float = 0.1):
         super(TransformerBlock, self).__init__()
-
-        self.mha = CachedMultiheadAttention(d_model, num_heads, max_seq_len=max_seq_len)
+        
+        self.mha = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size)
 
         self.ffn = nn.Sequential(
             nn.Linear(d_model, dff),
@@ -25,88 +54,75 @@ class TransformerBlock(nn.Module):
         self.layernorm2 = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout2 = nn.Dropout(dropout)
 
-    @torch.jit.export
-    def reset_kv_cache(self):
-        self.mha.reset_kv_cache()
+    def forward(self, x: torch.Tensor, use_cache: bool = False, cache: Optional[torch.Tensor] = None, cache_index: Optional[int] = None, key_padding_mask: Optional[torch.Tensor] = None):
 
-    def forward(self, x, attn_mask, key_padding_mask: Optional[torch.Tensor], use_cache: bool = False, current_token_index: Optional[int] = None):
-
-        attn_output, _ = self.mha(x, attn_mask=attn_mask, key_padding_mask=key_padding_mask, is_causal=True, use_cache=use_cache, current_token_index=current_token_index)
+        attn_output, cache = self.mha(x, use_cache=use_cache, cache=cache, cache_index=cache_index, key_padding_mask=key_padding_mask)
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output)
         out2 = self.layernorm2(out1 + ffn_output)
 
-        return out2
+        return out2, cache
 
 class TransformerModel(nn.Module):
-    def __init__(self, num_layers, d_model, num_heads, dff, vocab_size, max_seq_len, dropout=0.1):
+    def __init__(self, num_layers: int, d_model: int, codebooks: int, num_heads: int, dff: int, vocab_size: int, batch_size: int, sliding_window_size: int, dropout: float=0.1, padding_value=0):
         super(TransformerModel, self).__init__()
+
         def get_transformer_block():
-            return TransformerBlock(d_model, num_heads, dff, max_seq_len, dropout)
-        
-        self.embedding = nn.Embedding(vocab_size, d_model, padding_idx=0)  # Use padding_idx for masking
+            return TransformerBlock(d_model, num_heads, dff, sliding_window_size=sliding_window_size, dropout=dropout)
+
+        self.num_heads = num_heads
+        self.codebooks = codebooks
+        self.num_layers = num_layers
+
+        embeddings = [nn.Embedding(vocab_size, d_model, padding_idx=padding_value) for _ in range(codebooks)]
+        self.embeddings = nn.ModuleList(embeddings)
 
         transformers = [get_transformer_block() for _ in range(num_layers)]
         self.transformer_layers = nn.ModuleList(transformers)
-        self.dense = nn.Linear(d_model, vocab_size)
-        self.pos_encoding = PositionalEncoding1D(d_model)
-        self.max_seq_len = max_seq_len
-    
-    @torch.jit.export
-    def reset_kv_cache(self):
-        for transformer in self.transformer_layers.children():
-            transformer.reset_kv_cache()
-            
-    def forward(self, input, use_cache: bool = False, current_token_index: Optional[int] = None):
-        x = self.embedding(input)
         
-        # Add positional encoding
-        # TODO: Fix positional encoding for sequences longer than max_seq_len, for example using relative positional encoding or updating the positional encodings of items in the cache
-        pos_encoding = self.pos_encoding
-        x = x + pos_encoding(x)
+        linears = [nn.Linear(d_model, vocab_size) for _ in range(codebooks)]
+        self.linears = nn.ModuleList(linears)
+    
+            
+    def forward(self, input: torch.Tensor, use_cache: bool = False, cache: Optional[List[torch.Tensor]] = None, cache_index: Optional[int] = None, key_padding_mask: Optional[torch.Tensor] = None):
 
-        if use_cache and current_token_index is not None:
-            x = x[:, current_token_index:current_token_index + 1, :]
-
-        sequence_length = x.size(1)
-
-        attn_mask: Optional[torch.Tensor] = None
-        key_padding_mask: Optional[torch.Tensor] = None
-
-        if use_cache and current_token_index is not None:
-        # when we pass kvcache, we are passing single token as input which need to attend to all previous tokens, but not the tokens after it, the size of the mask should be equal to max seq len
-            attn_mask = look_ahead_mask(self.max_seq_len)[current_token_index:current_token_index + 1, :].to(x.device)
-            key_padding_mask = look_ahead_mask(self.max_seq_len)[current_token_index:current_token_index + 1, :].to(x.device)
-        else:
-            attn_mask = look_ahead_mask(sequence_length).to(x.device)
+        x = sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)])
+        updated_cache: List[torch.Tensor] = []
 
         # Pass through transformer blocks
-        for layer in self.transformer_layers:
-            x = layer(x, attn_mask=attn_mask, key_padding_mask=key_padding_mask, use_cache=use_cache, current_token_index=current_token_index)
+        for i, layer in enumerate(list(self.transformer_layers)):
+            layer_cache = cache[i] if use_cache and cache is not None else None
+            x, updated_layer_cache = layer(x, use_cache=use_cache, cache=layer_cache, cache_index=cache_index, key_padding_mask=key_padding_mask)
+            updated_cache.append(updated_layer_cache)
 
         # Final output layer
-        x = self.dense(x)
+        logits = torch.stack([self.linears[k](x) for k in range(self.codebooks)], dim=1)  # [B, K, S, vocab_size]
 
-        return x
+        return logits, updated_cache
 
-# Workaround to load the model
 def load_ckpt(model, checkpoint_path: str, device: str):
     state_dict = torch.load(checkpoint_path, map_location=torch.device(device), weights_only=True)['state_dict']
+    
+    # Workaround to load the model
     for key in list(state_dict.keys()):
-        state_dict[key.replace("model._orig_mod.", "")] = state_dict.pop(key)
-    model.load_state_dict(state_dict, strict=False)
+        state_dict[key.replace("model.", "")] = state_dict.pop(key)
+    
+    model.load_state_dict(state_dict, strict=True)
 
-def get_model(params = get_params(), checkpoint_path = None, device: str = 'cpu') -> Union[nn.Module, Callable[..., Any]]:
+def get_model(params = get_params(), checkpoint_path = None, device: str = 'cpu') -> TransformerModel:
     model = TransformerModel(
-        params['num_layers'],
-        params['d_model'],
-        params['num_heads'],
-        params['dff'],
-        params['vocab_size'],
-        params['max_seq_len'],
-        params['dropout_rate']
+        num_layers=params['num_layers'],
+        d_model=params['d_model'],
+        codebooks=params['codebooks'],
+        num_heads=params['num_heads'],
+        dff=params['dff'],
+        vocab_size=params['vocab_size'],
+        batch_size=params['batch_size'],
+        sliding_window_size=params['sliding_window_size'],
+        dropout=params['dropout_rate'],
+        padding_value=get_pad_token_id(),
     )
     if ENABLE_TORCHSCRIPT:
         model = torch.jit.script(model)
@@ -114,59 +130,19 @@ def get_model(params = get_params(), checkpoint_path = None, device: str = 'cpu'
     model.to(device)
 
     if checkpoint_path is not None:
+        print(f'Loading ckpt {checkpoint_path}')
         load_ckpt(model, checkpoint_path, device)
 
+
+    backend = 'aot_eager' if device == 'mps' else 'inductor'
+    # TODO: fix torch compile full graph
+    model = torch.compile(model, fullgraph=True, backend=backend)
+
     if device == 'cuda':
-        torch.set_float32_matmul_precision('high')
-        return torch.compile(model)
+
+        # Probably the next line is not needed as it would be taken care of by torchao
+        # torch.set_float32_matmul_precision('high')
+
+        model = torchao.autoquant(model)
 
     return model
-
-def get_emb(sin_inp):
-    """
-    Gets a base embedding for one dimension with sin and cos intertwined
-    """
-    emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
-    return torch.flatten(emb, -2, -1)
-
-class PositionalEncoding1D(nn.Module):
-    
-    cached_penc: Optional[torch.Tensor]
-
-    def __init__(self, channels: int):
-        """
-        :param channels: The last dimension of the tensor you want to apply pos emb to.
-        """
-        super(PositionalEncoding1D, self).__init__()
-        self.org_channels = channels
-        channels = int(np.ceil(channels / 2) * 2)
-        self.channels = channels
-        inv_freq = 1.0 / (10000 ** (torch.arange(0, channels, 2).float() / channels))
-        self.register_buffer("inv_freq", inv_freq)
-        self.register_buffer("cached_penc", None, persistent=False)
-
-    def forward(self, tensor: torch.Tensor):
-        """
-        :param tensor: A 3d tensor of size (batch_size, x, ch)
-        :return: Positional Encoding Matrix of size (batch_size, x, ch)
-        """
-        if len(tensor.shape) != 3:
-            raise RuntimeError("The input tensor has to be 3d!")
-
-        cached_penc = self.cached_penc
-        if cached_penc is not None and cached_penc.shape == tensor.shape:
-            return cached_penc
-
-        cached_penc = None
-        batch_size, x, orig_ch = tensor.shape
-        pos_x = torch.arange(x, device=tensor.device, dtype=self.inv_freq.dtype)
-        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.inv_freq)
-        emb_x = get_emb(sin_inp_x)
-        emb = torch.zeros((x, self.channels), device=tensor.device, dtype=tensor.dtype)
-        emb[:, : self.channels] = emb_x
-
-        cached_penc = emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
-
-        self.cached_penc = cached_penc
-
-        return cached_penc

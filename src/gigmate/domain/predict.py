@@ -1,11 +1,11 @@
 import itertools
-from miditok import TokSequence
-from gigmate.dataset.dataset import get_data_loader
+from encodec.utils import save_audio
+from gigmate.model.codec import decode, encode, get_codec
+
 from gigmate.model.model import TransformerModel, get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.domain.prediction import complete_sequence
-from gigmate.model.tokenizer import get_tokenizer
-from gigmate.utils.constants import get_params
+from gigmate.utils.constants import get_pad_token_id, get_params
 from gigmate.utils.device import get_device
 
 NUMBER_OF_INPUT_TOKENS_FOR_PREDICTION = min(get_params()['max_seq_len'], 127)
@@ -19,37 +19,27 @@ def get_input_midi_file_name(i: int) -> str:
 def get_output_midi_file_name(i: int) -> str:
     return f'output/output_{i}.mid'
 
-def get_input_sequence(batch):
-    return batch[0][:NUMBER_OF_INPUT_TOKENS_FOR_PREDICTION]
-
-def get_sequence(token_ids):
-    return TokSequence(ids=token_ids, are_ids_encoded=True)
-
 def convert_to_midi(tokenizer, predicted_notes):
     return tokenizer.decode(predicted_notes)
 
-def create_midi_from_sequence(tokenizer, sequence, out_file):
-    sequence = get_sequence(sequence)
-    midi_path = convert_to_midi(tokenizer, sequence)
-    midi_path.dump_midi(out_file)
-    print(f'created midi file: {out_file}')
-    return out_file
-
 def test_model(model: TransformerModel, device: str, data_loader):
-    max_seq_len = get_params()['max_seq_len']
-    tokenizer = get_tokenizer()
-    data_items = list(itertools.islice(iter(data_loader), SUBSET_OF_TEST_DATASET_NUMBER * NUM_OUTPUT_FILES, (SUBSET_OF_TEST_DATASET_NUMBER + 1) * NUM_OUTPUT_FILES))
+    #data_items = list(itertools.islice(iter(data_loader), SUBSET_OF_TEST_DATASET_NUMBER * NUM_OUTPUT_FILES, (SUBSET_OF_TEST_DATASET_NUMBER + 1) * NUM_OUTPUT_FILES))
 
     files = []
     for i in list(range(0, NUM_OUTPUT_FILES)):
-        print(f'Generating MIDI output {i}:')
-        next_item = data_items[i]['input_ids'].tolist()
-        input_sequence = get_input_sequence(next_item)
-        input_file = create_midi_from_sequence(tokenizer, input_sequence, get_input_midi_file_name(i))
-        files.append({ 'name': f'input_{i}', 'file': input_file })
+        output_file = f'output/output_{i}.wav'
+        print(f'Generating audio file output {i}:')
+        input_file = 'resources/test_generation.wav'
+        codec = get_codec(device)
+        sample_rate = codec.config.sampling_rate
+        input_sequence, frame_rate = encode(input_file, device)
 
-        output_sequence = complete_sequence(model, device, tokenizer, input_sequence, max_seq_len=max_seq_len, max_output_tokens=1000, max_output_length_in_seconds=100, show_progress=True)
-        output_file = create_midi_from_sequence(tokenizer, output_sequence, get_output_midi_file_name(i))
+        files.append({ 'name': f'input_{i}', 'file': input_file })
+        
+        output_sequence = complete_sequence(model, device, input_sequence, frame_rate=frame_rate, max_output_length_in_seconds=1, padding_value=get_pad_token_id(), use_cache=True, show_progress=True)
+        output_tensor = decode(output_sequence, device)
+        save_audio(output_tensor, output_file, sample_rate=sample_rate)
+
         files.append({ 'name': f'output_{i}', 'file': output_file })
 
     return files
@@ -58,7 +48,7 @@ def test_model(model: TransformerModel, device: str, data_loader):
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path())
-    data_loader = get_data_loader('validation')
+    #data_loader = get_data_loader('validation')
 
-    test_model(model, device, data_loader)
+    test_model(model, device, None)
     

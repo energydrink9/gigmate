@@ -19,7 +19,7 @@ def mock_model():
 
 def test_predict_next_note_temperature_zero(mock_model):
     input_sequence = torch.tensor([[[1, 2, 3]]])
-    result = predict_next_token(mock_model, current_token_index=2, input_sequence=input_sequence, incremental=False, temperature=0)
+    result = predict_next_token(mock_model, current_token_index=2, input=input_sequence, incremental=False, temperature=0)
     
     assert isinstance(result, int)
     assert result == 1  # argmax of [0.1, 0.2]
@@ -28,14 +28,14 @@ def test_predict_next_note_temperature_zero(mock_model):
 def test_predict_next_note_with_temperature(mock_multinomial, mock_model):
     mock_multinomial.return_value = torch.tensor([1])
     input_sequence = torch.tensor([[1, 2, 3]])
-    result = predict_next_token(mock_model, current_token_index=2, input_sequence=input_sequence, incremental=False, temperature=0.5)
+    result = predict_next_token(mock_model, current_token_index=2, input=input_sequence, incremental=False, temperature=0.5)
     
     assert isinstance(result, int)
     assert result == 1  # mocked multinomial return value
 
 def test_remove_forbidden_tokens(mock_model):
     input_sequence = torch.tensor([[[1, 2, 3]]])
-    result = predict_next_token(mock_model, current_token_index=2, incremental=False, input_sequence=input_sequence, temperature=0, forbidden_tokens=[1])
+    result = predict_next_token(mock_model, current_token_index=2, incremental=False, input=input_sequence, temperature=0, forbidden_tokens=[1])
     
     assert isinstance(result, int)
     assert result == 0  # argmax of [0.1, 0]

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 import torchmetrics.classification
 from torch import nn
 import lightning as L
@@ -9,6 +9,7 @@ import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from gigmate.model.model import get_model
 from gigmate.utils.constants import get_pad_token_id
+from torchao.quantization.prototype.qat.api import Int8DynActInt4WeightQATQuantizer
 
 LOG_INTERVAL = 5
 PAD_TOKEN_ID = get_pad_token_id()
@@ -109,6 +110,12 @@ class TrainingModel(L.LightningModule):
 
         return loss
 
-def get_training_model(params, checkpoint_path: Optional[str], device: str) -> TrainingModel:
+def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
+    return Int8DynActInt4WeightQATQuantizer()
+
+def get_training_model(params, checkpoint_path: Optional[str], device: str) -> Tuple[TrainingModel, Int8DynActInt4WeightQATQuantizer]:
     model = get_model(params, checkpoint_path, device)
-    return TrainingModel(model, learning_rate = params['learning_rate'], step_size_up=params['step_size_up'], max_learning_rate=params['max_learning_rate'], vocab_size=params['vocab_size'])
+    quantizer = get_quantizer()
+    model = quantizer.prepare(model)
+
+    return TrainingModel(model, learning_rate = params['learning_rate'], step_size_up=params['step_size_up'], max_learning_rate=params['max_learning_rate'], vocab_size=params['vocab_size']), quantizer

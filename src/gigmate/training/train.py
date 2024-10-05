@@ -1,5 +1,6 @@
 from clearml import Task
 from gigmate.dataset.dataset import get_data_loaders
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.training.training_model import get_training_model
 from gigmate.utils.constants import get_clearml_project_name, get_params, get_random_seed
 import lightning as L
@@ -41,7 +42,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
 
 def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
 
-    training_model = get_training_model(params, ckpt_path, device)
+    training_model, quantizer = get_training_model(params, ckpt_path, device)
 
     #summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
     print('Loaded model:')
@@ -73,7 +74,8 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
     
     trainer.fit(training_model, train_loader, validation_loader)
 
-    return training_model
+    model = trainer.lightning_module
+    return quantizer.convert(model)
 
 
 if __name__ == '__main__':
@@ -88,9 +90,11 @@ if __name__ == '__main__':
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
-    training_model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=None)
+    # Set to none to start training from scratch, otherwise use `get_latest_model_checkpoint_path` to continue training from last checkpoint.
+    ckpt_path = get_latest_model_checkpoint_path()
+    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
 
-    output_midis = test_model(training_model.model, device, validation_loader)
+    output_midis = test_model(model.to(device), device, validation_loader)
 
     for midi in output_midis:
         task.upload_artifact(name=midi['name'], artifact_object=midi['file'])
