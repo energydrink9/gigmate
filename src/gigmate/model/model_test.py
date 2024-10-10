@@ -228,7 +228,6 @@ def test_model_with_sliding_window():
     model.training = False
     
     output = model(query)[:,:,-1]
-    print(output)
 
     expected_output = torch.tensor(
         [[[-6.4006,  6.9212, -9.3461],

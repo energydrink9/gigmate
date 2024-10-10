@@ -10,10 +10,11 @@ from gigmate.utils.device import get_device
 from gigmate.domain.predict import test_model
 import os
 
+DEBUG = False
 OUTPUT_DIRECTORY = 'output'
 UPLOAD_WEIGHTS = True
-
 BATCH_SIZE = get_params()['batch_size']
+
 L.seed_everything(get_random_seed())
 #torch.use_deterministic_algorithms(True) TODO: Enable this
 
@@ -70,12 +71,13 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
         accumulate_grad_batches=params['accumulate_grad_batches'],
         gradient_clip_val=params['gradient_clip'],
         precision=16 if device == 'cuda' else 32,
+        detect_anomaly=DEBUG
     )
     
     trainer.fit(training_model, train_loader, validation_loader)
 
     model = trainer.lightning_module
-    return quantizer.convert(model)
+    return quantizer.convert(model) if quantizer is not None else model
 
 
 if __name__ == '__main__':
@@ -94,7 +96,7 @@ if __name__ == '__main__':
     ckpt_path = get_latest_model_checkpoint_path()
     model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
 
-    output_midis = test_model(model.to(device), device, validation_loader)
+    output_continuations = test_model(model.to(device), device, validation_loader)
 
-    for midi in output_midis:
-        task.upload_artifact(name=midi['name'], artifact_object=midi['file'])
+    for continuation in output_continuations:
+        task.upload_artifact(name=continuation['name'], artifact_object=continuation['file'])

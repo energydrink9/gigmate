@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "gigmate"
-description = "MIDI generation"
+description = "Generation of realtime music using transformers"
 readme = "README.md"
 version = "0.1.0"  # Set a static version or use versioning tool later
 authors = ["Michele Lugano <michele.lugano9@gmail.com>"]
@@ -20,6 +20,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy"
 ]
+packages = [{include = "gigmate", from="src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.11"
@@ -45,7 +46,6 @@ reactivex = { git = "https://github.com/ReactiveX/RxPY.git", rev = "be64ef3d759d
 websockets = "12.0"
 "websocket-client" = "1.8.0"
 soundfile = "*"
-pyaudio = "^0.2.14"
 encodec = "^0.1.1"
 huggingface-hub = "^0.25.1"
 transformers = "^4.45.1"
@@ -53,9 +53,10 @@ tokenizers = "^0.20.0"
 torchao = "^0.5.0"
 torch = "^2.4.1"
 torchaudio = "^2.4.1"
-
-audiomentations = "^0.37.0"
+audiomentations = "^0.36.0"
 pyroomacoustics = "^0.7.7"
+
+torcheval = "^0.0.7"
 [tool.poetry.dev-dependencies]
 pytest = "^8.3.3"
 
@@ -89,4 +90,4 @@ exclude_lines = [
 ]
 
 [tool.poetry.scripts]
-train = "gigmate.train:main"
+train = "gigmate.training.train:main"

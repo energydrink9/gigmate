@@ -1,6 +1,6 @@
 import itertools
 from encodec.utils import save_audio
-from gigmate.model.codec import decode, encode, get_codec
+from gigmate.model.codec import decode, encode_file, get_codec
 
 from gigmate.model.model import TransformerModel, get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
@@ -30,13 +30,13 @@ def test_model(model: TransformerModel, device: str, data_loader):
         output_file = f'output/output_{i}.wav'
         print(f'Generating audio file output {i}:')
         input_file = 'resources/test_generation.wav'
-        codec = get_codec(device)
+        codec = get_codec().to(device)
         sample_rate = codec.config.sampling_rate
-        input_sequence, frame_rate = encode(input_file, device)
+        input_sequence, frame_rate = encode_file(input_file, device)
 
         files.append({ 'name': f'input_{i}', 'file': input_file })
         
-        output_sequence = complete_sequence(model, device, input_sequence, frame_rate=frame_rate, max_output_length_in_seconds=1, padding_value=get_pad_token_id(), use_cache=True, show_progress=True)
+        output_sequence = complete_sequence(model, device, input_sequence[0], frame_rate=frame_rate, max_output_length_in_seconds=1, padding_value=get_pad_token_id(), use_cache=True, show_progress=True)
         output_tensor = decode(output_sequence, device)
         save_audio(output_tensor, output_file, sample_rate=sample_rate)
 
