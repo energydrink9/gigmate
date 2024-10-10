@@ -41,3 +41,8 @@ Make sure the following environment variables are set before running the applica
 export CLEARML_API_ACCESS_KEY=<YOUR_CLEARML_API_ACCESS_KEY_HERE>
 export CLEARML_API_SECRET_KEY=<YOUR_CLEARML_API_SECRET_KEY_HERE>
 ```
+
+Also this one in case you are running on Apple Silicon:
+```
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+```

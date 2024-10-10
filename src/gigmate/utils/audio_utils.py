@@ -1,8 +1,11 @@
+import math
 import random
 import numpy as np
 import os
 from pydub import AudioSegment
 import torch
+
+from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_id, get_start_of_sequence_token_id
 
 SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'# Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
 
@@ -66,12 +69,18 @@ def calculate_audio_length(audio: np.ndarray, sample_rate: int) -> float:
 def calculate_audio_tensor_length(audio: torch.Tensor, frame_rate: int) -> float:
     return audio.shape[-1] / frame_rate
 
+def clamp_audio_data(audio_data: np.ndarray) -> np.ndarray:
+    return np.clip(audio_data, -1, 1)
+
 def convert_audio_to_int_16(audio_data: np.ndarray) -> np.ndarray:
     max_16bit = 2**15 - 1
+    assert audio_data.max() <= 1 and audio_data.min() >= -1, f'Overflow error during audio conversion: {audio_data.max()} vs {1}'
     raw_data = audio_data * max_16bit
+    assert raw_data.max() <= max_16bit, f'Overflow error during audio conversion: {raw_data.max()} vs {max_16bit}'
     return raw_data.astype(np.int16)
 
 def convert_audio_to_float_32(audio_data: np.ndarray) -> np.ndarray:
     max_32bit = 2**31 - 1
+    assert audio_data.max() <= max_32bit, f'Overflow error during audio conversion: {audio_data.max()} vs {max_32bit}'
     raw_data = audio_data / max_32bit
     return raw_data.astype(np.float32)

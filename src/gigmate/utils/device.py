@@ -1,3 +1,4 @@
+from typing import Union
 import torch
 
 def get_device():
@@ -8,3 +9,5 @@ def get_device():
         if torch.backends.mps.is_available()
         else "cpu"
     )
+
+Device = Union[torch.device, str, int]

@@ -13,15 +13,12 @@ import torch.utils.backend_registration
 import torch.utils._python_dispatch
 import torch._C
 import torch.fx.experimental.proxy_tensor
-#from torch.nn.attention.flex_attention import flex_attention, and_masks, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask
-import xformers.ops
-import xformers.ops.fmha.attn_bias
-import xformers.components.attention.attention_patterns
+from torch.nn.attention.flex_attention import create_mask as create_flex_attn_mask, flex_attention, and_masks, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask, _convert_block_mask_to_mask
 
 pad = torch._C._nn.pad,
 linear = torch._C._nn.linear
 
-def generate_alibi_bias(H: int):# -> _score_mod_signature:
+def generate_alibi_bias(H: int) -> _score_mod_signature:
     """Returns an alibi bias score_mod given the number of heads H
 
     Args:
@@ -39,7 +36,16 @@ def generate_alibi_bias(H: int):# -> _score_mod_signature:
     return alibi_mod
 
 
-def generate_sliding_window_mask_mod(window_size: int, cache_index: int):# -> _mask_mod_signature:
+def get_alibi_mask(shape: Tuple[int, int, int, int], fn: Callable[[Tensor, Tensor, Tensor, Tensor], Tensor], device: str) -> Tensor:
+
+    indices = [torch.arange(dim) for dim in shape]    
+    grid = torch.meshgrid(*indices, indexing='ij')
+    result = fn(*grid)
+    
+    return result.to(device)
+
+
+def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int], sequence_lengths: Optional[Tensor]) -> _mask_mod_signature:
     """Generates a sliding window attention mask with a given window size.
     Args:
         window_size: The size of the sliding window.
@@ -55,6 +61,14 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: int):# -> _m
     def sliding_window(b, h, q_idx, kv_idx):
         return q_idx - kv_idx <= window_size
     
+    def key_padding_mask(b, h, q_idx, kv_idx):
+        if sequence_lengths is None:
+            return torch.tensor([True], device=q_idx.device)
+        
+        sequence_length = sequence_lengths[b]
+
+        return torch.logical_and(q_idx < sequence_length, kv_idx < sequence_length)
+
     def incremental_sliding_window(b, h, q_idx, kv_idx):
         return cache_index - kv_idx <= window_size
 
@@ -62,101 +76,21 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: int):# -> _m
         return cache_index >= kv_idx
 
     if cache_index is not None:
-        return None#and_masks(incremental_sliding_window, incremental_padding_mask)
+        return and_masks(incremental_sliding_window, incremental_padding_mask)
     else:
-        return None#and_masks(sliding_window, causal_mask)
+        return and_masks(sliding_window, causal_mask, key_padding_mask)
 
 @lru_cache(maxsize=1)
-def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: int, device: str):# -> BlockMask:
-    return None
-    # return create_block_mask(
-    #     mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index),
-    #     B=None,
-    #     H=None,
-    #     Q_LEN=q_len,
-    #     KV_LEN=kv_len,
-    #     device=device,
-    # )
+def create_block_mask_cached(sliding_window_size: int, sequence_lengths: Optional[Tensor], q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
+    return create_block_mask(
+        mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index, sequence_lengths),
+        B=None,
+        H=None,
+        Q_LEN=q_len,
+        KV_LEN=kv_len,
+        device=device,
+    )
 
-@lru_cache(maxsize=1)
-def get_slopes(n: int):
-    def get_slopes_power_of_2(n: int) -> List[float]:
-        start = 2 ** (-(2 ** -(math.log2(n) - 3)))
-        ratio = start
-        return [start * ratio**i for i in range(n)]
-
-    # In the paper, we only train models that have 2^a heads for some a. This function has
-    # some good properties that only occur when the input is a power of 2. To maintain that even
-    # when the number of heads is not a power of 2, we use this workaround.
-    if math.log2(n) % 1 == 0:
-        return get_slopes_power_of_2(n)
-    else:
-        closest_power_of_2 = 2 ** math.floor(math.log2(n))
-        return (
-            get_slopes_power_of_2(closest_power_of_2)
-            + get_slopes(2 * closest_power_of_2)[0::2][: n - closest_power_of_2]
-        )
-
-def get_alibi_bias(mask_shape) -> Tensor:
-    maxpos = mask_shape[1]
-    attn_heads = mask_shape[0]
-    slopes = torch.Tensor(get_slopes(attn_heads))
-
-    # In the next line, the part after the * is what constructs the diagonal matrix
-    # (right matrix in Figure 3 in the paper).
-    # If you run it you'll see that it doesn't exactly print out the same matrix as we have in Figure 3,
-    # but one where all rows are identical.
-    # This works because the softmax operation is invariant to translation,
-    # and our bias functions are always linear.
-    alibi = slopes.unsqueeze(1).unsqueeze(1) * torch.arange(maxpos).unsqueeze(
-        0
-    ).unsqueeze(0).expand(attn_heads, -1, -1)
-    alibi = alibi.view(attn_heads, 1, maxpos)
-    return alibi
-
-def create_mask(shape: Tuple[int, int], predicate: Callable[[Tensor, Tensor], Tensor]):
-    # Create 2D index grids for query and key-value indices
-    q_idx, kv_idx = torch.meshgrid(torch.arange(shape[0]), torch.arange(shape[1]), indexing='ij')
-    
-    # Apply the predicate to generate the mask
-    mask = predicate(q_idx, kv_idx).to(torch.bool)
-    
-    # Convert the boolean mask: True to 0, False to -inf
-    return torch.where(mask, torch.tensor(0.0), torch.tensor(float('-inf')))
-
-def get_disabled_cache_attn_mask(size: tuple[int, int], sliding_window_size: int, key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-    causal_mask = create_mask(size, lambda q_idx, kv_idx: q_idx >= kv_idx)
-    sliding_window_mask = create_mask(size, lambda q_idx, kv_idx: q_idx - kv_idx <= sliding_window_size)
-
-    if key_padding_mask is None:
-        return causal_mask + sliding_window_mask
-    else:
-        return causal_mask + sliding_window_mask + key_padding_mask
-
-def get_cache_attn_mask(size: tuple[int, int], cache_index: int) -> torch.Tensor:
-    causal_mask = create_mask(size, lambda _, kv_idx: kv_idx <= cache_index)
-
-    return causal_mask
-
-class LocalAttentionFromBottomRightMaskWithBiasTensor(xformers.ops.fmha.attn_bias.LocalAttentionFromBottomRightMask, xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-    pass
-
-# def get_xformers_attn_bias(sliding_window_size: int, bias_tensor: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
-#     if key_padding_mask is None:
-#         bias = LocalAttentionFromBottomRightMaskWithBiasTensor(
-#             window_left=sliding_window_size,
-#             window_right=0,
-#         )
-#         bias._subtensor=bias_tensor,
-#     else:
-#         return xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_seqlens(
-#             q_seqlen=key_padding_mask,
-#         ).make_causal().make_local_attention(window_size=sliding_window_size)
-
-# def get_cache_xformers_attn_bias(size, cache_index: int):
-#     causal_mask = create_mask(size, lambda _, kv_idx: kv_idx <= cache_index)
-
-#     return causal_mask
 
 class CachedMultiheadAttention(torch.nn.Module):
 
@@ -204,7 +138,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             use_cache: bool = False,
             cache: Optional[Tensor] = None,
             cache_index: Optional[int] = None,
-            key_padding_mask: Optional[Tensor] = None) -> Tuple[Tensor, Optional[Tensor]]:
+            sequence_lengths: Optional[Tensor] = None) -> Tuple[Tensor, Optional[Tensor]]:
 
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
             query, self.embed_dim, self.num_heads,
@@ -214,7 +148,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             use_cache=use_cache,
             cache=None if self.training or not use_cache else cache,
             cache_index=cache_index,
-            key_padding_mask=key_padding_mask,
+            sequence_lengths=sequence_lengths,
         )
 
         return attn_output.transpose(1, 0), updated_kv_cache
@@ -230,7 +164,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         use_cache: bool = False,
         cache: Optional[Tensor] = None,
         cache_index: Optional[int] = None,
-        key_padding_mask: Optional[Tensor] = None,
+        sequence_lengths: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         query = key = value = query.transpose(1, 0)
@@ -274,22 +208,30 @@ class CachedMultiheadAttention(torch.nn.Module):
         k = k.view(bsz, num_heads, src_len, head_dim)
         v = v.view(bsz, num_heads, src_len, head_dim)
 
-        mask_size = (tgt_len, src_len)
-        alibi_bias = get_alibi_bias((num_heads, src_len, tgt_len)).to(q.device)
+        block_mask = create_block_mask_cached(sliding_window_size, sequence_lengths, tgt_len, src_len, cache_index, device=q.device.type)
 
-        # if q.device == 'cuda':
-            # TODO: Try out flex attention and compare performance
-            # block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=q.device.type)
-            # attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=self.alibi_score_mod))
-            # attn_bias = get_cache_xformers_attn_bias(mask_size, cache_index) if cache_index is not None else get_xformers_attn_bias(sliding_window_size, alibi_bias)
-            # attn_bias = attn_bias.to(q.device)
-            # attn_output = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+        if q.device == 'cuda':
+            attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=self.alibi_score_mod))
 
-        # else:
-        attn_bias = get_cache_attn_mask(mask_size, cache_index) if cache_index is not None else get_disabled_cache_attn_mask(mask_size, sliding_window_size, key_padding_mask)
-        attn_bias = attn_bias.to(q.device)
-        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_bias + alibi_bias)
-        
+        else:
+            attn_mask = create_flex_attn_mask(
+                generate_sliding_window_mask_mod(sliding_window_size, cache_index, sequence_lengths),
+                bsz,
+                num_heads,
+                tgt_len,
+                src_len,
+                q.device.type,
+            )
+            attn_mask = torch.where(attn_mask, torch.tensor(0.0), torch.tensor(float('-inf'))).to(q.device)
+
+            def alibi_mask_fn(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
+                return self.alibi_score_mod(torch.tensor([0]), b, h, q_idx, kv_idx)
+            
+            alibi_mask = get_alibi_mask((bsz, num_heads, tgt_len, src_len), alibi_mask_fn, q.device.type)
+            attn_plus_alibi = attn_mask + alibi_mask
+            
+            attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_plus_alibi)
+
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
 
         attn_output = linear(attn_output, out_proj_weight, None)
