@@ -6,15 +6,12 @@ from typing import cast
 import numpy as np
 import pytest
 from gigmate.utils.audio_utils import calculate_audio_length, convert_audio_to_float_32, generate_random_filename
-from gigmate.utils.constants import get_pad_token_id, get_params
-from gigmate.domain.midi_conversion import convert_stems_to_midi, convert_wav_to_midi, merge_midis
+from gigmate.utils.constants import get_pad_token_id
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.play import get_audio_to_play
 from gigmate.domain.prediction import complete_sequence
 from gigmate.utils.device import get_device
 from scipy.io import wavfile
-from spleeter.separator import Separator
 import soundfile as sf
 
 SAMPLE_RATE = 22050

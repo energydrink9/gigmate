@@ -18,6 +18,7 @@ SEED = get_random_seed()
 random.seed(SEED)
 torch.manual_seed(SEED)
 
+
 def get_token(logits: torch.Tensor):
     return torch.argmax(logits, dim=-1, keepdim=True)
 
@@ -32,6 +33,7 @@ def generate_query_vector(batch_size: int, seq_len: int, codebooks: int):
 def get_model(*args, **kwargs):
     torch.manual_seed(SEED)
     params = {
+        "compile": False,
         "num_layers": NUM_LAYERS,
         "d_model": EMBEDDING_DIM,
         "codebooks": CODEBOOKS,
@@ -106,34 +108,38 @@ def test_model_forward_pass():
 
     # Precomputed expected output (this should be determined ahead of time)
     expected_output = torch.tensor([[
-         [[2],
-         [2],
-         [2]],
-        [[0],
-         [0],
-         [0]],
+        [
+            [2],
+            [2],
+            [2]
+        ],
+        [
+            [0],
+            [0],
+            [0]
+        ],
     ]])
     
     assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
 
 
 @pytest.mark.skip(reason="Flex attention does not support TorchScript yet")
-def test_scripted_model():
+def test_compiled_model():
 
     emb__dim = 2
     seq_len = 3
     num_heads = 1
     batch_size = 1
     query = generate_query_vector(batch_size, seq_len, CODEBOOKS)
-    model = get_model(d_model=emb__dim, num_heads=num_heads)
+    model = get_model(compile=True, d_model=emb__dim, num_heads=num_heads)
     model = torch.jit.script(model)
     
     output = get_token(model(query))
 
     expected_output = torch.tensor([[
-         [0],
-         [1],
-         [1]
+        [0],
+        [1],
+        [1]
     ]])
     
     assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
@@ -150,26 +156,30 @@ def test_model_batch():
 
     expected_output = torch.tensor(
         [
-        [[
-            [2],
-            [2],
-            [2]
-        ],
-        [
-            [0],
-            [0],
-            [0]
-        ]],
-        [[
-            [2],
-            [2],
-            [2]
-        ],
-        [
-            [0],
-            [0],
-            [0]
-        ]],        
+            [
+                [
+                    [2],
+                    [2],
+                    [2]
+                ],
+                [
+                    [0],
+                    [0],
+                    [0]
+                ]
+            ],
+            [
+                [
+                    [2],
+                    [2],
+                    [2]
+                ],
+                [
+                    [0],
+                    [0],
+                    [0]
+                ]
+            ],        
         ]
     )
 
@@ -241,11 +251,11 @@ def test_model_with_sliding_window():
     model = get_model(d_model=emb_dim, num_heads=num_heads, num_layers=num_layers, sliding_window_size=sliding_window_size)
     model.training = False
     
-    output = model(query)[:,:,-1]
+    output = model(query)[:, :, -1]
 
     expected_output = torch.tensor(
-        [[[-6.4006,  6.9212, -9.3461],
-         [ 5.3698, -8.0366, -1.2782]]]
+        [[[-6.4006, 6.9212, -9.3461],
+         [5.3698, -8.0366, -1.2782]]]
     )
 
     assert torch.allclose(expected_output, output, atol=1e-6), "Forward pass output does not match expected value"

@@ -1,3 +1,4 @@
+import os
 from clearml import Task
 from gigmate.dataset.dataset import get_data_loaders
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
@@ -13,6 +14,7 @@ DEBUG = False
 OUTPUT_DIRECTORY = 'output'
 UPLOAD_WEIGHTS = True
 BATCH_SIZE = get_params()['batch_size']
+MIXED_PRECISION = False
 
 L.seed_everything(get_random_seed())
 # torch.use_deterministic_algorithms(True) TODO: Enable this
@@ -25,11 +27,15 @@ def upload_weights(task, epoch, filepath):
 
 def init_clearml_task(params):
     task = Task.init(
-            project_name=get_clearml_project_name(),
-            task_name=f'train seq {params["max_seq_len"]} batch {params["batch_size"]} layers {params["num_layers"]} heads {params["num_heads"]} lr {params["learning_rate"]} dff {params["dff"]}',
+        project_name=get_clearml_project_name(),
+        task_name=f'train seq {params["max_seq_len"]} batch {params["batch_size"]} layers {params["num_layers"]} heads {params["num_heads"]} lr {params["learning_rate"]} dff {params["dff"]}',
     )
 
     task.connect(params)
+
+    # Workaround to prevent pytorch.compile errors due to builtins patching operated by clearml
+    import builtins
+    builtins.__import__ = builtins.__org_import__
 
     return task
 
@@ -44,7 +50,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
         upload_weights(self.task, trainer.current_epoch, filepath)
 
 
-def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
+def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path=None):
 
     training_model, quantizer = get_training_model(params, ckpt_path, device)
 
@@ -73,7 +79,7 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
         limit_val_batches=params['validation_set_size'],
         accumulate_grad_batches=params['accumulate_grad_batches'],
         gradient_clip_val=params['gradient_clip'],
-        precision=16 if device == 'cuda' else 32,
+        precision='16-mixed' if device == 'cuda' and MIXED_PRECISION is True else '32-true',
         detect_anomaly=DEBUG
     )
     

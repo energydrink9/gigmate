@@ -15,14 +15,22 @@ DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 20
 
 
-def predict_next_token(model: torch.nn.Module, input: torch.Tensor, current_token_index: int, incremental: bool, temperature: float = DEFAULT_TEMPERATURE, use_cache: bool = True, cache: Optional[List[torch.Tensor]] = None, cache_index: Optional[int] = None) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]]]:
+def predict_next_token(
+        model: torch.nn.Module,
+        input: torch.Tensor,
+        current_token_index: int,
+        incremental: bool,
+        temperature: float = DEFAULT_TEMPERATURE,
+        use_cache: bool = True,
+        cache: Optional[List[torch.Tensor]] = None,
+        cache_index: Optional[int] = None) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]]]:
 
     with torch.inference_mode():
         outputs, updated_cache = model(input, use_cache=use_cache, cache=cache, cache_index=cache_index if incremental else None)
-        outputs = outputs.squeeze(0).transpose(0, 1) # switch codebooks and sequence dimensions
-        outputs = outputs[-1 if use_cache and incremental else current_token_index] # remove batch dimension and take only next token logits
+        outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
+        outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
     
-    predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2) # sample and remove last dimension
+    predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
 
     return predicted_tokens.detach().to('cpu'), updated_cache
 
@@ -58,10 +66,21 @@ def complete_sequence(
     use_cache: bool = True,
 ) -> torch.Tensor:
 
-    def process_next_note_sequence(model, next_sequence, current_token_index: int, cache: Optional[List[torch.Tensor]], cache_index: int, output_sequence, max_seq_len, temperature, padding_value: int, incremental: bool, use_cache: bool = True):
+    def process_next_note_sequence(
+            model,
+            next_sequence,
+            current_token_index: int,
+            cache: Optional[List[torch.Tensor]],
+            cache_index: int,
+            output_sequence,
+            max_seq_len,
+            temperature,
+            padding_value: int,
+            incremental: bool,
+            use_cache: bool = True):
         next_token, updated_cache = predict_next_token(model, next_sequence, current_token_index, incremental, temperature, use_cache=use_cache, cache=cache, cache_index=cache_index)
         output_sequence = next_token if output_sequence is None else torch.cat((output_sequence, next_token), dim=2)
-        next_sequence = update_next_sequence(next_sequence, next_token, max_seq_len, current_token_index, padding_value=padding_value) if use_cache == False or incremental is None else next_token.to(next_sequence.device)
+        next_sequence = update_next_sequence(next_sequence, next_token, max_seq_len, current_token_index, padding_value=padding_value) if use_cache is False or incremental is None else next_token.to(next_sequence.device)
         return next_sequence, output_sequence, updated_cache
 
     def get_initial_next_sequence(sequence: torch.Tensor, max_seq_len: int, padding_value: int):
@@ -76,7 +95,6 @@ def complete_sequence(
 
         return padded_sequence
     
-
     model.eval()
     initial_sequence = input_sequence.clone().detach()
     sliding_window_size = get_params()['sliding_window_size']
@@ -94,7 +112,19 @@ def complete_sequence(
     for iteration in loop:
         current_token_index = min(initial_token_index + iteration, max_seq_len - 1)
         cache_index = min(initial_token_index + iteration, sliding_window_size - 1)
-        next_sequence, new_output_sequence, cache = process_next_note_sequence(model, next_sequence, current_token_index, cache, cache_index, output_sequence, max_seq_len, temperature, padding_value=padding_value, incremental=iteration != 0, use_cache=use_cache)
+        next_sequence, new_output_sequence, cache = process_next_note_sequence(
+            model,
+            next_sequence,
+            current_token_index,
+            cache,
+            cache_index,
+            output_sequence,
+            max_seq_len,
+            temperature,
+            padding_value=padding_value,
+            incremental=iteration != 0,
+            use_cache=use_cache
+        )
         output_sequence = new_output_sequence
 
     return revert_interleaving(cast(torch.Tensor, output_sequence))
@@ -111,7 +141,16 @@ def complete_audio(
     temperature: float = DEFAULT_TEMPERATURE
 ) -> str:
     input_sequence, frame_rate = encode_file(audio_file, device)
-    output_sequence = complete_sequence(model, device, input_sequence[0], frame_rate=frame_rate, verbose=verbose, max_output_length_in_seconds=max_output_length_in_seconds, temperature=temperature, padding_value=padding_value)
+    output_sequence = complete_sequence(
+        model,
+        device,
+        input_sequence[0],
+        frame_rate=frame_rate,
+        verbose=verbose,
+        max_output_length_in_seconds=max_output_length_in_seconds,
+        temperature=temperature,
+        padding_value=padding_value
+    )
     output_audio = decode(output_sequence, device)
     temp_file = generate_random_filename(extension='.wav')
     save_audio(output_audio, temp_file, sample_rate=24000)

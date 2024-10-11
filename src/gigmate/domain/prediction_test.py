@@ -8,7 +8,7 @@ def get_sample_data(B: int, K: int, T: int) -> torch.Tensor:
     sequence = torch.zeros((B, K, T), dtype=torch.int)
 
     for k in range(K):
-        sequence[:, k] = torch.arange(1, T+1, 1, dtype=torch.int)
+        sequence[:, k] = torch.arange(1, T + 1, 1, dtype=torch.int)
 
     return sequence
 
@@ -59,9 +59,9 @@ def test_custom_padding_value():
     
     interleaved = apply_interleaving(sequence, padding_value)
     assert torch.all(interleaved[:, :, :K] == torch.tensor([
-        [ 1,  2,  3],
-        [-1,  1,  2],
-        [-1, -1,  1],
+        [1, 2, 3],
+        [-1, 1, 2],
+        [-1, -1, 1],
     ]).unsqueeze(0).repeat(B, 1, 1)), "Custom padding value not applied correctly"
 
 
@@ -107,13 +107,13 @@ def test_update_interleaved_sequence(test_sequence):
 
     interleaved = update_interleaved_sequence(sequence, position, torch.tensor([[[-5], [-5], [-5], [-5]]]), padding_value=0)
 
-    assert interleaved.shape == (B, K, T + K -1), "Output shape is incorrect"
+    assert interleaved.shape == (B, K, T + K - 1), "Output shape is incorrect"
 
     assert torch.all(interleaved[:, :, 4:8] == torch.tensor([
         [-5, 6, 7, 8],
-        [ 4,-5, 6, 7],
-        [ 3, 4,-5, 6],
-        [ 2, 3, 4,-5]
+        [4, -5, 6, 7],
+        [3, 4, -5, 6],
+        [2, 3, 4, -5]
     ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
 
 
@@ -128,9 +128,9 @@ def test_update_interleaved_sequence_when_position_equals_last_element(test_sequ
 
     assert torch.all(interleaved[:, :, -K:] == torch.tensor([
         [10, 0, 0, 0],
-        [ 9,10, 0, 0],
-        [ 8, 9,10, 0],
-        [ 7, 8, 9,10]
+        [9, 10, 0, 0],
+        [8, 9, 10, 0],
+        [7, 8, 9, 10]
     ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
 
 
@@ -175,9 +175,9 @@ def test_update_next_sequence(test_sequence):
     assert next_sequence.shape == interleaved_sequence.shape
     assert torch.all(next_sequence[:, :, 4:8] == torch.tensor([
         [99, 6, 7, 8],
-        [ 4,99, 6, 7],
-        [ 3, 4,99, 6],
-        [ 2, 3, 4,99]
+        [4, 99, 6, 7],
+        [3, 4, 99, 6],
+        [2, 3, 4, 99]
     ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
 
 
@@ -194,9 +194,9 @@ def test_update_next_sequence_when_position_equals_last_element(test_sequence):
 
     assert torch.all(next_sequence[:, :, -K:] == torch.tensor([
         [99, 0, 0, 0],
-        [ 0,99, 0, 0],
-        [ 0, 0,99, 0],
-        [ 9, 0, 0,99]
+        [0, 99, 0, 0],
+        [0, 0, 99, 0],
+        [9, 0, 0, 99]
     ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
 
 
@@ -213,9 +213,9 @@ def test_update_next_sequence_when_position_equals_second_last_element(test_sequ
 
     assert torch.all(next_sequence[:, :, -K:] == torch.tensor([
         [99, 0, 0, 0],
-        [ 0,99, 0, 0],
-        [ 9, 0,99, 0],
-        [ 8, 9, 0,99]
+        [0, 99, 0, 0],
+        [9, 0, 99, 0],
+        [8, 9, 0, 99]
     ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
 
 

@@ -16,7 +16,7 @@ AUDIO_CHUNKS_DURATION = 20
 @lru_cache(maxsize=1)
 def get_codec():
     model = EncodecModel.from_pretrained("facebook/encodec_32khz", normalize=False)
-    #print(model.config)
+    # print(model.config)
     return model.eval()
 
 
@@ -46,7 +46,7 @@ def get_chunk_length(samples_per_chunk: int, index: int, total_chunks: int, samp
 
 
 def get_total_chunks(samples_per_chunk: int, num_samples: int, samples_per_token: int, add_start_and_end_tokens: bool) -> int:
-    if add_start_and_end_tokens == True:
+    if add_start_and_end_tokens is True:
         return math.ceil((num_samples + 2 * samples_per_token) / samples_per_chunk)
     return math.ceil(num_samples / samples_per_chunk)
 
@@ -84,7 +84,7 @@ def encode(audio: torch.Tensor, sr: int, device: Device, add_start_and_end_token
     wav = convert_audio(audio, sr, processor.sampling_rate, codec.config.audio_channels)
     # split wav in chunks which length will give encoded chunks of max_seq_len length:
     num_samples = wav.shape[1]
-    encoded_tokens_per_chunk = 1024 # large values requires a large amount of memory and can cause OOM errors
+    encoded_tokens_per_chunk = 1024  # large values requires a large amount of memory and can cause OOM errors
     samples_per_token = math.ceil(processor.sampling_rate / codec.config.frame_rate)
     samples_per_chunk = math.ceil((encoded_tokens_per_chunk / codec.config.frame_rate) * processor.sampling_rate)
     total_chunks = get_total_chunks(samples_per_chunk, num_samples, samples_per_token, add_start_and_end_tokens)

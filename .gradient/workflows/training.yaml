@@ -5,7 +5,7 @@
 jobs:
   CloneRepo:
     resources:
-      instance-type: C4
+      instance-type: C5
     outputs:
       repo:
         type: volume
@@ -40,7 +40,6 @@ jobs:
           cd /tmp/gigmate
           pip install poetry
           poetry install
-          poetry shell
           pip install --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
           echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
           python -m pip install .

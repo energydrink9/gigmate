@@ -36,7 +36,7 @@ def measure_audio_delay(duration=1, frequency=1000, sample_rate=44100):
     
     # Find the start of the tone in the recorded audio
     correlation = correlate(recorded_audio, tone)
-    peaks, _ = find_peaks(correlation, height=0.88*np.max(correlation))
+    peaks, _ = find_peaks(correlation, height=0.88 * np.max(correlation))
     if len(peaks) > 0:
         start_sample = peaks[0]
     else:
@@ -47,6 +47,7 @@ def measure_audio_delay(duration=1, frequency=1000, sample_rate=44100):
     total_delay = end_time - start_time
 
     return playback_start_time, total_delay
+
 
 # Measure the delay multiple times and take the average
 num_measurements = 5

@@ -30,13 +30,13 @@ pip3 install --pre torch torchvision torchaudio --index-url https://download.pyt
 
 ```sh
 pip install poetry
-poetry shell
 poetry install
+poetry run pip install .
 
-python -m gigmate.train # To start training
-python -m gigmate.test # To start evaluation
-python -m gigmate.api.complete_audio # To start the API
-python -m gigmate.play # To start the client
+poetry run python -m gigmate.training.train # To start training
+poetry run python -m gigmate.test # To start evaluation
+poetry run python -m gigmate.api.complete_audio # To start the API
+poetry run python -m gigmate.play # To start the client
 ```
 
 ### Environment Variables

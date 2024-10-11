@@ -1,15 +1,8 @@
-import time
-
-import spleeter.separator
-from gigmate.domain.midi_conversion import convert_audio_to_midi
-from gigmate.utils.constants import get_params
 from gigmate.utils.device import get_device
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.domain.predict import create_midi_from_sequence
 from gigmate.domain.prediction import complete_sequence
 from pydub import AudioSegment
-import numpy as np
 
 
 def complete_midi_track(score: Score, model, device):
@@ -24,8 +17,6 @@ def complete_midi_track(score: Score, model, device):
 
 def complete_track(file, model, device):
     audio_data = AudioSegment.from_file(file)
-    #separator = demucs.api.Separator(model='htdemucs_6s', device=get_device(), overlap=0.12, jobs=4, progress=False, shifts=0, split=False)
-    separator = spleeter.separator.Separator('spleeter:5stems')
     score = convert_audio_to_midi(audio_data, device, separator)
     complete_midi_track(score, model, device)
 

@@ -65,7 +65,7 @@ def apply_interleaving(sequence: torch.Tensor, padding_value: int) -> torch.Tens
     
     for k in range(K):
         # Shift each codebook by its index
-        output[:, k, k:k+T] = sequence[:, k, :]
+        output[:, k, k: k + T] = sequence[:, k, :]
     
     return output
 
@@ -104,7 +104,7 @@ def revert_interleaving(sequence: torch.Tensor) -> torch.Tensor:
 
     for k in range(K):
         # Extract the original sequence for each codebook
-        output[:, k, :] = sequence[:, k, k:k+original_t]
+        output[:, k, :] = sequence[:, k, k: k + original_t]
 
     return output
 
@@ -130,7 +130,7 @@ def update_interleaved_sequence(sequence: Tensor, position: int, new_tokens: Ten
     sequence = torch.cat([sequence, torch.full((sequence.shape[0], sequence.shape[1], new_sequence_length - original_sequence_length), padding_value, dtype=sequence.dtype, device=sequence.device)], dim=2)
 
     for k in range(new_tokens.shape[1]):
-        sequence[:,k,position+k] = new_tokens.squeeze(0).squeeze(-1)[k]
+        sequence[:, k, position + k] = new_tokens.squeeze(0).squeeze(-1)[k]
     
     return sequence
 

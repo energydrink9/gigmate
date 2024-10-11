@@ -49,17 +49,17 @@ def test_multihead_attention_shape():
 
 def test_multihead_attention_invalid_embed_dim():
     with pytest.raises(ValueError):
-        return get_attention(embed_dim = 0, num_heads = 2)
+        return get_attention(embed_dim=0, num_heads=2)
 
 
 def test_multihead_attention_invalid_num_heads():
     with pytest.raises(ValueError):
-        get_attention(embed_dim = 8, num_heads = 0)
+        get_attention(embed_dim=8, num_heads=0)
 
 
 def test_multihead_attention_divisibility_error():
     with pytest.raises(AssertionError):
-        get_attention(embed_dim = 7, num_heads = 2)
+        get_attention(embed_dim=7, num_heads=2)
 
 
 def test_multihead_attention_different_input_device():
@@ -97,9 +97,9 @@ def test_multihead_attention_forward_pass():
 
     # Precomputed expected output (this should be determined ahead of time)
     expected_output = torch.tensor([[
-         [-0.0090],
-         [-0.0090],
-         [-0.0090]
+        [-0.0090],
+        [-0.0090],
+        [-0.0090]
     ]])
     
     assert torch.allclose(attn_output, expected_output, atol=1e-4), "Forward pass output does not match expected value"
@@ -114,13 +114,13 @@ def test_multihead_attention_forward_pass_with_mask():
     query = generate_query_vector(batch_size, seq_len, embed_dim)
     multihead_attention = get_attention(embed_dim=embed_dim, num_heads=num_heads)
     
-    attn_output, _ = multihead_attention(query, key_padding_mask=look_ahead_mask(seq_len))
+    attn_output, _ = multihead_attention(query, sequence_lengths=[SEQ_LEN])
 
     # Precomputed expected output (this should be determined ahead of time)
     expected_output = torch.tensor([[
-         [-0.0130],
-         [-0.0090],
-         [-0.0090]
+        [-0.0130],
+        [-0.0090],
+        [-0.0090],
     ]])
     
     assert torch.allclose(attn_output, expected_output, atol=1e-4), "Forward pass output does not match expected value"
@@ -138,16 +138,18 @@ def test_multihead_attention_forward_pass_batch():
     attn_output, _ = multihead_attention(query)
     # Precomputed expected output (this should be determined ahead of time)
     expected_output = torch.tensor(
-        [[
-            [-0.0130],
-            [-0.0090],
-            [-0.0090]
-        ],
         [
-            [-0.0089],
-            [ 0.0192],
-            [ 0.0141]
-        ]]
+            [
+                [-0.0130],
+                [-0.0090],
+                [-0.0090]
+            ],
+            [
+                [-0.0089],
+                [0.0192],
+                [0.0141]
+            ]
+        ]
     )
 
     assert torch.allclose(attn_output, expected_output, atol=1e-4), "Forward pass output does not match expected value"
@@ -194,7 +196,7 @@ def test_multihead_attention_with_cache_full_forward_pass():
     next_token = attn_output_incremental_1[:, 2:3, :]
     attn_output_incremental_2, _ = multihead_attention_incremental(next_token, use_cache=True, cache_index=2)
     
-    last_part_seq = torch.cat([query, next_token], dim=1)[:,1:,:]
+    last_part_seq = torch.cat([query, next_token], dim=1)[:, 1:, :]
     attn_output_one_shot, _ = multihead_attention_one_shot(last_part_seq)
     
-    assert torch.allclose(attn_output_incremental_2, attn_output_one_shot[:,-1:,:], atol=1e-4), "Forward pass output does not match expected value"
+    assert torch.allclose(attn_output_incremental_2, attn_output_one_shot[:, -1:, :], atol=1e-4), "Forward pass output does not match expected value"

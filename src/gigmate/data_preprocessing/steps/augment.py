@@ -4,7 +4,7 @@ import shutil
 import numpy as np
 from pydub import AudioSegment
 from tqdm import tqdm
-from audiomentations import Compose, AddGaussianSNR, BitCrush, BandStopFilter, RoomSimulator, SevenBandParametricEQ, TimeMask
+from audiomentations import Compose, AddGaussianSNR, BitCrush, BandStopFilter, RoomSimulator, SevenBandParametricEQ
 
 from gigmate.utils.audio_utils import clamp_audio_data, convert_audio_to_float_32, convert_audio_to_int_16
 
@@ -27,9 +27,9 @@ def augment(original_audio: AudioSegment) -> AudioSegment:
     transform = Compose(
         transforms=[
             AddGaussianSNR(min_snr_db=10., max_snr_db=50., p=0.15),
-            #ApplyImpulseResponse(),
+            # ApplyImpulseResponse(),
             BitCrush(min_bit_depth=5, max_bit_depth=10, p=0.2),
-            #BandPassFilter(min_center_freq=200., max_center_freq=4000., p=1.0),
+            # BandPassFilter(min_center_freq=200., max_center_freq=4000., p=1.0),
             BandStopFilter(min_center_freq=200., max_center_freq=4000., p=0.2),
             RoomSimulator(p=0.6, leave_length_unchanged=True),
             SevenBandParametricEQ(p=0.5, min_gain_db=-3.5, max_gain_db=3.5),

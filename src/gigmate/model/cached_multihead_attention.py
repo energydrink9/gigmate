@@ -1,6 +1,5 @@
 
-from functools import lru_cache
-import math
+import functools
 from typing import Callable, List, Optional, Tuple, cast
 import torch
 from torch import Tensor
@@ -13,7 +12,7 @@ import torch.utils.backend_registration
 import torch.utils._python_dispatch
 import torch._C
 import torch.fx.experimental.proxy_tensor
-from torch.nn.attention.flex_attention import create_mask as create_flex_attn_mask, flex_attention, and_masks, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask, _convert_block_mask_to_mask
+from torch.nn.attention.flex_attention import create_mask as create_flex_attn_mask, flex_attention, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask
 
 pad = torch._C._nn.pad,
 linear = torch._C._nn.linear
@@ -39,14 +38,14 @@ def generate_alibi_bias(H: int) -> _score_mod_signature:
 
 def get_alibi_mask(shape: Tuple[int, int, int, int], fn: Callable[[Tensor, Tensor, Tensor, Tensor], Tensor], device: str) -> Tensor:
 
-    indices = [torch.arange(dim) for dim in shape]    
+    indices = [torch.arange(dim, device=device) for dim in shape]    
     grid = torch.meshgrid(*indices, indexing='ij')
     result = fn(*grid)
     
     return result.to(device)
 
 
-def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int], sequence_lengths: Optional[Tensor]) -> _mask_mod_signature:
+def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int]) -> _mask_mod_signature:
     """Generates a sliding window attention mask with a given window size.
     Args:
         window_size: The size of the sliding window.
@@ -55,42 +54,29 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
         We assume that the window size represents the lookback size and we mask out all future tokens
         similar to causal masking.
     """
-
-    def causal_mask(b, h, q_idx, kv_idx):
-        return q_idx >= kv_idx
     
-    def sliding_window(b, h, q_idx, kv_idx):
-        return q_idx - kv_idx <= window_size
-    
-    def key_padding_mask(b, h, q_idx, kv_idx):
-        if sequence_lengths is None:
-            return torch.tensor([True], device=q_idx.device)
-        
-        sequence_length = sequence_lengths[b]
+    def causal_sliding_padded_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
+        return (q_idx >= kv_idx) & (q_idx - kv_idx <= window_size)
 
-        return torch.logical_and(q_idx < sequence_length, kv_idx < sequence_length)
-
-    def incremental_sliding_window(b, h, q_idx, kv_idx):
-        return cache_index - kv_idx <= window_size
-
-    def incremental_padding_mask(b, h, q_idx, kv_idx):
-        return cache_index >= kv_idx
+    def incremental_causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
+        return (cache_index - kv_idx <= window_size) & (cache_index >= kv_idx)
 
     if cache_index is not None:
-        return and_masks(incremental_sliding_window, incremental_padding_mask)
+        return incremental_causal_sliding_mask
     else:
-        return and_masks(sliding_window, causal_mask, key_padding_mask)
+        return causal_sliding_padded_mask
 
 
-@lru_cache(maxsize=1)
-def create_block_mask_cached(sliding_window_size: int, sequence_lengths: Optional[Tensor], q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
+@functools.lru_cache(maxsize=1)
+def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
     return create_block_mask(
-        mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index, sequence_lengths),
+        mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index),
         B=None,
         H=None,
         Q_LEN=q_len,
         KV_LEN=kv_len,
         device=device,
+        _compile=False,
     )
 
 
@@ -140,7 +126,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             use_cache: bool = False,
             cache: Optional[Tensor] = None,
             cache_index: Optional[int] = None,
-            sequence_lengths: Optional[Tensor] = None) -> Tuple[Tensor, Optional[Tensor]]:
+            sequence_lengths: Optional[List[int]] = None) -> Tuple[Tensor, Optional[Tensor]]:
 
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
             query, self.embed_dim, self.num_heads,
@@ -166,7 +152,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         use_cache: bool = False,
         cache: Optional[Tensor] = None,
         cache_index: Optional[int] = None,
-        sequence_lengths: Optional[Tensor] = None,
+        sequence_lengths: Optional[List[int]] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         query = key = value = query.transpose(1, 0)
@@ -210,21 +196,37 @@ class CachedMultiheadAttention(torch.nn.Module):
         k = k.view(bsz, num_heads, src_len, head_dim)
         v = v.view(bsz, num_heads, src_len, head_dim)
 
-        block_mask = create_block_mask_cached(sliding_window_size, sequence_lengths, tgt_len, src_len, cache_index, device=q.device.type)
+        block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=q.device.type)
+        
+        if sequence_lengths is not None:
+            sequence_lengths_tensor = torch.tensor(sequence_lengths, device=q.device.type)
+        else:
+            sequence_lengths_tensor = None
 
-        if q.device == 'cuda':
-            attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=self.alibi_score_mod))
+        def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
+            alibi_score = self.alibi_score_mod(score, b, h, q_idx, kv_idx)
+
+            if sequence_lengths_tensor is None:
+                return alibi_score
+            else:
+                sequence_length = sequence_lengths_tensor[b]
+                padding_score_q = torch.where(q_idx < sequence_length, 0., float('-inf'))
+                padding_score_kv = torch.where(kv_idx < sequence_length, 0., float('-inf'))
+                return alibi_score + padding_score_q + padding_score_kv
+
+        if q.device.type == 'cuda' or True:
+            attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
 
         else:
             attn_mask = create_flex_attn_mask(
-                generate_sliding_window_mask_mod(sliding_window_size, cache_index, sequence_lengths),
+                generate_sliding_window_mask_mod(sliding_window_size, cache_index),
                 bsz,
                 num_heads,
                 tgt_len,
                 src_len,
                 q.device.type,
             )
-            attn_mask = torch.where(attn_mask, torch.tensor(0.0), torch.tensor(float('-inf'))).to(q.device)
+            attn_mask = torch.where(attn_mask, torch.tensor(0.0), torch.tensor(float('-inf'))).to(q.device.type)
 
             def alibi_mask_fn(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
                 return self.alibi_score_mod(torch.tensor([0]), b, h, q_idx, kv_idx)

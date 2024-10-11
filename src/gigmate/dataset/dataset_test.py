@@ -3,7 +3,7 @@
 import time
 
 import torch
-from gigmate.dataset.dataset import get_data_loader, get_data_loaders, get_inputs_and_targets, restore_initial_sequence
+from gigmate.dataset.dataset import get_data_loader, get_inputs_and_targets, restore_initial_sequence
 from gigmate.utils.device import Device, get_device
 from torch.utils.data import DataLoader
 
@@ -40,11 +40,11 @@ def test_restore_initial_sequence():
     iterator = iter(data_loader)
     batch = next(iterator)
     inputs, targets, sequence_lengths = get_inputs_and_targets(batch, device)
-    first_element = inputs[:1,:4,:]
+    first_element = inputs[:1, :4, :]
     sequence = restore_initial_sequence(first_element, sequence_lengths[0])
 
     assert sequence.shape == (1, 4, first_element.shape[2] - 3)
-    assert torch.equal(sequence[:, 0:4, 0:1], torch.cat([first_element[:,0:1,0:1], first_element[:,1:2,1:2], first_element[:,2:3,2:3], first_element[:,3:4,3:4]], dim=1)), 'Sequences do not match'
+    assert torch.equal(sequence[:, 0:4, 0:1], torch.cat([first_element[:, 0:1, 0:1], first_element[:, 1:2, 1:2], first_element[:, 2:3, 2:3], first_element[:, 3:4, 3:4]], dim=1)), 'Sequences do not match'
 
 
 def measure_dataloader_iteration_time(data_loader: DataLoader, device: Device):

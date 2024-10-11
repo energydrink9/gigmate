@@ -1,6 +1,5 @@
 import pyaudio
 import numpy as np
-import time
 
 
 class MicrophoneSyncPlayer:
@@ -11,12 +10,14 @@ class MicrophoneSyncPlayer:
         self.RATE = 44100
 
         self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=self.FORMAT,
-                                 channels=self.CHANNELS,
-                                 rate=self.RATE,
-                                 input=True,
-                                 output=True,
-                                 frames_per_buffer=self.CHUNK)
+        self.stream = self.p.open(
+            format=self.FORMAT,
+            channels=self.CHANNELS,
+            rate=self.RATE,
+            input=True,
+            output=True,
+            frames_per_buffer=self.CHUNK
+        )
 
         # Load your sample audio
         self.sample = self.load_sample("output/loop.wav")
@@ -31,10 +32,10 @@ class MicrophoneSyncPlayer:
 
         while True:
             # Read audio chunk from microphone
-            mic_data = np.frombuffer(self.stream.read(self.CHUNK), dtype=np.float32)
+            # mic_data = np.frombuffer(self.stream.read(self.CHUNK), dtype=np.float32)
 
             # Play a chunk of the sample audio
-            sample_chunk = self.sample[self.sample_pos:self.sample_pos+self.CHUNK]
+            sample_chunk = self.sample[self.sample_pos:self.sample_pos + self.CHUNK]
             self.stream.write(sample_chunk.tobytes())
             self.sample_pos = (self.sample_pos + self.CHUNK) % len(self.sample)
 

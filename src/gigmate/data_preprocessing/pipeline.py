@@ -9,7 +9,6 @@ from gigmate.data_preprocessing.steps.merge import assort_and_merge_all
 from gigmate.data_preprocessing.steps.split import split_all
 from gigmate.data_preprocessing.steps.uncompress import uncompress_files
 from gigmate.utils.constants import get_clearml_dataset_version, get_clearml_project_name
-from gigmate.utils.constants import get_clearml_project_name
 from gigmate.data_preprocessing.steps.augment import augment_all
 
 BASE_DIR = '/Users/michele/Music/soundstripe'
@@ -21,7 +20,7 @@ SPLIT_FILES_DIR = os.path.join(BASE_DIR, 'split')
 
 STEM_NAME = 'guitar'
 RANDOM_ASSORTMENTS_PER_SONG = 1
-DATASET_TAGS = ['small']
+DATASET_TAGS = ['medium', 'soundstripe']
 
 
 @PipelineDecorator.component(return_values=['uncompressed_dir'], cache=False)
@@ -45,19 +44,19 @@ def assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_as
 
 @PipelineDecorator.component(return_values=['augmented_dir'], cache=False)
 def augment_step(source_dir: str, output_dir: str) -> str:
-    print(f'Augmenting dataset')
+    print('Augmenting dataset')
     return augment_all(source_dir, output_dir)
 
 
 @PipelineDecorator.component(return_values=['encoded_dir'], cache=False)
 def encode_step(source_dir: str, output_dir: str) -> str:
-    print(f'Encoding dataset')
+    print('Encoding dataset')
     return encode_all(source_dir, output_dir)
 
 
 @PipelineDecorator.component(return_values=['split_dir'], cache=False)
 def split_step(source_dir: str, output_dir: str) -> List[str]:
-    print(f'Splitting dataset')
+    print('Splitting dataset')
     return split_all(source_dir, output_dir)
 
 

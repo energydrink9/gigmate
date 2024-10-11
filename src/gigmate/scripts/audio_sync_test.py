@@ -27,7 +27,7 @@ class AudioSyncTester:
         self.recording_stream.start()
 
         for i in range(0, len(test_tone), self.CHUNK):
-            chunk = test_tone[i:i+self.CHUNK]
+            chunk = test_tone[i: i + self.CHUNK]
             self.stream.write(chunk)
             recorded_chunk = self.recording_stream.read(self.CHUNK)[0].flatten()  # Flatten the recorded chunk
             recorded_audio = np.concatenate((recorded_audio, recorded_chunk))

@@ -1,13 +1,10 @@
-import math
 import random
 import numpy as np
 import os
 from pydub import AudioSegment
 import torch
 
-from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_id, get_start_of_sequence_token_id
-
-SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'# Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
+SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'  # Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
 
 
 def generate_random_dirname(prefix: str = 'tmp_', dir: str = '/tmp') -> str:

@@ -1,7 +1,7 @@
 import glob
 import multiprocessing
 import pickle
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 from clearml import Dataset as ClearmlDataset
 import torch
 from torch import Tensor
@@ -31,7 +31,7 @@ def get_stem_file_path(file_path: str) -> str:
 
 def get_entries(dir: str) -> List[Tuple[str, str]]:
     full_tracks_file_paths = glob.glob(os.path.join(dir, '**/all-*.pkl'), recursive=True)
-    return [(file_path, get_stem_file_path(file_path)) for file_path in full_tracks_file_paths ]
+    return [(file_path, get_stem_file_path(file_path)) for file_path in full_tracks_file_paths]
 
 
 class AudioDataset(Dataset):
@@ -47,13 +47,22 @@ class AudioDataset(Dataset):
     
     def __getitem__(self, idx):
 
-        entry = self.entries[idx]
+        full_track_file_path, stem_file_path = self.entries[idx]
 
-        with open(entry[0], 'rb') as full_track_file:
+        with open(full_track_file_path, 'rb') as full_track_file:
             full_track = pickle.load(full_track_file).to('cpu')
             
-        with open(entry[1], 'rb') as stem_file:
+        with open(stem_file_path, 'rb') as stem_file:
             stem = pickle.load(stem_file).to('cpu')
+
+        # if lengths do not match, cut the sequences to the shortest length
+        full_track_length = full_track.shape[-1]
+        stem_length = stem.shape[-1]
+
+        if (full_track_length != stem_length):
+            length_to_keep = min(full_track_length, stem_length)
+            full_track = cut_sequence(full_track, length_to_keep)
+            stem = cut_sequence(stem, length_to_keep)
 
         return full_track, stem
     
@@ -131,15 +140,15 @@ def encoder_decoder_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, 
         inputs.append(input)
         targets.append(target)
 
-        sequence_lengths.append(torch.tensor([sequence_length - 1])) # sequence length has been reduced by one because of shifting
+        sequence_lengths.append(torch.tensor([sequence_length - 1]))  # sequence length has been reduced by one because of shifting
     
-    return { 'inputs': torch.cat(inputs, dim=0), 'labels': torch.cat(targets, dim=0), 'sequence_lengths': torch.cat(sequence_lengths) }
+    return {'inputs': torch.cat(inputs, dim=0), 'labels': torch.cat(targets, dim=0), 'sequence_lengths': torch.cat(sequence_lengths)}
 
 
-def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Tensor]:
+def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Union[Tensor, List[int]]]:
     inputs: List[Tensor] = []
     targets: List[Tensor] = []
-    sequence_lengths: List[Tensor] = []
+    sequence_lengths: List[int] = []
 
     padding_value = get_pad_token_id()
     max_seq_len = get_params()['max_seq_len']
@@ -149,7 +158,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Ten
         assert stem.ndim == 3, 'Expected 3 dimensions for stem'
         assert full_track.shape == stem.shape, 'Full track and stem have different shapes'
 
-        batch_size, codebooks, sequence_length = full_track.shape
+        _, codebooks, sequence_length = full_track.shape
 
         # Shift labels by 1 position and remove last token that is the result of shifting
         target = shift_sequence(full_track)
@@ -172,11 +181,9 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Ten
 
         inputs.append(input)
         targets.append(target)
-        sequence_lengths.append(torch.tensor([sequence_length - 1]))
+        sequence_lengths.append(sequence_length - 1)
     
-    return { 'inputs': torch.cat(inputs, dim=0), 'labels': torch.cat(targets, dim=0), 'sequence_lengths': torch.cat(sequence_lengths) }
-    # TODO: use nested tensors
-    #return { 'inputs': torch.nested.nested_tensor(inputs), 'labels': torch.nested.nested_tensor(targets) }
+    return {'inputs': torch.cat(inputs, dim=0), 'labels': torch.cat(targets, dim=0), 'sequence_lengths': sequence_lengths}
 
 
 def get_data_loader(dataset: str):
@@ -201,6 +208,6 @@ def get_data_loaders():
     return get_data_loader('train'), get_data_loader('validation'), get_data_loader('test')
 
 
-def get_inputs_and_targets(batch, device):
-    return batch['inputs'].to(device), batch['labels'].to(device), batch['sequence_lengths'].to(device)
+def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, List[int]]:
+    return batch['inputs'].to(device), batch['labels'].to(device), batch['sequence_lengths']
 

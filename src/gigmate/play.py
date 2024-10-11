@@ -7,18 +7,18 @@ import sounddevice as sd
 from threading import Thread
 import numpy as np
 
-#SERVER_HOST = 'xze3ji413brpy4-8000.proxy.runpod.net'
+# SERVER_HOST = 'xze3ji413brpy4-8000.proxy.runpod.net'
 SERVER_HOST = 'localhost:8000'
 SERVER_URL = 'ws://' + SERVER_HOST + '/ws/complete-audio'
 CHANNELS = 1
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 22050
-MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 225 # Use audio_delay_measurement.py to estimate
+MIC_PLUS_SPEAKER_LATENCY_IN_MILLISECONDS = 225  # Use audio_delay_measurement.py to estimate
 OUTPUT_BLOCK_SIZE = int(OUTPUT_SAMPLE_RATE / 10)
 OUTPUT_PLAYBACK_DELAY = OUTPUT_BLOCK_SIZE / OUTPUT_SAMPLE_RATE
 MAX_OUTPUT_LENGTH_IN_SECONDS = 8
 MAX_OUTPUT_TOKENS_COUNT = 180
-MIDI_PROGRAM = None# https://wiki.musink.net/doku.php/midi/instrument
+MIDI_PROGRAM = None  # https://wiki.musink.net/doku.php/midi/instrument
 DEBUG = True
 
 
@@ -97,7 +97,7 @@ def playback(playback_queue: Queue) -> None:
         remaining = len(audio_buffer) - audio_index
         if remaining > 0:
             n = min(remaining, frames)
-            outdata[:n, 0] = audio_buffer[audio_index:audio_index+n]
+            outdata[:n, 0] = audio_buffer[audio_index: audio_index + n]
             audio_index += n
             if n < frames:
                 outdata[n:] = 0
@@ -115,7 +115,7 @@ def playback(playback_queue: Queue) -> None:
         # Parse the incoming message
         data = json.loads(message)
         audio_data = np.array(data['data'], dtype=np.float32)  # Assuming audio is in this format
-        record_start_time = data['startTime']
+        # record_start_time = data['startTime']
         record_end_time = data['endTime']
 
         print(f'Received audio with length: {len(audio_data) / OUTPUT_SAMPLE_RATE:.2f} seconds')

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 from torchmetrics import Metric
 import torchmetrics.classification
 from torch import nn, Tensor
@@ -9,9 +9,9 @@ from typing import Literal
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from gigmate.dataset.dataset import get_inputs_and_targets, restore_initial_sequence
-from gigmate.domain.sampling import remove_forbidden_tokens, sample_from_logits
+from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
-from gigmate.model.model import get_model
+from gigmate.model.model import ENABLE_QUANTIZATION, get_model
 from torchao.quantization.prototype.qat.api import Int8DynActInt4WeightQATQuantizer
 from torcheval.metrics import FrechetAudioDistance
 
@@ -63,9 +63,9 @@ class TrainingModel(L.LightningModule):
         self.max_learning_rate = max_learning_rate
         self.codebooks = codebooks
         
-        self.loss: Dict[str, Dict[int, nn.CrossEntropyLoss]] = dict({ 'train': dict(), 'val': dict() })
-        self.accuracy_metric: Dict[str, Dict[int, Metric]] = dict({ 'train': dict(), 'val': dict() })
-        self.perplexity_metric: Dict[str, Dict[int, Metric]] = dict({ 'train': dict(), 'val': dict() })
+        self.loss: Dict[str, Dict[int, nn.CrossEntropyLoss]] = dict({'train': dict(), 'val': dict()})
+        self.accuracy_metric: Dict[str, Dict[int, Metric]] = dict({'train': dict(), 'val': dict()})
+        self.perplexity_metric: Dict[str, Dict[int, Metric]] = dict({'train': dict(), 'val': dict()})
         self.frechet_audio_distance_metric: Dict[str, Any] = dict()
         
         for k in range(codebooks):
@@ -107,6 +107,7 @@ class TrainingModel(L.LightningModule):
         for (key, value) in kwargs.items():
             self.log_metric(dataset, key, value)
 
+    @torch.compiler.disable
     def log_metric(self, dataset: Literal['train', 'val', 'test'], metric_name: str, value):
         log_on_step = dataset == 'train'
         self.log(f"{dataset}_{metric_name}", value, on_step=log_on_step, on_epoch=True, prog_bar=metric_name in ['loss', 'accuracy', 'perplexity', 'frechet_audio_distance'])
@@ -161,19 +162,22 @@ class TrainingModel(L.LightningModule):
 
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'val')
 
-        pred_audio, target_audio = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
-
-        if batch_idx < 32:
-            frechet_audio_distance_metric = self.frechet_audio_distance_metric['train']
-            if self.device == 'cuda': # fad metric is not supported on mps device
-                frechet_audio_distance_metric = frechet_audio_distance_metric.to(self.device)
-            frechet_audio_distance_metric.update(pred_audio, target_audio)
-            frechet_audio_distance = frechet_audio_distance_metric.compute()
-            metrics['frechet_audio_distance'] = frechet_audio_distance
+        if batch_idx < 10:
+            self.log_frechet_audio_distance_metric(logits, targets, sequence_lengths)
 
         self.log_metrics("val", loss=loss, **metrics)
 
         return loss
+
+    @torch.compiler.disable
+    def log_frechet_audio_distance_metric(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
+        pred_audio, target_audio = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+        frechet_audio_distance_metric = self.frechet_audio_distance_metric['val']
+        if self.device.type == 'cuda':  # fad metric is not supported on mps device
+            frechet_audio_distance_metric = frechet_audio_distance_metric.to(self.device)
+        frechet_audio_distance_metric.update(pred_audio, target_audio)
+        frechet_audio_distance = frechet_audio_distance_metric.compute()
+        self.log_metric('val', 'frechet_audio_distance', frechet_audio_distance)
 
 
 def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
@@ -182,11 +186,24 @@ def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
 
 def get_training_model(params, checkpoint_path: Optional[str], device: str) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
     model = get_model(params, checkpoint_path, device)
-    if device == 'cuda':
+    if device == 'cuda' and ENABLE_QUANTIZATION is True:
         quantizer = get_quantizer()
         model = quantizer.prepare(model)
     else:
         quantizer = None
 
-    return TrainingModel(model, learning_rate = params['learning_rate'], step_size_up=params['step_size_up'], max_learning_rate=params['max_learning_rate'], vocab_size=params['vocab_size'], codebooks=params['codebooks']), quantizer
+    training_model = TrainingModel(
+        model,
+        learning_rate=params['learning_rate'],
+        step_size_up=params['step_size_up'],
+        max_learning_rate=params['max_learning_rate'],
+        vocab_size=params['vocab_size'],
+        codebooks=params['codebooks']
+    )
+
+    # TODO: fix torch compile full graph
+    # backend = 'aot_eager' if device == 'mps' else 'inductor'
+    # training_model = cast(TrainingModel, torch.compile(training_model, fullgraph=False, backend=backend))
+    
+    return training_model, quantizer
 
