@@ -23,15 +23,18 @@ STEM_NAME = 'guitar'
 RANDOM_ASSORTMENTS_PER_SONG = 1
 DATASET_TAGS = ['small']
 
+
 @PipelineDecorator.component(return_values=['uncompressed_dir'], cache=False)
 def uncompress_step(source_dir: str):
     output_dir = uncompress_files(source_dir)
     return output_dir
 
+
 @PipelineDecorator.component(return_values=['converted_to_ogg_dir'], cache=False)
 def convert_to_ogg_step(split_output):
     output_dir = convert_to_ogg(split_output)
     return output_dir
+
 
 @PipelineDecorator.component(return_values=['merged_dir'], cache=False)
 def assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song):
@@ -39,20 +42,24 @@ def assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_as
     output_dir = assort_and_merge_all(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song)
     return output_dir
 
+
 @PipelineDecorator.component(return_values=['augmented_dir'], cache=False)
 def augment_step(source_dir: str, output_dir: str) -> str:
     print(f'Augmenting dataset')
     return augment_all(source_dir, output_dir)
+
 
 @PipelineDecorator.component(return_values=['encoded_dir'], cache=False)
 def encode_step(source_dir: str, output_dir: str) -> str:
     print(f'Encoding dataset')
     return encode_all(source_dir, output_dir)
 
+
 @PipelineDecorator.component(return_values=['split_dir'], cache=False)
 def split_step(source_dir: str, output_dir: str) -> List[str]:
     print(f'Splitting dataset')
     return split_all(source_dir, output_dir)
+
 
 @PipelineDecorator.pipeline(
     name='Dataset creation pipeline',
@@ -72,6 +79,7 @@ def dataset_creation_pipeline(stem_name: str, random_assortments_per_song: int, 
         set = os.path.split(split_dir)[1]
         print(f'Uploading {set} dataset')
         upload_dataset(path=split_dir, version=get_clearml_dataset_version(), tags=tags, dataset=set)
+
 
 if __name__ == '__main__':
     PipelineDecorator.run_locally()

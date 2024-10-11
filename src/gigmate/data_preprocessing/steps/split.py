@@ -14,6 +14,7 @@ SPLIT_NAMES = ['train', 'validation', 'test']
 VALIDATION_SIZE = 0.10
 TEST_SIZE = 0.10
 
+
 def get_directories_containing_pkl_files(dir: str) -> Set[str]:
     files = glob.glob(os.path.join(dir, '**/*.pkl'), recursive=True)
     directories = {os.path.dirname(file) for file in files}

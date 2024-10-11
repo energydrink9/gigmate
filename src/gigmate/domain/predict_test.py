@@ -11,11 +11,13 @@ SEED = get_random_seed()
 random.seed(SEED)
 torch.manual_seed(SEED)
 
+
 @pytest.fixture
 def mock_model():
     model = Mock()
     model.return_value = torch.tensor([[[0.1, 0.2], [0.2, 0.4], [0.1, 0.2]]])
     return model
+
 
 def test_predict_next_note_temperature_zero(mock_model):
     input_sequence = torch.tensor([[[1, 2, 3]]])
@@ -23,6 +25,7 @@ def test_predict_next_note_temperature_zero(mock_model):
     
     assert isinstance(result, int)
     assert result == 1  # argmax of [0.1, 0.2]
+
 
 @patch('torch.multinomial')
 def test_predict_next_note_with_temperature(mock_multinomial, mock_model):
@@ -33,12 +36,14 @@ def test_predict_next_note_with_temperature(mock_multinomial, mock_model):
     assert isinstance(result, int)
     assert result == 1  # mocked multinomial return value
 
+
 def test_remove_forbidden_tokens(mock_model):
     input_sequence = torch.tensor([[[1, 2, 3]]])
     result = predict_next_token(mock_model, current_token_index=2, incremental=False, input=input_sequence, temperature=0, forbidden_tokens=[1])
     
     assert isinstance(result, int)
     assert result == 0  # argmax of [0.1, 0]
+
 
 def test_loss():
     loss = nn.CrossEntropyLoss(ignore_index=0)

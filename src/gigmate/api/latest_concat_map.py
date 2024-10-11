@@ -12,6 +12,7 @@ _T = TypeVar("_T")
 _T1 = TypeVar("_T1")
 _T2 = TypeVar("_T2")
 
+
 def merge_latest(
     max_concurrent: Optional[int] = None
 ) -> Callable[[Observable[Observable[_T]]], Observable[_T]]:
@@ -71,6 +72,7 @@ def merge_latest(
         return Observable(subscribe)
 
     return merge
+
 
 """
 Merges the items emitted by an Observable of Observables into a single Observable, 

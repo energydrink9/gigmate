@@ -14,6 +14,7 @@ DEFAULT_MAX_OUTPUT_TOKENS = 1000
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 20
 
+
 def predict_next_token(model: torch.nn.Module, input: torch.Tensor, current_token_index: int, incremental: bool, temperature: float = DEFAULT_TEMPERATURE, use_cache: bool = True, cache: Optional[List[torch.Tensor]] = None, cache_index: Optional[int] = None) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]]]:
 
     with torch.inference_mode():
@@ -97,6 +98,7 @@ def complete_sequence(
         output_sequence = new_output_sequence
 
     return revert_interleaving(cast(torch.Tensor, output_sequence))
+
 
 def complete_audio(
     model: torch.nn.Module,

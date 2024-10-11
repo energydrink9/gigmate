@@ -25,12 +25,14 @@ TEST_GENERATION_FILE = 'resources/test_generation.wav'
 TEST_TIMING_FILE = 'resources/test_timing_2.wav'
 MIDI_PROGRAM = None
 
+
 def get_temporary_file(audio: np.ndarray, output_sample_rate: int) -> tempfile._TemporaryFileWrapper:
     with tempfile.NamedTemporaryFile(mode='w+b', suffix='.wav', delete=False) as file:
         sf.write(file, audio, output_sample_rate, format='WAV')
         file.flush()  # Ensure the data is written to the file
         file.seek(0)  # Reset the file pointer to the beginning
         return file
+
 
 def test_step_separation_returns_tracks_of_equal_length():
     sample_rate, original_audio = wavfile.read(TEST_GENERATION_FILE)
@@ -46,6 +48,7 @@ def test_step_separation_returns_tracks_of_equal_length():
         print(f'Stem duration: {audio_duration}')
         assert audio_duration == original_audio_duration, f'Stem {stem_name} duration {audio_duration} is not equal to original audio duration {original_audio_duration}'
 
+
 def test_midi_generation_returns_midi_of_equal_length():
     sample_rate, original_audio = wavfile.read(TEST_GENERATION_FILE)
     original_audio = convert_audio_to_float_32(original_audio)
@@ -55,6 +58,7 @@ def test_midi_generation_returns_midi_of_equal_length():
     midi_audio_duration = calculate_score_length_in_seconds(score)
 
     assert pytest.approx(midi_audio_duration, rel=1e-3) == original_audio_duration, f'Midi duration {midi_audio_duration} is not equal to original audio duration {original_audio_duration}'
+
 
 def test_generation_of_audio():
 
@@ -89,7 +93,8 @@ def test_generation_of_audio():
     wavfile.write(temp_file_name.replace('.mid', '.wav'), sample_rate, data)
 
     print(f"Saved file {temp_file_name.replace('.mid', '.wav')}")
- 
+
+
 def test_timing_of_generated_audio():
 
     # take a audio file

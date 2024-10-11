@@ -23,7 +23,7 @@ python -m gigmate.data_preprocessing.pipeline
 
 ### Run
 
-Install the [latest nightly version](https://pytorch.org/get-started/locally/) of py torch. On Mac:
+Install the [latest nightly version](https://pytorch.org/get-started/locally/) of PyTorch. On Mac you can use the following command:
 ```
 pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
 ```
@@ -43,7 +43,7 @@ python -m gigmate.play # To start the client
 
 CLI:
 
-Make sure the following environment variables are set before running the application (replace the <> tokens with the actual secrets):
+If you want to run training or dataset generation (for inference it's not needed), make sure the following environment variables are set before running the application (replace the <> tokens with the actual secrets):
 
 ```sh
 export CLEARML_API_ACCESS_KEY=<YOUR_CLEARML_API_ACCESS_KEY_HERE>

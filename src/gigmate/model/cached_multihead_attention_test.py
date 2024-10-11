@@ -14,6 +14,7 @@ SEED = get_random_seed()
 random.seed(SEED)
 torch.manual_seed(SEED)
 
+
 def get_attention(*args, **kwargs) -> CachedMultiheadAttention:
     torch.manual_seed(SEED)
 
@@ -31,16 +32,12 @@ def get_attention(*args, **kwargs) -> CachedMultiheadAttention:
             
     return attention
 
-def look_ahead_mask(size: int) -> torch.Tensor:  
-    mask = torch.triu(torch.ones(size, size), diagonal=1).bool()
-    return mask
-
-MASK = look_ahead_mask(SEQ_LEN)
 
 # Function to generate a query vector for testing
 def generate_query_vector(batch_size, seq_len, embedding_dim):
     torch.manual_seed(SEED)
     return torch.randn(batch_size, seq_len, embedding_dim)
+
 
 def test_multihead_attention_shape():
 
@@ -49,17 +46,21 @@ def test_multihead_attention_shape():
     attn_output, _ = multihead_attention(query)
     assert attn_output.shape == query.shape, f"Expected shape {query.shape}, got {attn_output.shape}"
 
+
 def test_multihead_attention_invalid_embed_dim():
     with pytest.raises(ValueError):
         return get_attention(embed_dim = 0, num_heads = 2)
+
 
 def test_multihead_attention_invalid_num_heads():
     with pytest.raises(ValueError):
         get_attention(embed_dim = 8, num_heads = 0)
 
+
 def test_multihead_attention_divisibility_error():
     with pytest.raises(AssertionError):
         get_attention(embed_dim = 7, num_heads = 2)
+
 
 def test_multihead_attention_different_input_device():
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, EMBEDDING_DIM).to("cpu")
@@ -67,11 +68,13 @@ def test_multihead_attention_different_input_device():
         multihead_attention = get_attention().to("cuda")
         multihead_attention(query)
 
+
 def test_multihead_attention_dtype_mismatch():
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, EMBEDDING_DIM)
     with pytest.raises(RuntimeError):
         multihead_attention = get_attention().to(torch.float64)
         multihead_attention(query)
+
 
 def test_multihead_attention_eval():
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, EMBEDDING_DIM)
@@ -79,6 +82,7 @@ def test_multihead_attention_eval():
     multihead_attention.eval()
     with torch.no_grad():
         multihead_attention(query)
+
 
 def test_multihead_attention_forward_pass():
     # Predefined weights and biases for reproducibility
@@ -100,6 +104,7 @@ def test_multihead_attention_forward_pass():
     
     assert torch.allclose(attn_output, expected_output, atol=1e-4), "Forward pass output does not match expected value"
 
+
 def test_multihead_attention_forward_pass_with_mask():
     # Predefined weights and biases for reproducibility
     embed_dim = 1
@@ -119,6 +124,7 @@ def test_multihead_attention_forward_pass_with_mask():
     ]])
     
     assert torch.allclose(attn_output, expected_output, atol=1e-4), "Forward pass output does not match expected value"
+
 
 def test_multihead_attention_forward_pass_batch():
     # Predefined weights and biases for reproducibility
@@ -146,6 +152,7 @@ def test_multihead_attention_forward_pass_batch():
 
     assert torch.allclose(attn_output, expected_output, atol=1e-4), "Forward pass output does not match expected value"
 
+
 def test_multihead_attention_with_cache_forward_pass():
     # Predefined weights and biases for reproducibility
     embed_dim = 1
@@ -168,6 +175,7 @@ def test_multihead_attention_with_cache_forward_pass():
     attn_output_incremental = torch.cat([attn_output_incremental_1, attn_output_incremental_2], dim=1)
     
     assert torch.allclose(attn_output_incremental, attn_output_one_shot, atol=1e-4), "Forward pass output does not match expected value"
+
 
 def test_multihead_attention_with_cache_full_forward_pass():
     embed_dim = 1

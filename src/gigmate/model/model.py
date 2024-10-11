@@ -61,6 +61,7 @@ class TransformerBlock(nn.Module):
 
         return out2, cache
 
+
 class TransformerModel(nn.Module):
     def __init__(self, num_layers: int, d_model: int, codebooks: int, num_heads: int, dff: int, vocab_size: int, batch_size: int, sliding_window_size: int, dropout: float=0.1, padding_value=0):
         super(TransformerModel, self).__init__()
@@ -81,7 +82,7 @@ class TransformerModel(nn.Module):
         linears = [nn.Linear(d_model, vocab_size) for _ in range(codebooks)]
         self.linears = nn.ModuleList(linears)
     
-            
+
     def forward(self, input: torch.Tensor, sequence_lengths: Optional[torch.Tensor] = None, use_cache: bool = False, cache: Optional[List[torch.Tensor]] = None, cache_index: Optional[int] = None):
 
         x = sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)])
@@ -98,6 +99,7 @@ class TransformerModel(nn.Module):
 
         return logits, updated_cache
 
+
 def load_ckpt(model, checkpoint_path: str, device: Device):
     state_dict = torch.load(checkpoint_path, map_location=torch.device(device), weights_only=True)['state_dict']
     
@@ -106,6 +108,7 @@ def load_ckpt(model, checkpoint_path: str, device: Device):
         state_dict[key.replace("model.", "")] = state_dict.pop(key)
     
     model.load_state_dict(state_dict, strict=True)
+
 
 def get_model(params = get_params(), checkpoint_path = None, device: Device = 'cpu') -> TransformerModel:
     model = TransformerModel(

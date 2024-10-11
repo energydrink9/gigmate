@@ -14,6 +14,7 @@ from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_s
 
 params = get_params()
 
+
 def get_chunk_number(file_path):
     pattern = r'all-[0-9]*-c(\d+)\.pkl$'
     match = re.search(pattern, file_path)
@@ -61,6 +62,7 @@ def get_dataset(directory: str):
     dataset = AudioDataset(directory)
     return dataset
 
+
 def get_remote_dataset(dataset_set: str) -> str:
     dataset = ClearmlDataset.get(
         alias=f'{get_clearml_dataset_training_name()}-{dataset_set}',
@@ -73,9 +75,11 @@ def get_remote_dataset(dataset_set: str) -> str:
     )
     return dataset.get_local_copy()
 
+
 def get_pt_dataset_from_remote_dataset(set: str):
     dataset = get_remote_dataset(set)
     return get_dataset(dataset)
+
 
 def get_datasets():
     train_ds = get_pt_dataset_from_remote_dataset('train')
@@ -174,6 +178,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Ten
     # TODO: use nested tensors
     #return { 'inputs': torch.nested.nested_tensor(inputs), 'labels': torch.nested.nested_tensor(targets) }
 
+
 def get_data_loader(dataset: str):
 
     ds = get_pt_dataset_from_remote_dataset(dataset)
@@ -190,6 +195,7 @@ def get_data_loader(dataset: str):
         persistent_workers=True,
         prefetch_factor=prefetch_factor,
     )
+
 
 def get_data_loaders():
     return get_data_loader('train'), get_data_loader('validation'), get_data_loader('test')

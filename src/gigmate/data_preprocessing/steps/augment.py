@@ -11,11 +11,14 @@ from gigmate.utils.audio_utils import clamp_audio_data, convert_audio_to_float_3
 SOURCE_FILES_DIR = '/Users/michele/Music/soundstripe/merged'
 OUTPUT_FILES_DIR = '/Users/michele/Music/soundstripe/augmented'
 
+
 def get_full_track_files(dir: str):
     return glob.glob(os.path.join(dir, '**/all-*.ogg'), recursive=True)
 
+
 def get_stem_files(dir: str):
     return glob.glob(os.path.join(dir, '**/stem.ogg'), recursive=True)
+
 
 def augment(original_audio: AudioSegment) -> AudioSegment:
     sample_rate = original_audio.frame_rate
@@ -62,6 +65,7 @@ def augment_all(source_directory: str, output_directory: str):
     
     return output_directory
 
+
 if __name__ == '__main__':
-    #random.seed(get_random_seed())
+    # random.seed(get_random_seed())
     augment_all(SOURCE_FILES_DIR, OUTPUT_FILES_DIR)

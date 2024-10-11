@@ -30,6 +30,7 @@ def encode_file(audio_path: str, device: Device, add_start_and_end_tokens: bool 
     wav, sr = torchaudio.load(audio_path)
     return encode(wav, sr, device, add_start_and_end_tokens=add_start_and_end_tokens)
 
+
 def get_chunk_length(samples_per_chunk: int, index: int, total_chunks: int, samples_per_token: int, add_start_and_end_tokens: bool) -> int:
     if add_start_and_end_tokens:
         if index == 0:
@@ -112,6 +113,7 @@ def encode(audio: torch.Tensor, sr: int, device: Device, add_start_and_end_token
     encoded_chunks_bundles = bundle_chunks_and_add_special_tokens(encoded_chunks, encoded_tokens_per_chunk, add_start_and_end_tokens, device=device)
 
     return encoded_chunks_bundles, codec.config.frame_rate
+
 
 def decode(codes: torch.Tensor, device: Device) -> torch.Tensor:
 

@@ -6,6 +6,7 @@ from clearml.automation.job import LocalClearmlJob
 from gigmate.training.train import train_model
 from gigmate.utils.constants import get_clearml_project_name, get_params
 
+
 def objective(params):
     task = Task.init(
         project_name=get_clearml_project_name(),
@@ -21,6 +22,7 @@ def objective(params):
     best_val_accuracy = task.get_last_scalar_metrics()['val_accuracy']
 
     return best_val_accuracy
+
 
 def optimize_hyperparameters():
     base_params = get_params()
@@ -55,6 +57,7 @@ def optimize_hyperparameters():
 
     print(optimizer.get_top_experiments())
     print(optimizer.get_best_task())
+
 
 if __name__ == '__main__':
     Task.init(project_name=get_clearml_project_name(), task_name='hyperparameter_optimization_controller')

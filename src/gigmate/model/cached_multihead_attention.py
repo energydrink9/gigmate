@@ -18,6 +18,7 @@ from torch.nn.attention.flex_attention import create_mask as create_flex_attn_ma
 pad = torch._C._nn.pad,
 linear = torch._C._nn.linear
 
+
 def generate_alibi_bias(H: int) -> _score_mod_signature:
     """Returns an alibi bias score_mod given the number of heads H
 
@@ -79,6 +80,7 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
         return and_masks(incremental_sliding_window, incremental_padding_mask)
     else:
         return and_masks(sliding_window, causal_mask, key_padding_mask)
+
 
 @lru_cache(maxsize=1)
 def create_block_mask_cached(sliding_window_size: int, sequence_lengths: Optional[Tensor], q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
@@ -239,6 +241,7 @@ class CachedMultiheadAttention(torch.nn.Module):
 
         return attn_output, updated_cache
 
+
 def update_kv_cache(kv_cache: Optional[Tensor], q: Tensor, k: Tensor, v: Tensor, cache_index: Optional[int], cache_length: int, bsz: int, embed_dim: int) -> torch.Tensor:
 
     if kv_cache is None:
@@ -278,6 +281,7 @@ def update_kv_cache(kv_cache: Optional[Tensor], q: Tensor, k: Tensor, v: Tensor,
             new_v[cache_index:cache_index + 1, :, :] = v
 
         return torch.stack((new_k, new_v), dim=0)
+
 
 def _in_projection_packed(
     q: Tensor,

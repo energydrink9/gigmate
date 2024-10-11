@@ -9,6 +9,7 @@ from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_
 
 SOUNDFONT_PATH = 'output/Roland SOUNDCanvas SC-55 Up.sf2'# Downloaded from https://archive.org/download/free-soundfonts-sf2-2019-04
 
+
 def generate_random_dirname(prefix: str = 'tmp_', dir: str = '/tmp') -> str:
     """
     Generates a random directory name with a given prefix.
@@ -20,6 +21,7 @@ def generate_random_dirname(prefix: str = 'tmp_', dir: str = '/tmp') -> str:
         str: A random directory name.
     """
     return f'{os.path.join(dir, prefix)}{random.randint(0, 1000000)}'
+
 
 def generate_random_filename(prefix: str = 'tmp_', extension: str = '.wav', dir: str = '/tmp') -> str:
     """
@@ -35,6 +37,7 @@ def generate_random_filename(prefix: str = 'tmp_', extension: str = '.wav', dir:
     """
     return f'{os.path.join(dir, prefix)}{random.randint(0, 1000000)}{extension}'
 
+
 def calculate_audio_length_in_seconds(file_path: str) -> float:
     """
     Calculates the length of an audio file in seconds.
@@ -46,6 +49,7 @@ def calculate_audio_length_in_seconds(file_path: str) -> float:
         float: The length of the audio file in seconds.
     """
     return len(AudioSegment.from_file(file_path)) / 1000
+
 
 def cut_audio(audio: AudioSegment, end: int, out_file_path: str) -> str:
     """
@@ -62,15 +66,19 @@ def cut_audio(audio: AudioSegment, end: int, out_file_path: str) -> str:
     audio.export(out_file_path, format='wav')
     return out_file_path
 
+
 def calculate_audio_length(audio: np.ndarray, sample_rate: int) -> float:
     duration = len(audio) / sample_rate
     return duration
 
+
 def calculate_audio_tensor_length(audio: torch.Tensor, frame_rate: int) -> float:
     return audio.shape[-1] / frame_rate
 
+
 def clamp_audio_data(audio_data: np.ndarray) -> np.ndarray:
     return np.clip(audio_data, -1, 1)
+
 
 def convert_audio_to_int_16(audio_data: np.ndarray) -> np.ndarray:
     max_16bit = 2**15 - 1
@@ -78,6 +86,7 @@ def convert_audio_to_int_16(audio_data: np.ndarray) -> np.ndarray:
     raw_data = audio_data * max_16bit
     assert raw_data.max() <= max_16bit, f'Overflow error during audio conversion: {raw_data.max()} vs {max_16bit}'
     return raw_data.astype(np.int16)
+
 
 def convert_audio_to_float_32(audio_data: np.ndarray) -> np.ndarray:
     max_32bit = 2**31 - 1

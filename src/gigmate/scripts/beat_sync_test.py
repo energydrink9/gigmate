@@ -2,6 +2,7 @@ import pyaudio
 import numpy as np
 import time
 
+
 class MicrophoneSyncPlayer:
     def __init__(self):
         self.CHUNK = 4096
@@ -43,6 +44,7 @@ class MicrophoneSyncPlayer:
         self.stream.stop_stream()
         self.stream.close()
         self.p.terminate()
+
 
 if __name__ == "__main__":
     player = MicrophoneSyncPlayer()

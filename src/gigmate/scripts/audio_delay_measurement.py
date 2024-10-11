@@ -3,9 +3,11 @@ import numpy as np
 import time
 from scipy.signal import correlate, find_peaks
 
+
 def generate_tone(duration, frequency, sample_rate):
     t = np.linspace(0, duration, int(sample_rate * duration), False)
     return (0.5 * np.sin(2 * np.pi * frequency * t)).astype(np.float32)
+
 
 def measure_audio_delay(duration=1, frequency=1000, sample_rate=44100):
     tone = generate_tone(duration, frequency, sample_rate)

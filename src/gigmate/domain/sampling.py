@@ -2,6 +2,7 @@ from torch import Tensor
 import torch
 from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_id, get_start_of_sequence_token_id
 
+
 def remove_forbidden_tokens(outputs: Tensor, forbidden_tokens: list[int]) -> Tensor:
     outputs[..., forbidden_tokens] = float('-inf')
     return outputs

@@ -21,6 +21,7 @@ MAX_OUTPUT_TOKENS_COUNT = 180
 MIDI_PROGRAM = None# https://wiki.musink.net/doku.php/midi/instrument
 DEBUG = True
 
+
 def listen(ws: websocket.WebSocketApp) -> None:
     
     def callback(indata, frames, audio_time, status):
@@ -49,8 +50,10 @@ def listen(ws: websocket.WebSocketApp) -> None:
     except Exception as e:
         print(f"Error while listening: {e}")
 
+
 def get_processing_time(record_end_time: float, current_time: float) -> float:
     return current_time - record_end_time
+
 
 def get_audio_to_play(
     audio_data: np.ndarray,
@@ -130,18 +133,23 @@ def playback(playback_queue: Queue) -> None:
             message = playback_queue.get()
             on_message(message, sd)
             sd.sleep(100)
-        
+
+
 def on_open(ws: websocket.WebSocket):
     print('Opened websocket')
+
 
 def on_error(ws: websocket.WebSocket, error):
     print("Error:", error)
 
+
 def on_close(ws: websocket.WebSocket, _, _2):
     print("Connection closed")
 
+
 def on_message(message, playback_queue: Queue):
     playback_queue.put(message)
+
 
 def main() -> None:
     playback_queue: Queue = Queue()

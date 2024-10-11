@@ -18,6 +18,7 @@ def iterate_over_data_loader(data_loader: DataLoader, device: Device) -> int:
 
     return total_items
 
+
 def test_train_data_loader():
     data_loader = get_data_loader('train')
     iterate_over_data_loader(data_loader, get_device())

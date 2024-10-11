@@ -6,8 +6,10 @@ from tqdm import tqdm
 WAV_FILES_DIR = '/Users/michele/Music/soundstripe/original'
 BITRATE = '160k'
 
+
 def get_wav_files(dir: str):
     return glob.glob(os.path.join(dir, '**/*.wav'), recursive=True)
+
 
 def convert_to_ogg(directory: str) -> str:
     files = get_wav_files(directory)
@@ -22,6 +24,7 @@ def convert_to_ogg(directory: str) -> str:
         os.remove(filename)
     
     return directory
+
 
 if __name__ == '__main__':
     convert_to_ogg(WAV_FILES_DIR)

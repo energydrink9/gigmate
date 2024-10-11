@@ -13,14 +13,18 @@ NUM_OUTPUT_FILES = 5
 EOS_TOKEN_ID = 2
 SUBSET_OF_TEST_DATASET_NUMBER = 2
 
+
 def get_input_midi_file_name(i: int) -> str:
     return f'output/input_{i}.mid'
+
 
 def get_output_midi_file_name(i: int) -> str:
     return f'output/output_{i}.mid'
 
+
 def convert_to_midi(tokenizer, predicted_notes):
     return tokenizer.decode(predicted_notes)
+
 
 def test_model(model: TransformerModel, device: str, data_loader):
     #data_items = list(itertools.islice(iter(data_loader), SUBSET_OF_TEST_DATASET_NUMBER * NUM_OUTPUT_FILES, (SUBSET_OF_TEST_DATASET_NUMBER + 1) * NUM_OUTPUT_FILES))

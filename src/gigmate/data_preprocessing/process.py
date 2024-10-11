@@ -1,6 +1,7 @@
 from clearml import Dataset
 from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_clearml_project_name
 
+
 def upload_dataset(path: str, version: str, tags: list[str] = [], dataset = None):
     print(f'Creating dataset (set: {dataset}, tags: {tags})')
     dataset = Dataset.create(
@@ -15,6 +16,7 @@ def upload_dataset(path: str, version: str, tags: list[str] = [], dataset = None
     dataset.upload(show_progress=True, preview=False)
     print('Finalizing')
     dataset.finalize()
+
 
 def get_remote_dataset(tags: list[str]):
     dataset = Dataset.get(

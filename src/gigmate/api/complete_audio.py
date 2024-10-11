@@ -8,27 +8,19 @@ import traceback
 from typing import Any, Callable, Dict, Generic, TypeVar, cast
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import asynccontextmanager
-from miditok import MusicTokenizer, TokSequence
 import soundfile as sf
-from spleeter.separator import Separator
 import uvicorn
 import reactivex
 import reactivex.operators as ops
 import numpy as np
 from dataclasses import dataclass
-from symusic.types import Score
 import torch
-from pretty_midi import PrettyMIDI
 import tempfile
 
 from gigmate.api.latest_concat_map import latest_concat_map
-from gigmate.domain.midi_conversion import convert_stems_to_midi, merge_midis
 from gigmate.domain.prediction import complete_sequence
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.model.tokenizer import get_tokenizer
-from gigmate.utils.audio_utils import synthesize_midi
-from gigmate.utils.constants import get_params
 from gigmate.utils.device import get_device
 
 CHUNK_DURATION = 100  # Chunk duration in milliseconds
@@ -36,7 +28,6 @@ chunk_size = 44100 * CHUNK_DURATION // 1000  # Assuming a sample rate of 44100 H
 MAX_CHUNKS = 12
 MAX_OUTPUT_LENGTH_IN_SECONDS = 8
 MAX_OUTPUT_TOKENS = 180
-MIDI_PROGRAM = None #33
 OUTPUT_SAMPLE_RATE = 22050
 DEFAULT_TEMPERATURE = 0.3
 

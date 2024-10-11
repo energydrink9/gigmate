@@ -54,32 +54,42 @@ PARAMS = {
     'validation_set_size': VALIDATION_SET_SIZE,
 }
 
+
 def get_random_seed() -> int:
     return RANDOM_SEED
+
 
 def get_start_of_sequence_token_id() -> int:
     return SOS_TOKEN_ID
 
+
 def get_end_of_sequence_token_id() -> int:
     return EOS_TOKEN_ID
+
 
 def get_pad_token_id() -> int:
     return PAD_TOKEN_ID
 
+
 def get_params():
     return PARAMS
+
 
 def get_clearml_project_name() -> str:
     return CLEARML_PROJECT_NAME
 
+
 def get_clearml_dataset_name() -> str:
     return CLEARML_DATASET_NAME
+
 
 def get_clearml_dataset_version() -> str:
     return CLEARML_DATASET_VERSION
 
+
 def get_clearml_dataset_training_name() -> str:
     return CLEARML_DATASET_TRAINING_NAME
+
 
 def get_clearml_dataset_training_version() -> str:
     return CLEARML_DATASET_TRAINING_VERSION

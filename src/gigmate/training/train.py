@@ -8,7 +8,6 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Learning
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.utils.device import get_device
 from gigmate.domain.predict import test_model
-import os
 
 DEBUG = False
 OUTPUT_DIRECTORY = 'output'
@@ -16,11 +15,13 @@ UPLOAD_WEIGHTS = True
 BATCH_SIZE = get_params()['batch_size']
 
 L.seed_everything(get_random_seed())
-#torch.use_deterministic_algorithms(True) TODO: Enable this
+# torch.use_deterministic_algorithms(True) TODO: Enable this
+
 
 def upload_weights(task, epoch, filepath):
     if UPLOAD_WEIGHTS:
         task.upload_artifact(name=f'weights-epoch-{epoch}', artifact_object=filepath, wait_on_upload=False)
+
 
 def init_clearml_task(params):
     task = Task.init(
@@ -32,6 +33,7 @@ def init_clearml_task(params):
 
     return task
 
+
 class ModelCheckpointUpload(ModelCheckpoint):
     def __init__(self, task, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -41,11 +43,12 @@ class ModelCheckpointUpload(ModelCheckpoint):
         super()._save_checkpoint(trainer, filepath)
         upload_weights(self.task, trainer.current_epoch, filepath)
 
+
 def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path = None):
 
     training_model, quantizer = get_training_model(params, ckpt_path, device)
 
-    #summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
+    # summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
     print('Loaded model:')
     print(training_model.model)
 

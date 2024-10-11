@@ -21,11 +21,13 @@ torch.manual_seed(SEED)
 def get_token(logits: torch.Tensor):
     return torch.argmax(logits, dim=-1, keepdim=True)
 
+
 # Function to generate a query vector for testing
 def generate_query_vector(batch_size: int, seq_len: int, codebooks: int):
     torch.manual_seed(SEED)
     val = torch.randint(0, VOCAB_SIZE, (batch_size, codebooks, seq_len))
     return val
+
 
 def get_model(*args, **kwargs):
     torch.manual_seed(SEED)
@@ -50,6 +52,7 @@ def get_model(*args, **kwargs):
 
     return model
 
+
 def test_model_shape():
 
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, CODEBOOKS)
@@ -57,13 +60,16 @@ def test_model_shape():
     output = model(query)
     assert output.shape == (BATCH_SIZE, CODEBOOKS, SEQ_LEN, VOCAB_SIZE), f"Expected shape {(BATCH_SIZE, CODEBOOKS, SEQ_LEN, VOCAB_SIZE)}, got {output.shape}"
 
+
 def test_model_invalid_embed_dim():
     with pytest.raises(ValueError):
         get_model(d_model=0)
 
+
 def test_model_invalid_num_heads():
     with pytest.raises(ValueError):
         get_model(num_heads=0)
+
 
 def test_model_different_input_device():
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, CODEBOOKS).to("cpu")
@@ -71,11 +77,13 @@ def test_model_different_input_device():
         model = get_model().to("cuda")
         model(query)
 
+
 def test_model_dtype_mismatch():
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, CODEBOOKS).to(torch.float64)
     with pytest.raises(RuntimeError):
         model = get_model()
         model(query)
+
 
 def test_model_eval():
     query = generate_query_vector(BATCH_SIZE, SEQ_LEN, CODEBOOKS)
@@ -83,6 +91,7 @@ def test_model_eval():
     model.eval()
     with torch.no_grad():
         model(query)
+
 
 def test_model_forward_pass():
 
@@ -107,6 +116,7 @@ def test_model_forward_pass():
     
     assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
 
+
 @pytest.mark.skip(reason="Flex attention does not support TorchScript yet")
 def test_scripted_model():
 
@@ -127,6 +137,7 @@ def test_scripted_model():
     ]])
     
     assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
+
 
 def test_model_batch():
     emb__dim = 2
@@ -164,6 +175,7 @@ def test_model_batch():
 
     assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
 
+
 def test_model_with_cache():
     # Predefined weights and biases for reproducibility
     emb__dim = 4
@@ -187,6 +199,7 @@ def test_model_with_cache():
     output_incremental = torch.cat([output_incremental_1, output_incremental_2], dim=2)
     assert torch.allclose(output_incremental, output_one_shot, atol=1e-6), "Forward pass output does not match expected value"
 
+
 def test_model_with_cache_last_element():
     emb_dim = 4
     seq_len = 3
@@ -209,6 +222,7 @@ def test_model_with_cache_last_element():
 
     output_incremental = torch.cat([output_incremental_1, output_incremental_2], dim=2)
     assert torch.allclose(output_incremental, output_one_shot, atol=1e-6), "Forward pass output does not match expected value"
+
 
 def test_model_with_sliding_window():
     """

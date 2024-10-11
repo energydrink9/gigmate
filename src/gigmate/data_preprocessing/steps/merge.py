@@ -23,6 +23,7 @@ ADDITIONAL_STEM_NAMES = {
     'vocals': ['vocal', 'vox'],
 }
 
+
 def get_ogg_file_paths(dir: str):
     return glob.glob(os.path.join(dir, '*.ogg'))
 
@@ -57,6 +58,7 @@ def get_permutation_subset(permutation: list[str]) -> list[str]:
     subset_length = random.randint(2, permutation_length - 1)
 
     return permutation[:subset_length]
+
 
 def get_random_basic_stem(audio_files: List[str], basic_stem_names: List[str]) -> Optional[str]:
 
@@ -111,6 +113,7 @@ def assort(directory: str, stem_name: str, random_assortments_per_song: int) -> 
     
     return assortments
 
+
 def merge_stems(ogg_files, output_file):
     # Load the first stem as the base track
     merged_track = AudioSegment.from_file(ogg_files[0], format="ogg")
@@ -127,6 +130,7 @@ def merge_stems(ogg_files, output_file):
 def merge(stems_to_merge: List[str], stem: str, output_directory: str, index: int) -> None:
     os.makedirs(output_directory, exist_ok=True)
     merge_stems(stems_to_merge + [stem], os.path.join(output_directory, f"all-{index}.ogg"))
+
 
 def assort_and_merge_all(source_directory: str, output_directory: str, stem_name: str, random_assortments_per_song: int):
     dirs = get_directories_containing_ogg_files(source_directory)

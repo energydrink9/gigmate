@@ -134,6 +134,7 @@ def update_interleaved_sequence(sequence: Tensor, position: int, new_tokens: Ten
     
     return sequence
 
+
 def cut_sequence_to_the_left(sequence: torch.Tensor, length: int) -> torch.Tensor:
     """
     Cut the specified sequence keeping only the *length* element on the right.

@@ -83,7 +83,6 @@ class TrainingModel(L.LightningModule):
         self.frechet_audio_distance_metric['train'] = FrechetAudioDistance.with_vggish()
         self.frechet_audio_distance_metric['val'] = FrechetAudioDistance.with_vggish()
 
-
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         step_size_up = self.step_size_up
@@ -136,13 +135,11 @@ class TrainingModel(L.LightningModule):
             metrics[f'accuracy-{k}'] = accuracy
             metrics[f'perplexity-{k}'] = perplexity
             
-
         metrics['accuracy'] = accuracy_sum / self.codebooks
         metrics['perplexity'] = perplexity_sum / self.codebooks
 
         return metrics
     
-
     def training_step(self, batch: Tensor, batch_idx: int):
         inputs, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
         logits, _ = self.model(inputs, sequence_lengths)
@@ -178,8 +175,10 @@ class TrainingModel(L.LightningModule):
 
         return loss
 
+
 def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
     return Int8DynActInt4WeightQATQuantizer()
+
 
 def get_training_model(params, checkpoint_path: Optional[str], device: str) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
     model = get_model(params, checkpoint_path, device)

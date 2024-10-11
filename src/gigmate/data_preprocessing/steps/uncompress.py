@@ -5,8 +5,10 @@ from tqdm import tqdm
 
 COMPRESSED_FILES_DIR = '/Users/michele/Music/soundstripe/original'
 
+
 def get_compressed_files(dir: str):
     return glob.glob(os.path.join(dir, '**/*.zip'), recursive=True)
+
 
 def uncompress_files(directory: str) -> str:
     files = get_compressed_files(directory)
@@ -17,6 +19,7 @@ def uncompress_files(directory: str) -> str:
         os.remove(filename)
 
     return directory
+
 
 if __name__ == '__main__':
     uncompress_files(COMPRESSED_FILES_DIR)

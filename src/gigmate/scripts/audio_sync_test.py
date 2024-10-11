@@ -2,6 +2,7 @@ import sounddevice as sd  # Changed from pyaudio to sounddevice
 import numpy as np
 from scipy import signal
 
+
 class AudioSyncTester:
     def __init__(self):
         self.CHUNK = 1024
@@ -55,6 +56,7 @@ class AudioSyncTester:
     def close(self):
         self.stream.stop()
         self.stream.close()
+
 
 if __name__ == "__main__":
     tester = AudioSyncTester()

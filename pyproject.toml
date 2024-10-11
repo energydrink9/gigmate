@@ -63,6 +63,10 @@ pytest = "^8.3.3"
 [tool.poetry.extras]
 test = ["pytest", "pytest-cov"]
 
+[tool.poetry.group.dev.dependencies]
+flake8 = "^7.1.1"
+mypy = "^1.11.2"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
