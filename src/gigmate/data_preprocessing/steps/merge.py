@@ -14,7 +14,7 @@ OUTPUT_FILES_DIR = '/Users/michele/Music/soundstripe/merged'
 STEM_NAMES = ['guitar', 'drums', 'bass', 'perc', 'fx', 'vocals', 'piano', 'synth', 'winds', 'strings']
 BASIC_STEM_NAMES = ['guitar', 'drums', 'bass', 'perc']
 STEM_NAME = 'guitar'
-RANDOM_ASSORTMENTS_PER_SONG = 1
+RANDOM_ASSORTMENTS_PER_SONG = 3
 
 ADDITIONAL_STEM_NAMES = {
     'guitar': ['guitars', 'gtr'],
@@ -128,8 +128,10 @@ def merge_stems(ogg_files, output_file):
 
 
 def merge(stems_to_merge: List[str], stem: str, output_directory: str, index: int) -> None:
-    os.makedirs(output_directory, exist_ok=True)
-    merge_stems(stems_to_merge + [stem], os.path.join(output_directory, f"all-{index}.ogg"))
+    output_path = os.path.join(output_directory, f"all-{index}.ogg")
+    if not os.path.exists(output_path):
+        os.makedirs(output_directory, exist_ok=True)
+        merge_stems(stems_to_merge + [stem], output_file=output_path)
 
 
 def assort_and_merge_all(source_directory: str, output_directory: str, stem_name: str, random_assortments_per_song: int):
@@ -141,12 +143,14 @@ def assort_and_merge_all(source_directory: str, output_directory: str, stem_name
         # It is possible to have multiple stems for a stem name (e.g. "vocals" and "vocals_2")
         for i, stem_assortments in enumerate(assortments):
             relative_path = os.path.relpath(directory, source_directory)
-            song_directory = os.path.join(output_directory, relative_path + f'-{i}')
+            song_directory = os.path.join(output_directory, relative_path + f'-v{i}')
                 
             for j, assortment in enumerate(stem_assortments):
                 stem, stems_to_merge = assortment
                 merge(stems_to_merge, stem, song_directory, j)
-                shutil.copy(stem, os.path.join(song_directory, "stem.ogg"))
+                stem_output_file_path = os.path.join(song_directory, "stem.ogg")
+                if not os.path.exists(stem_output_file_path):
+                    shutil.copy(stem, stem_output_file_path)
 
     return output_directory
 

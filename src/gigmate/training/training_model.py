@@ -202,8 +202,8 @@ def get_training_model(params, checkpoint_path: Optional[str], device: str) -> T
     )
 
     # TODO: fix torch compile full graph
-    # backend = 'aot_eager' if device == 'mps' else 'inductor'
-    # training_model = cast(TrainingModel, torch.compile(training_model, fullgraph=False, backend=backend))
+    backend = 'aot_eager' if device == 'mps' or device == 'cuda' else 'inductor'
+    training_model = cast(TrainingModel, torch.compile(training_model, fullgraph=False, backend=backend))
     
     return training_model, quantizer
 

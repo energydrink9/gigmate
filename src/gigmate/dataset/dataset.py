@@ -192,7 +192,6 @@ def get_data_loader(dataset: str):
     num_workers = multiprocessing.cpu_count()
     prefetch_factor = 4
 
-    # The datasets are already shuffled during preprocessing
     return DataLoader(
         ds,
         batch_size=params['batch_size'],
@@ -201,6 +200,7 @@ def get_data_loader(dataset: str):
         num_workers=num_workers,
         persistent_workers=True,
         prefetch_factor=prefetch_factor,
+        shuffle=True
     )
 
 

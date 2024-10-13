@@ -19,8 +19,8 @@ def convert_to_ogg(directory: str) -> str:
         audio = AudioSegment.from_wav(filename)
 
         # Export the file as OGG
-        ogg_file = os.path.join(os.path.dirname(filename), os.path.basename(filename).replace('.wav', '.ogg'))
-        audio.export(ogg_file, format="ogg", codec="libvorbis", bitrate=BITRATE)
+        ogg_file_path = os.path.join(os.path.dirname(filename), os.path.basename(filename).replace('.wav', '.ogg'))
+        audio.export(ogg_file_path, format="ogg", codec="libvorbis", bitrate=BITRATE)
         os.remove(filename)
     
     return directory

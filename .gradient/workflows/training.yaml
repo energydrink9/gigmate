@@ -20,7 +20,7 @@ jobs:
       CLEARML_API_ACCESS_KEY: secret:CLEARML_API_ACCESS_KEY
       CLEARML_API_SECRET_KEY: secret:CLEARML_API_SECRET_KEY
     resources:
-      instance-type: A4000
+      instance-type: P6000
     needs:
       - CloneRepo
     inputs:

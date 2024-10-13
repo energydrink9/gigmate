@@ -17,14 +17,15 @@ def encode_all(source_directory: str, output_directory: str):
     
     for filename in tqdm(files, "Encoding audio tracks"):
         file_dir = os.path.dirname(filename)
-        encoded_chunks, frame_rate = encode_file(filename, 'cpu', add_start_and_end_tokens=True)
         relative_path = os.path.relpath(file_dir, source_directory)
         file_output_directory = os.path.join(output_directory, relative_path)
-        os.makedirs(file_output_directory, exist_ok=True)
+        if not os.path.exists(file_output_directory):
+            os.makedirs(file_output_directory, exist_ok=True)
+            encoded_chunks, frame_rate = encode_file(filename, 'cpu', add_start_and_end_tokens=True)
 
-        for i, chunk in enumerate(encoded_chunks):
-            output_filename = os.path.basename(filename).split('.')[0] + f'-c{i}.pkl'
-            pickle.dump(chunk.to('cpu'), open(os.path.join(file_output_directory, output_filename), 'wb'))
+            for i, chunk in enumerate(encoded_chunks):
+                output_filename = os.path.basename(filename).split('.')[0] + f'-c{i}.pkl'
+                pickle.dump(chunk.to('cpu'), open(os.path.join(file_output_directory, output_filename), 'wb'))
     
     return source_directory
 

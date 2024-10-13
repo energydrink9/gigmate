@@ -137,9 +137,8 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
 
     if compile is True:
         # TODO: fix torch compile full graph
-        # backend = 'aot_eager' if device == 'mps' else 'inductor'
-        # model = cast(TransformerModel, torch.compile(model, fullgraph=False, backend=backend))
-        pass
+        backend = 'aot_eager' if device == 'mps' or device == 'cuda' else 'inductor'
+        model = cast(TransformerModel, torch.compile(model, fullgraph=False, backend=backend))
 
     # TODO: enable quantization if on CUDA
     if device == 'cuda':

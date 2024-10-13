@@ -39,6 +39,16 @@ poetry run python -m gigmate.api.complete_audio # To start the API
 poetry run python -m gigmate.play # To start the client
 ```
 
+### Dataset generation
+```sh
+pip install poetry
+poetry install
+poetry install -G dataset
+poetry run pip install .
+
+poetry run python -m gigmate.data_preprocessing.pipeline
+```
+
 ### Environment Variables
 
 CLI:
