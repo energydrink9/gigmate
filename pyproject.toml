@@ -60,15 +60,12 @@ pydub-stubs = "^0.25.1.1"
 
 [tool.poetry.extras]
 test = ["pytest", "pytest-cov"]
+dataset = ["audiomentations", "pyroomacoustics"]
 
 [tool.poetry.group.dev.dependencies]
 flake8 = "^7.1.1"
 types-tqdm = "^4.66.0.20240417"
 types-requests = "^2.32.0.20240914"
-
-[tool.poetry.group.dataset.dependencies]
-audiomentations = "^0.36.0"
-pyroomacoustics = "^0.7.7"
 
 [build-system]
 requires = ["poetry-core"]

@@ -43,7 +43,7 @@ poetry run python -m gigmate.play # To start the client
 ```sh
 pip install poetry
 poetry install
-poetry install -G dataset
+poetry install -E dataset
 poetry run pip install .
 
 poetry run python -m gigmate.data_preprocessing.pipeline

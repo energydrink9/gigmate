@@ -1,11 +1,22 @@
-FROM python:3.10
+FROM python:3.10-slim-buster
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY . /app
-
-RUN python -m pip install .
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git ffmpeg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
 
-CMD ["python", "-m", "gigmate.train"]
+# Pre-install latest PyTorch nightly to save time at startup
+RUN pip install --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
+
+ENTRYPOINT ["/bin/sh", "-c", "rm -rf /app/* && \
+    git clone https://${GITHUB_TOKEN}@github.com/energydrink9/gigmate.git && \
+    cd /app/gigmate && \
+    chmod +x ./entrypoint.sh && \
+    ./entrypoint.sh"]

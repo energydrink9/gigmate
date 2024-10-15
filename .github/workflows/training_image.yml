@@ -1,0 +1,24 @@
+name: Deploy training image on Docker Hub
+
+on:
+  push:
+    branches:
+      - 'training-image'
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_HUB_URI: energydrink9/gigmate-train
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build and push Docker image
+      env:
+        IMAGE_NAME: $DOCKER_HUB_URI
+      run: |
+        echo "${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}" | docker login --username energydrink9 --password-stdin
+        docker build -t "${{ env.IMAGE_NAME }}:${{ github.sha }}" -t "${{ env.IMAGE_NAME }}:latest" -f Dockerfile.training .
+        docker push ${{ env.IMAGE_NAME }} --all-tags

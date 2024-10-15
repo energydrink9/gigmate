@@ -1,3 +1,5 @@
+import os
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple, cast
 from clearml import Logger, Task
 from torchmetrics import Metric
@@ -20,6 +22,7 @@ from gigmate.model.model import ENABLE_QUANTIZATION, get_model
 from gigmate.utils.constants import get_pad_token_id
 
 PAD_TOKEN_ID = get_pad_token_id()
+TEMP_DIR = tempfile.gettempdir()
 
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
@@ -115,14 +118,16 @@ class TrainingModel(L.LightningModule):
         log_on_step = dataset == 'train'
         self.log(f"{dataset}_{metric_name}", value, on_step=log_on_step, on_epoch=True, prog_bar=metric_name in ['loss', 'accuracy', 'perplexity', 'frechet_audio_distance'])
 
-    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tensor:
+    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tuple[Tensor, Dict[str, Tensor]]:
         total_loss = torch.tensor(0.).to(self.device)
+        metrics: Dict[str, Tensor] = dict()
 
         for k in range(self.codebooks):
             codebook_loss = self.loss[set][k](logits[k], targets[k])
+            metrics[f'loss-{k}'] = codebook_loss
             total_loss += codebook_loss
         
-        return total_loss
+        return total_loss, metrics
     
     def compute_metrics(self, logits: Dict[int, Tensor], target: Dict[int, Tensor], logits_for_loss: Dict[int, Tensor], set: str) -> Dict[str, Tensor]:
         metrics = dict()
@@ -149,10 +154,12 @@ class TrainingModel(L.LightningModule):
         logits, _ = self.model(inputs, sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-        loss = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
 
+        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'train')
-        self.log_metrics("train", loss=loss, **metrics)
+        
+        self.log_metrics('train', loss=loss, **loss_metrics)
+        self.log_metrics("train", **metrics)
 
         return loss
     
@@ -161,8 +168,7 @@ class TrainingModel(L.LightningModule):
         logits, _ = self.model(inputs, sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-        loss = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
-
+        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'val')
 
         if batch_idx < 10:
@@ -171,7 +177,8 @@ class TrainingModel(L.LightningModule):
         if batch_idx < 3:
             self.save_generated_audio(logits, targets, sequence_lengths)
 
-        self.log_metrics("val", loss=loss, **metrics)
+        self.log_metrics('val', loss=loss, **loss_metrics)
+        self.log_metrics('val', **metrics)
 
         return loss
 
@@ -187,25 +194,29 @@ class TrainingModel(L.LightningModule):
 
     @torch.compiler.disable
     def save_generated_audio(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
-        pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
-        pred_audio_path = 'output/pred_audio.wav'
-        target_audio_path = 'output/target_audio.wav'
-        save_audio(path=pred_audio_path, wav=pred_audio, sample_rate=pred_audio_sr)
-        save_audio(path=target_audio_path, wav=target_audio, sample_rate=target_audio_sr)
-        self.task_logger.report_media(
-            title='Predicted audio',
-            series='default',
-            iteration=self.current_epoch,
-            local_path=pred_audio_path,
-            file_extension='.wav',
-        )
-        self.task_logger.report_media(
-            title='Target audio',
-            series='default',
-            iteration=self.current_epoch,
-            local_path=target_audio_path,
-            file_extension='.wav',
-        )
+        try:
+            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+            pred_audio_path = os.path.join(TEMP_DIR, 'pred_audio.wav')
+            target_audio_path = os.path.join(TEMP_DIR, 'target_audio.wav')
+            save_audio(path=pred_audio_path, wav=pred_audio, sample_rate=pred_audio_sr)
+            save_audio(path=target_audio_path, wav=target_audio, sample_rate=target_audio_sr)
+            self.task_logger.report_media(
+                title='Predicted audio',
+                series='default',
+                iteration=self.current_epoch,
+                local_path=pred_audio_path,
+                file_extension='.wav',
+            )
+            self.task_logger.report_media(
+                title='Target audio',
+                series='default',
+                iteration=self.current_epoch,
+                local_path=target_audio_path,
+                file_extension='.wav',
+            )
+        except Exception as e:
+            print('Error while generating predicted / target audio samples')
+            print(e)
 
 
 def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:

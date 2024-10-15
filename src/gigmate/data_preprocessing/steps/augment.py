@@ -12,7 +12,7 @@ from gigmate.utils.audio_utils import clamp_audio_data, convert_audio_to_int_16
 
 SOURCE_FILES_DIR = '/Users/michele/Music/soundstripe/merged'
 OUTPUT_FILES_DIR = '/Users/michele/Music/soundstripe/augmented'
-AUGMENTATIONS_COUNT = 4
+AUGMENTATIONS_COUNT = 3
 
 
 def get_full_track_files(dir: str):
