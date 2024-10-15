@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Tuple, cast
+from clearml import Logger, Task
 from torchmetrics import Metric
 import torchmetrics.classification
 from torch import nn, Tensor
@@ -8,13 +9,14 @@ from torch.optim.lr_scheduler import CyclicLR
 from typing import Literal
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
+from torchao.quantization.prototype.qat.api import Int8DynActInt4WeightQATQuantizer
+from torcheval.metrics import FrechetAudioDistance
+from encodec.utils import save_audio
+
 from gigmate.dataset.dataset import get_inputs_and_targets, restore_initial_sequence
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
 from gigmate.model.model import ENABLE_QUANTIZATION, get_model
-from torchao.quantization.prototype.qat.api import Int8DynActInt4WeightQATQuantizer
-from torcheval.metrics import FrechetAudioDistance
-
 from gigmate.utils.constants import get_pad_token_id
 
 PAD_TOKEN_ID = get_pad_token_id()
@@ -40,7 +42,7 @@ def get_codebook_logits_and_targets(codebooks: int, logits: Tensor, targets: Ten
     return codebook_logits, codebook_targets, logits_for_loss
 
 
-def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: int) -> Tuple[Tensor, Tensor]:
+def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: int) -> Tuple[Tensor, int, Tensor, int]:
 
     # Prevent sampling special tokens as they would cause the decoder to fail
     pred = sample_from_logits(logit, 0., no_special_tokens=True)
@@ -48,14 +50,14 @@ def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: in
     flat_pred = restore_initial_sequence(pred, sequence_length)
     flat_target = restore_initial_sequence(target, sequence_length)
 
-    pred_audio = decode(flat_pred, 'cpu')
-    target_audio = decode(flat_target, 'cpu')
+    pred_audio, pred_audio_sr = decode(flat_pred, 'cpu')
+    target_audio, target_audio_sr = decode(flat_target, 'cpu')
 
-    return pred_audio, target_audio
+    return pred_audio, pred_audio_sr, target_audio, target_audio_sr
 
 
 class TrainingModel(L.LightningModule):
-    def __init__(self, model, learning_rate: float, max_learning_rate: float, step_size_up: int, vocab_size: int, codebooks: int):
+    def __init__(self, model, learning_rate: float, max_learning_rate: float, step_size_up: int, vocab_size: int, codebooks: int, logger: Logger):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
@@ -82,6 +84,7 @@ class TrainingModel(L.LightningModule):
 
         self.frechet_audio_distance_metric['train'] = FrechetAudioDistance.with_vggish()
         self.frechet_audio_distance_metric['val'] = FrechetAudioDistance.with_vggish()
+        self.task_logger = logger
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
@@ -165,13 +168,16 @@ class TrainingModel(L.LightningModule):
         if batch_idx < 10:
             self.log_frechet_audio_distance_metric(logits, targets, sequence_lengths)
 
+        if batch_idx < 3:
+            self.save_generated_audio(logits, targets, sequence_lengths)
+
         self.log_metrics("val", loss=loss, **metrics)
 
         return loss
 
     @torch.compiler.disable
     def log_frechet_audio_distance_metric(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
-        pred_audio, target_audio = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+        pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
         frechet_audio_distance_metric = self.frechet_audio_distance_metric['val']
         if self.device.type == 'cuda':  # fad metric is not supported on mps device
             frechet_audio_distance_metric = frechet_audio_distance_metric.to(self.device)
@@ -179,12 +185,34 @@ class TrainingModel(L.LightningModule):
         frechet_audio_distance = frechet_audio_distance_metric.compute()
         self.log_metric('val', 'frechet_audio_distance', frechet_audio_distance)
 
+    @torch.compiler.disable
+    def save_generated_audio(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
+        pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+        pred_audio_path = 'output/pred_audio.wav'
+        target_audio_path = 'output/target_audio.wav'
+        save_audio(path=pred_audio_path, wav=pred_audio, sample_rate=pred_audio_sr)
+        save_audio(path=target_audio_path, wav=target_audio, sample_rate=target_audio_sr)
+        self.task_logger.report_media(
+            title='Predicted audio',
+            series='default',
+            iteration=self.current_epoch,
+            local_path=pred_audio_path,
+            file_extension='.wav',
+        )
+        self.task_logger.report_media(
+            title='Target audio',
+            series='default',
+            iteration=self.current_epoch,
+            local_path=target_audio_path,
+            file_extension='.wav',
+        )
+
 
 def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
     return Int8DynActInt4WeightQATQuantizer()
 
 
-def get_training_model(params, checkpoint_path: Optional[str], device: str) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
+def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Task) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
     model = get_model(params, checkpoint_path, device)
     if device == 'cuda' and ENABLE_QUANTIZATION is True:
         quantizer = get_quantizer()
@@ -198,7 +226,8 @@ def get_training_model(params, checkpoint_path: Optional[str], device: str) -> T
         step_size_up=params['step_size_up'],
         max_learning_rate=params['max_learning_rate'],
         vocab_size=params['vocab_size'],
-        codebooks=params['codebooks']
+        codebooks=params['codebooks'],
+        logger=task.get_logger()
     )
 
     # TODO: fix torch compile full graph

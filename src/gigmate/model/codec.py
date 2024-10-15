@@ -4,6 +4,7 @@ from transformers import EncodecModel, AutoProcessor
 from encodec.utils import convert_audio
 import torchaudio
 import torch
+from torch import Tensor
 from typing import List, Tuple
 
 from gigmate.utils.constants import get_params
@@ -25,7 +26,7 @@ def get_processor():
     return AutoProcessor.from_pretrained("facebook/encodec_32khz")
 
 
-def encode_file(audio_path: str, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[torch.Tensor], float]:
+def encode_file(audio_path: str, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
     # Load and pre-process the audio waveform
     wav, sr = torchaudio.load(audio_path)
     return encode(wav, sr, device, add_start_and_end_tokens=add_start_and_end_tokens)
@@ -51,7 +52,7 @@ def get_total_chunks(samples_per_chunk: int, num_samples: int, samples_per_token
     return math.ceil(num_samples / samples_per_chunk)
 
 
-def bundle_chunks_and_add_special_tokens(chunks: List[torch.Tensor], encoded_tokens_per_chunk: int, add_start_and_end_token: bool, device: Device) -> List[torch.Tensor]:
+def bundle_chunks_and_add_special_tokens(chunks: List[Tensor], encoded_tokens_per_chunk: int, add_start_and_end_token: bool, device: Device) -> List[Tensor]:
     max_seq_len = get_params()['max_seq_len']
     chunks_per_set: int = math.ceil(max_seq_len / encoded_tokens_per_chunk)
     total_chunks = len(chunks)
@@ -76,7 +77,7 @@ def bundle_chunks_and_add_special_tokens(chunks: List[torch.Tensor], encoded_tok
     return final_chunks
 
 
-def encode(audio: torch.Tensor, sr: int, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[torch.Tensor], float]:
+def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
 
     processor = get_processor()
     codec = get_codec()
@@ -115,9 +116,9 @@ def encode(audio: torch.Tensor, sr: int, device: Device, add_start_and_end_token
     return encoded_chunks_bundles, codec.config.frame_rate
 
 
-def decode(codes: torch.Tensor, device: Device) -> torch.Tensor:
+def decode(codes: Tensor, device: Device) -> Tuple[Tensor, int]:
 
     codec = get_codec().to(device)
     decoded_wav = codec.decode(codes.unsqueeze(0).to(device), [None])
     output_tensor = decoded_wav['audio_values'].squeeze(0).detach().cpu()
-    return output_tensor
+    return output_tensor, codec.config.sampling_rate

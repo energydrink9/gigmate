@@ -127,13 +127,6 @@ def merge_stems(ogg_files, output_file):
     merged_track.export(output_file, format="ogg")
 
 
-def merge(stems_to_merge: List[str], stem: str, output_directory: str, index: int) -> None:
-    output_path = os.path.join(output_directory, f"all-{index}.ogg")
-    if not os.path.exists(output_path):
-        os.makedirs(output_directory, exist_ok=True)
-        merge_stems(stems_to_merge + [stem], output_file=output_path)
-
-
 def assort_and_merge_all(source_directory: str, output_directory: str, stem_name: str, random_assortments_per_song: int):
     dirs = get_directories_containing_ogg_files(source_directory)
     
@@ -143,13 +136,18 @@ def assort_and_merge_all(source_directory: str, output_directory: str, stem_name
         # It is possible to have multiple stems for a stem name (e.g. "vocals" and "vocals_2")
         for i, stem_assortments in enumerate(assortments):
             relative_path = os.path.relpath(directory, source_directory)
-            song_directory = os.path.join(output_directory, relative_path + f'-v{i}')
                 
             for j, assortment in enumerate(stem_assortments):
+                song_directory = os.path.join(output_directory, relative_path + f'-inst{i}-assort{j}')
                 stem, stems_to_merge = assortment
-                merge(stems_to_merge, stem, song_directory, j)
+                output_path = os.path.join(song_directory, "all.ogg")
+                if not os.path.exists(output_path):
+                    os.makedirs(song_directory, exist_ok=True)
+                    merge_stems(stems_to_merge + [stem], output_file=output_path)
+
                 stem_output_file_path = os.path.join(song_directory, "stem.ogg")
                 if not os.path.exists(stem_output_file_path):
+                    os.makedirs(song_directory, exist_ok=True)
                     shutil.copy(stem, stem_output_file_path)
 
     return output_directory

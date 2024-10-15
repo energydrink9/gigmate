@@ -52,7 +52,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
 
 def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path=None):
 
-    training_model, quantizer = get_training_model(params, ckpt_path, device)
+    training_model, quantizer = get_training_model(params, ckpt_path, device, task)
 
     # summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
     print('Loaded model:')

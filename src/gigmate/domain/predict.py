@@ -34,7 +34,6 @@ def test_model(model: TransformerModel, device: str, data_loader):
         print(f'Generating audio file output {i}:')
         input_file = 'resources/test_generation.wav'
         codec = get_codec().to(device)
-        sample_rate = codec.config.sampling_rate
         input_sequence, frame_rate = encode_file(input_file, device)
 
         files.append({'name': f'input_{i}', 'file': input_file})
@@ -49,8 +48,8 @@ def test_model(model: TransformerModel, device: str, data_loader):
             use_cache=True,
             show_progress=True
         )
-        output_tensor = decode(output_sequence, device)
-        save_audio(output_tensor, output_file, sample_rate=sample_rate)
+        output_tensor, sr = decode(output_sequence, device)
+        save_audio(output_tensor, output_file, sample_rate=sr)
 
         files.append({'name': f'output_{i}', 'file': output_file})
 

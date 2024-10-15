@@ -13,7 +13,7 @@ OUTPUT_FILES_DIR = '/Users/michele/Music/soundstripe/distorted'
 
 
 def get_full_track_files(dir: str):
-    return glob.glob(os.path.join(dir, '**/all-*.ogg'), recursive=True)
+    return glob.glob(os.path.join(dir, '**/all.ogg'), recursive=True)
 
 
 def get_stem_files(dir: str):

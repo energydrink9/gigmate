@@ -151,8 +151,8 @@ def complete_audio(
         temperature=temperature,
         padding_value=padding_value
     )
-    output_audio = decode(output_sequence, device)
+    output_audio, sr = decode(output_sequence, device)
     temp_file = generate_random_filename(extension='.wav')
-    save_audio(output_audio, temp_file, sample_rate=24000)
+    save_audio(output_audio, temp_file, sample_rate=sr)
 
     return temp_file

@@ -191,6 +191,7 @@ def get_data_loader(dataset: str):
     ds = get_pt_dataset_from_remote_dataset(dataset)
     num_workers = multiprocessing.cpu_count()
     prefetch_factor = 4
+    shuffle = dataset == 'train'
 
     return DataLoader(
         ds,
@@ -200,7 +201,7 @@ def get_data_loader(dataset: str):
         num_workers=num_workers,
         persistent_workers=True,
         prefetch_factor=prefetch_factor,
-        shuffle=True
+        shuffle=shuffle
     )
 
 
