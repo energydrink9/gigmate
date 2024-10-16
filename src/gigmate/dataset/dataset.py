@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import glob
 import multiprocessing
 import pickle
@@ -103,55 +104,21 @@ def restore_initial_sequence(tensor: Tensor, sequence_length: int) -> Tensor:
     return tensor
 
 
-def encoder_decoder_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Tensor]:
-    inputs: List[Tensor] = []
-    targets: List[Tensor] = []
-    sequence_lengths: List[Tensor] = []
-
-    padding_value = get_pad_token_id()
-    max_seq_len = get_params()['max_seq_len']
-    
-    for full_track, stem in batch:
-        assert full_track.ndim == 3, 'Expected 3 dimensions for full track'
-        assert stem.ndim == 3, 'Expected 3 dimensions for stem'
-        assert full_track.shape == stem.shape, 'Full track and stem have different shapes'
-
-        batch_size, codebooks, sequence_length = full_track.shape
-
-        # Remove last token that does not have label
-        full_track = full_track[:, :, :-1]
-
-        # Shift labels by 1 position and remove last token that is the result of shifting
-        target = shift_sequence(stem)
-        target = target[:, :, :-1]
-
-        # Apply padding to sequences
-        full_track_padded = pad_sequence(full_track, max_seq_len - codebooks + 1, padding_value)
-        target = pad_sequence(target, max_seq_len - codebooks + 1, padding_value)
-        
-        # Apply interleaving
-        input = apply_interleaving(full_track_padded, padding_value)
-        target = apply_interleaving(target, padding_value)
-
-        # Cut sequences if necessary
-        input = cut_sequence(input, max_seq_len)
-        target = cut_sequence(target, max_seq_len)
-
-        inputs.append(input)
-        targets.append(target)
-
-        sequence_lengths.append(torch.tensor([sequence_length - 1]))  # sequence length has been reduced by one because of shifting
-    
-    return {'inputs': torch.cat(inputs, dim=0), 'labels': torch.cat(targets, dim=0), 'sequence_lengths': torch.cat(sequence_lengths)}
+@dataclass
+class ModelInput():
+    full_track: Tensor
+    stem: Tensor
 
 
-def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Union[Tensor, List[int]]]:
-    inputs: List[Tensor] = []
+def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Union[ModelInput, Tensor, List[int]]]:
+    full_tracks: List[Tensor] = []
+    stems: List[Tensor] = []
     targets: List[Tensor] = []
     sequence_lengths: List[int] = []
 
     padding_value = get_pad_token_id()
     max_seq_len = get_params()['max_seq_len']
+    max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
     for full_track, stem in batch:
         assert full_track.ndim == 3, 'Expected 3 dimensions for full track'
@@ -161,29 +128,38 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Uni
         _, codebooks, sequence_length = full_track.shape
 
         # Shift labels by 1 position and remove last token that is the result of shifting
-        target = shift_sequence(full_track)
+        target = shift_sequence(stem)
         target = target[:, :, :-1]
 
         # Remove last token that does not have label
-        input = full_track[:, :, :-1]
+        full_track_input = full_track[:, :, :-1]
+        stem_input = stem[:, :, :-1]
 
         # Apply padding to sequences
-        input = pad_sequence(input, max_seq_len - codebooks + 1, padding_value)
-        target = pad_sequence(target, max_seq_len - codebooks + 1, padding_value)
+        full_track_input = pad_sequence(full_track_input, max_seq_len - codebooks + 1, padding_value)
+        stem_input = pad_sequence(stem_input, max_decoder_seq_len - codebooks + 1, padding_value)
+        target = pad_sequence(target, max_decoder_seq_len - codebooks + 1, padding_value)
         
         # Apply interleaving
-        input = apply_interleaving(input, padding_value)
+        full_track_input = apply_interleaving(full_track_input, padding_value)
+        stem_input = apply_interleaving(stem_input, padding_value)
         target = apply_interleaving(target, padding_value)
 
         # Cut sequences if necessary
-        input = cut_sequence(input, max_seq_len)
-        target = cut_sequence(target, max_seq_len)
+        full_track_input = cut_sequence(full_track_input, max_seq_len)
+        stem_input = cut_sequence(stem_input, max_decoder_seq_len)
+        target = cut_sequence(target, max_decoder_seq_len)
 
-        inputs.append(input)
+        full_tracks.append(full_track_input)
+        stems.append(stem_input)
         targets.append(target)
         sequence_lengths.append(sequence_length - 1)
     
-    return {'inputs': torch.cat(inputs, dim=0), 'labels': torch.cat(targets, dim=0), 'sequence_lengths': sequence_lengths}
+    return {
+        'inputs': ModelInput(full_track=torch.cat(full_tracks, dim=0), stem=torch.cat(stems, dim=0)),
+        'labels': torch.cat(targets, dim=0),
+        'sequence_lengths': sequence_lengths,
+    }
 
 
 def get_data_loader(dataset: str):
@@ -209,6 +185,6 @@ def get_data_loaders():
     return get_data_loader('train'), get_data_loader('validation'), get_data_loader('test')
 
 
-def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, List[int]]:
-    return batch['inputs'].to(device), batch['labels'].to(device), batch['sequence_lengths']
+def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, Tensor, List[int]]:
+    return batch['inputs'].full_track.to(device), batch['inputs'].stem.to(device), batch['labels'].to(device), batch['sequence_lengths']
 

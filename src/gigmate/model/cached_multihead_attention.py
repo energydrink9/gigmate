@@ -123,13 +123,19 @@ class CachedMultiheadAttention(torch.nn.Module):
     def forward(
             self,
             query: Tensor,
+            key: Tensor,
+            value: Tensor,
             use_cache: bool = False,
             cache: Optional[Tensor] = None,
             cache_index: Optional[int] = None,
             sequence_lengths: Optional[List[int]] = None) -> Tuple[Tensor, Optional[Tensor]]:
 
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
-            query, self.embed_dim, self.num_heads,
+            query,
+            key,
+            value,
+            self.embed_dim,
+            self.num_heads,
             in_proj_weight=self.in_proj_weight,
             out_proj_weight=self.out_proj.weight,
             sliding_window_size=self.sliding_window_size,
@@ -144,6 +150,8 @@ class CachedMultiheadAttention(torch.nn.Module):
     def multi_head_attention_forward(
         self,
         query: Tensor,
+        key: Tensor,
+        value: Tensor,
         embed_dim_to_check: int,
         num_heads: int,
         in_proj_weight: Optional[Tensor],
@@ -155,8 +163,10 @@ class CachedMultiheadAttention(torch.nn.Module):
         sequence_lengths: Optional[List[int]] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
-        query = key = value = query.transpose(1, 0)
-
+        query = query.transpose(1, 0)
+        key = key.transpose(1, 0)
+        value = value.transpose(1, 0)
+        
         # set up shape vars
         tgt_len, bsz, embed_dim = query.shape
         src_len, _, _ = key.shape

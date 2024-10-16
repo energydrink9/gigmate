@@ -8,7 +8,6 @@ import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.utils.device import get_device
-from gigmate.domain.predict import test_model
 
 DEBUG = False
 OUTPUT_DIRECTORY = 'output'
@@ -28,7 +27,7 @@ def upload_weights(task, epoch, filepath):
 def init_clearml_task(params):
     task = Task.init(
         project_name=get_clearml_project_name(),
-        task_name=f'train seq {params["max_seq_len"]} batch {params["batch_size"]} layers {params["num_layers"]} heads {params["num_heads"]} lr {params["learning_rate"]} dff {params["dff"]}',
+        task_name=f'train enc_seq_len {params["max_seq_len"]} dec_seq_len {params["max_decoder_seq_len"]} batch {params["batch_size"]} layers {params["encoder_layers"]}-{params["decoder_layers"]} heads {params["num_heads"]} lr {params["learning_rate"]} dff {params["dff"]}',
     )
 
     task.connect(params)
@@ -104,8 +103,3 @@ if __name__ == '__main__':
     # Set to none to start training from scratch, otherwise use `get_latest_model_checkpoint_path` to continue training from last checkpoint.
     ckpt_path = get_latest_model_checkpoint_path()
     model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
-
-    output_continuations = test_model(model.to(device), device, validation_loader)
-
-    for continuation in output_continuations:
-        task.upload_artifact(name=continuation['name'], artifact_object=continuation['file'])

@@ -12,8 +12,8 @@ def iterate_over_data_loader(data_loader: DataLoader, device: Device) -> int:
     total_items = 0
 
     for batch in data_loader:
-        inputs, labels, sequence_lengths = get_inputs_and_targets(batch, device)
-        shape = inputs.shape
+        full_track, stem, labels, sequence_lengths = get_inputs_and_targets(batch, device)
+        shape = full_track.shape
         total_items += shape[0]
 
     return total_items
@@ -39,8 +39,8 @@ def test_restore_initial_sequence():
     device = get_device()
     iterator = iter(data_loader)
     batch = next(iterator)
-    inputs, targets, sequence_lengths = get_inputs_and_targets(batch, device)
-    first_element = inputs[:1, :4, :]
+    full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, device)
+    first_element = stem[:1, :4, :]
     sequence = restore_initial_sequence(first_element, sequence_lengths[0])
 
     assert sequence.shape == (1, 4, first_element.shape[2] - 3)

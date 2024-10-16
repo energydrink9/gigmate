@@ -150,11 +150,10 @@ class TrainingModel(L.LightningModule):
         return metrics
     
     def training_step(self, batch: Tensor, batch_idx: int):
-        inputs, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _ = self.model(inputs, sequence_lengths)
+        full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
+        logits, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'train')
         
@@ -164,8 +163,8 @@ class TrainingModel(L.LightningModule):
         return loss
     
     def validation_step(self, batch: Tensor, batch_idx: int):
-        inputs, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _ = self.model(inputs, sequence_lengths)
+        full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
+        logits, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
@@ -175,7 +174,7 @@ class TrainingModel(L.LightningModule):
             self.log_frechet_audio_distance_metric(logits, targets, sequence_lengths)
 
         if batch_idx < 3:
-            self.save_generated_audio(logits, targets, sequence_lengths)
+            self.save_generated_audio(batch_idx, logits, targets, sequence_lengths)
 
         self.log_metrics('val', loss=loss, **loss_metrics)
         self.log_metrics('val', **metrics)
@@ -193,7 +192,7 @@ class TrainingModel(L.LightningModule):
         self.log_metric('val', 'frechet_audio_distance', frechet_audio_distance)
 
     @torch.compiler.disable
-    def save_generated_audio(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
+    def save_generated_audio(self, index: int, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
         try:
             pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
             pred_audio_path = os.path.join(TEMP_DIR, 'pred_audio.wav')
@@ -202,14 +201,14 @@ class TrainingModel(L.LightningModule):
             save_audio(path=target_audio_path, wav=target_audio, sample_rate=target_audio_sr)
             self.task_logger.report_media(
                 title='Predicted audio',
-                series='default',
+                series=f'{index}',
                 iteration=self.current_epoch,
                 local_path=pred_audio_path,
                 file_extension='.wav',
             )
             self.task_logger.report_media(
                 title='Target audio',
-                series='default',
+                series=f'{index}',
                 iteration=self.current_epoch,
                 local_path=target_audio_path,
                 file_extension='.wav',

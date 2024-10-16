@@ -3,6 +3,7 @@ from clearml import Task
 from gigmate.utils.constants import get_clearml_project_name
 
 LATEST_TASK_CHECKPOINT_ID = None
+ARTIFACT_NAME = 'weights-epoch-5'
 
 
 def get_task_artifact(task_id: str, artifact_name: str):
@@ -10,7 +11,7 @@ def get_task_artifact(task_id: str, artifact_name: str):
     return task.artifacts[artifact_name].get_local_copy()
 
 
-def get_latest_model_checkpoint_path(task_id: Optional[str] = LATEST_TASK_CHECKPOINT_ID, artifact_name: str = 'weights-epoch-1'):
+def get_latest_model_checkpoint_path(task_id: Optional[str] = LATEST_TASK_CHECKPOINT_ID, artifact_name: str = ARTIFACT_NAME):
     if task_id is None:
         return None
     
