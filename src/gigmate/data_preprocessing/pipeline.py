@@ -2,7 +2,7 @@ import os
 from typing import List
 from clearml import PipelineDecorator
 
-from gigmate.data_preprocessing.process import upload_dataset
+from gigmate.data_preprocessing.process import get_remote_dataset_by_id, upload_dataset
 from gigmate.data_preprocessing.steps.augment import augment_all
 from gigmate.data_preprocessing.steps.convert_to_ogg import convert_to_ogg
 from gigmate.data_preprocessing.steps.encode import encode_all
@@ -12,11 +12,11 @@ from gigmate.data_preprocessing.steps.uncompress import uncompress_files
 from gigmate.utils.constants import get_clearml_dataset_version, get_clearml_project_name
 from gigmate.data_preprocessing.steps.distort import distort_all
 
-BASE_DIR = '/Users/michele/Music/soundstripe'
+BASE_DIR = '/dataset'
 SOURCE_DIR = os.path.join(BASE_DIR, 'original')
 MERGED_FILES_DIR = os.path.join(BASE_DIR, 'merged')
 AUGMENTED_FILES_DIR = os.path.join(BASE_DIR, 'augmented')
-DISTORTED_FILES_DIR = os.path.join(BASE_DIR, 'distorted')
+DISTORTED_FILES_DIR = get_remote_dataset_by_id('a19b2949bf984f029d2deb2c892defea')
 ENCODED_FILES_DIR = os.path.join(BASE_DIR, 'encoded')
 SPLIT_FILES_DIR = os.path.join(BASE_DIR, 'split')
 
@@ -74,11 +74,11 @@ def split_step(source_dir: str, output_dir: str) -> List[str]:
     version='1.0'
 )
 def dataset_creation_pipeline(stem_name: str, random_assortments_per_song: int, source_dir: str, merged_dir: str, augmented_dir: str, distorted_dir: str, encoded_dir: str, split_dir: str):
-    uncompressed_dir = uncompress_step(source_dir)
-    converted_to_ogg_dir = convert_to_ogg_step(uncompressed_dir)
-    merged_dir = assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song)
-    augmented_dir = augment_step(merged_dir, augmented_dir)
-    distorted_dir = distort_step(augmented_dir, distorted_dir)
+    # uncompressed_dir = uncompress_step(source_dir)
+    # converted_to_ogg_dir = convert_to_ogg_step(uncompressed_dir)
+    # merged_dir = assort_and_merge_step(converted_to_ogg_dir, merged_dir, stem_name, random_assortments_per_song)
+    # augmented_dir = augment_step(merged_dir, augmented_dir)
+    # distorted_dir = distort_step(augmented_dir, distorted_dir)
     encoded_dir = encode_step(distorted_dir, encoded_dir)
     split_dirs = split_step(encoded_dir, split_dir)
     tags = DATASET_TAGS + [f'stem-{stem_name}']
@@ -86,7 +86,7 @@ def dataset_creation_pipeline(stem_name: str, random_assortments_per_song: int, 
     for split_dir in split_dirs:
         set = os.path.split(split_dir)[1]
         print(f'Uploading {set} dataset')
-        upload_dataset(path=split_dir, version=get_clearml_dataset_version(), tags=tags, dataset=set)
+        upload_dataset(path=split_dir, version=get_clearml_dataset_version(), tags=tags, dataset_set=set)
 
 
 if __name__ == '__main__':

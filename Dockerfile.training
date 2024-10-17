@@ -12,9 +12,6 @@ RUN apt-get update && \
 
 RUN echo 'api { credentials {"access_key": "<KEY>", "secret_key": "<KEY>"} }' > ~/clearml.conf
 
-# Pre-install latest PyTorch nightly to save time at startup
-RUN pip install --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
-
 ENTRYPOINT ["/bin/sh", "-c", "rm -rf /app/* && \
     git clone https://${GITHUB_TOKEN}@github.com/energydrink9/gigmate.git && \
     cd /app/gigmate && \

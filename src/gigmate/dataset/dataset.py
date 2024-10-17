@@ -10,14 +10,14 @@ from torch.utils.data import DataLoader, Dataset
 import os
 import re
 
-from gigmate.utils.constants import get_clearml_dataset_training_version, get_params, get_clearml_dataset_training_name, get_clearml_project_name, get_pad_token_id
+from gigmate.utils.constants import get_clearml_dataset_training_version, get_params, get_clearml_dataset_training_name, get_clearml_project_name, get_pad_token_id, get_clearml_dataset_tags
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, shift_sequence
 
 params = get_params()
 
 
 def get_chunk_number(file_path):
-    pattern = r'all-[0-9]*-c(\d+)\.pkl$'
+    pattern = r'all-c(\d+)\.pkl$'
     match = re.search(pattern, file_path)
     if match:
         return int(match.group(1))
@@ -32,7 +32,17 @@ def get_stem_file_path(file_path: str) -> str:
 
 def get_entries(dir: str) -> List[Tuple[str, str]]:
     full_tracks_file_paths = glob.glob(os.path.join(dir, '**/all-*.pkl'), recursive=True)
-    return [(file_path, get_stem_file_path(file_path)) for file_path in full_tracks_file_paths]
+
+    entries = []
+
+    for file_path in full_tracks_file_paths:
+        stem_file_path = get_stem_file_path(file_path)
+        if os.path.exists(stem_file_path):
+            entries.append((file_path, stem_file_path))
+        else:
+            print(f'Unable to retrieve stem file: {stem_file_path}')
+
+    return entries
 
 
 class AudioDataset(Dataset):
@@ -79,7 +89,7 @@ def get_remote_dataset(dataset_set: str) -> str:
         dataset_project=get_clearml_project_name(),
         dataset_name=get_clearml_dataset_training_name(),
         dataset_version=get_clearml_dataset_training_version(),
-        dataset_tags=[f"{dataset_set}-set"],
+        dataset_tags=[f"{dataset_set}-set", *get_clearml_dataset_tags()],
         only_completed=False,
         only_published=False,
     )

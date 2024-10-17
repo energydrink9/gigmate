@@ -35,6 +35,17 @@ ENABLE_QUANTIZATION = False
 # [16]. Implement encoder-decoder version
 
 
+# Helper function for initializing weights. Ref: https://www.yadavsaurabh.com/good-initialisation-of/
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        # Kaiming initialization for linear layers
+        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+        if hasattr(m, 'special_init'):
+            nn.init.constant_(m.weight, 0)
+
+
 class TransformerModel(nn.Module):
     def __init__(self, encoder_layers: int, decoder_layers: int, d_model: int, codebooks: int, num_heads: int, dff: int, vocab_size: int, batch_size: int, sliding_window_size: int, dropout: float = 0.1, padding_value=0):
         super(TransformerModel, self).__init__()
@@ -51,6 +62,8 @@ class TransformerModel(nn.Module):
         
         linears = [nn.Linear(d_model, vocab_size) for _ in range(codebooks)]
         self.linears = nn.ModuleList(linears)
+
+        self.apply(init_weights)
     
     def forward(self, input: Tensor, conditioning_input: Tensor, sequence_lengths: Optional[List[int]] = None, use_cache: bool = False, cache: Optional[List[Tensor]] = None, cache_index: Optional[int] = None) -> Tuple[Tensor, List[Tensor]]:
 

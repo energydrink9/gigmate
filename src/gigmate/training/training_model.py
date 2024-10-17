@@ -7,7 +7,8 @@ import torchmetrics.classification
 from torch import nn, Tensor
 import lightning as L
 from torchmetrics.text import Perplexity
-from torch.optim.lr_scheduler import CyclicLR
+import torch.optim
+from torch.optim.lr_scheduler import OneCycleLR
 from typing import Literal
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
@@ -60,13 +61,13 @@ def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: in
 
 
 class TrainingModel(L.LightningModule):
-    def __init__(self, model, learning_rate: float, max_learning_rate: float, step_size_up: int, vocab_size: int, codebooks: int, logger: Logger):
+    def __init__(self, model, learning_rate: float, max_learning_rate: float, vocab_size: int, codebooks: int, steps_per_epoch: int, logger: Logger):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
-        self.step_size_up = step_size_up
         self.max_learning_rate = max_learning_rate
         self.codebooks = codebooks
+        self.steps_per_epoch = steps_per_epoch
         
         self.loss: Dict[str, Dict[int, nn.CrossEntropyLoss]] = dict({'train': dict(), 'val': dict()})
         self.accuracy_metric: Dict[str, Dict[int, Metric]] = dict({'train': dict(), 'val': dict()})
@@ -91,15 +92,12 @@ class TrainingModel(L.LightningModule):
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        step_size_up = self.step_size_up
 
-        scheduler = CyclicLR(
+        scheduler = OneCycleLR(
             optimizer,
-            base_lr=self.learning_rate,
             max_lr=self.max_learning_rate,
-            step_size_up=step_size_up,
-            mode='triangular2',
-            cycle_momentum=False
+            epochs=self.trainer.max_epochs,
+            steps_per_epoch=self.steps_per_epoch,
         )
         return {
             "optimizer": optimizer,
@@ -222,7 +220,7 @@ def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
     return Int8DynActInt4WeightQATQuantizer()
 
 
-def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Task) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
+def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Task, steps_per_epoch: int) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
     model = get_model(params, checkpoint_path, device)
     if device == 'cuda' and ENABLE_QUANTIZATION is True:
         quantizer = get_quantizer()
@@ -233,10 +231,10 @@ def get_training_model(params, checkpoint_path: Optional[str], device: str, task
     training_model = TrainingModel(
         model,
         learning_rate=params['learning_rate'],
-        step_size_up=params['step_size_up'],
         max_learning_rate=params['max_learning_rate'],
         vocab_size=params['vocab_size'],
         codebooks=params['codebooks'],
+        steps_per_epoch=steps_per_epoch,
         logger=task.get_logger()
     )
 

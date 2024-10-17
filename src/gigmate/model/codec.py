@@ -11,19 +11,17 @@ from gigmate.utils.constants import get_params
 from gigmate.utils.device import Device
 from gigmate.utils.sequence_utils import get_end_of_sequence_token, get_start_of_sequence_token
 
-AUDIO_CHUNKS_DURATION = 20
-
 
 @lru_cache(maxsize=1)
-def get_codec():
-    model = EncodecModel.from_pretrained("facebook/encodec_32khz", normalize=False)
+def get_codec(device: Device):
+    model = EncodecModel.from_pretrained("facebook/encodec_32khz", normalize=False, device_map=device)
     # print(model.config)
     return model.eval()
 
 
 @lru_cache(maxsize=1)
-def get_processor():
-    return AutoProcessor.from_pretrained("facebook/encodec_32khz")
+def get_processor(device: Device):
+    return AutoProcessor.from_pretrained("facebook/encodec_32khz", device_map=device)
 
 
 def encode_file(audio_path: str, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
@@ -79,13 +77,13 @@ def bundle_chunks_and_add_special_tokens(chunks: List[Tensor], encoded_tokens_pe
 
 def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
 
-    processor = get_processor()
-    codec = get_codec()
+    processor = get_processor(device)
+    codec = get_codec(device)
 
     wav = convert_audio(audio, sr, processor.sampling_rate, codec.config.audio_channels)
     # split wav in chunks which length will give encoded chunks of max_seq_len length:
     num_samples = wav.shape[1]
-    encoded_tokens_per_chunk = 1024  # large values requires a large amount of memory and can cause OOM errors
+    encoded_tokens_per_chunk = 512  # large values requires a large amount of memory and can cause OOM errors
     samples_per_token = math.ceil(processor.sampling_rate / codec.config.frame_rate)
     samples_per_chunk = math.ceil((encoded_tokens_per_chunk / codec.config.frame_rate) * processor.sampling_rate)
     total_chunks = get_total_chunks(samples_per_chunk, num_samples, samples_per_token, add_start_and_end_tokens)
@@ -105,7 +103,6 @@ def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: boo
     for i, chunk in enumerate(chunks):
         inputs = processor(raw_audio=chunk[0], sampling_rate=processor.sampling_rate, return_tensors="pt")
         bandwidth = 2.2
-        codec = codec.to(device)
         result = codec.encode(inputs["input_values"].to(device), inputs["padding_mask"].to(device), bandwidth=bandwidth)
         assert result.audio_codes.shape[0] == 1, 'Multiple chunks returned by codec encoding, expected one'        
         sequence = result.audio_codes[0]
@@ -118,7 +115,7 @@ def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: boo
 
 def decode(codes: Tensor, device: Device) -> Tuple[Tensor, int]:
 
-    codec = get_codec().to(device)
+    codec = get_codec(device)
     decoded_wav = codec.decode(codes.unsqueeze(0).to(device), [None])
     output_tensor = decoded_wav['audio_values'].squeeze(0).detach().cpu()
     return output_tensor, codec.config.sampling_rate
