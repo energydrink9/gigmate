@@ -36,7 +36,7 @@ def encode_all(source_directory: str, output_directory: str):
             print(f'Error while encoding file {file_path}')
             print(e)
 
-    return source_directory
+    return output_directory
 
 
 if __name__ == '__main__':

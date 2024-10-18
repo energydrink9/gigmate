@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, Dataset
 import os
 import re
 
-from gigmate.utils.constants import get_clearml_dataset_training_version, get_params, get_clearml_dataset_training_name, get_clearml_project_name, get_pad_token_id, get_clearml_dataset_tags
+from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_params, get_clearml_project_name, get_pad_token_id, get_clearml_dataset_tags
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, shift_sequence
 
 params = get_params()
@@ -85,10 +85,10 @@ def get_dataset(directory: str):
 
 def get_remote_dataset(dataset_set: str) -> str:
     dataset = ClearmlDataset.get(
-        alias=f'{get_clearml_dataset_training_name()}-{dataset_set}',
+        alias=f'{get_clearml_dataset_name()}-{dataset_set}',
         dataset_project=get_clearml_project_name(),
-        dataset_name=get_clearml_dataset_training_name(),
-        dataset_version=get_clearml_dataset_training_version(),
+        dataset_name=get_clearml_dataset_name(),
+        dataset_version=get_clearml_dataset_version(),
         dataset_tags=[f"{dataset_set}-set", *get_clearml_dataset_tags()],
         only_completed=False,
         only_published=False,

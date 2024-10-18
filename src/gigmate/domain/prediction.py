@@ -1,10 +1,14 @@
 import math
 from typing import List, Optional, Tuple, cast
+
+from pydub import AudioSegment
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode, encode_file
 from encodec.utils import save_audio
 import torch
 from tqdm import tqdm
+import os
+
 from gigmate.utils.audio_utils import generate_random_filename
 from gigmate.utils.constants import get_pad_token_id, get_params
 from gigmate.utils.device import Device
@@ -18,21 +22,31 @@ DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 20
 def predict_next_token(
         model: torch.nn.Module,
         input: torch.Tensor,
+        full_track_sequence: torch.Tensor,
         current_token_index: int,
         incremental: bool,
         temperature: float = DEFAULT_TEMPERATURE,
         use_cache: bool = True,
         cache: Optional[List[torch.Tensor]] = None,
-        cache_index: Optional[int] = None) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]]]:
+        cache_index: Optional[int] = None,
+        encoder_cache: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]], torch.Tensor]:
 
     with torch.inference_mode():
-        outputs, updated_cache = model(input, use_cache=use_cache, cache=cache, cache_index=cache_index if incremental else None)
+        outputs, updated_cache, updated_encoder_cache = model(
+            input,
+            conditioning_input=full_track_sequence,
+            use_cache=use_cache,
+            cache=cache,
+            cache_index=cache_index if incremental else None,
+            encoder_cache=encoder_cache,
+        )
         outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
     
-    predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
+        predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
 
-    return predicted_tokens.detach().to('cpu'), updated_cache
+    return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 
 
 def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: torch.Tensor, max_seq_len: int, current_token_index: int, padding_value: int):
@@ -68,25 +82,31 @@ def complete_sequence(
 
     def process_next_note_sequence(
             model,
-            next_sequence,
+            next_sequence: torch.Tensor,
+            full_track_sequence: torch.Tensor,
             current_token_index: int,
             cache: Optional[List[torch.Tensor]],
-            cache_index: int,
+            cache_index: Optional[int],
             output_sequence,
-            max_seq_len,
+            max_decoder_seq_len,
             temperature,
             padding_value: int,
             incremental: bool,
-            use_cache: bool = True):
-        next_token, updated_cache = predict_next_token(model, next_sequence, current_token_index, incremental, temperature, use_cache=use_cache, cache=cache, cache_index=cache_index)
+            use_cache: bool = True,
+            encoder_cache: Optional[torch.Tensor] = None,
+    ):
+        next_token, updated_cache, encoder_cache = predict_next_token(model, next_sequence, full_track_sequence, current_token_index, incremental, temperature, use_cache=use_cache, cache=cache, cache_index=cache_index, encoder_cache=encoder_cache)
         output_sequence = next_token if output_sequence is None else torch.cat((output_sequence, next_token), dim=2)
-        next_sequence = update_next_sequence(next_sequence, next_token, max_seq_len, current_token_index, padding_value=padding_value) if use_cache is False or incremental is None else next_token.to(next_sequence.device)
-        return next_sequence, output_sequence, updated_cache
+        next_sequence = update_next_sequence(next_sequence, next_token, max_decoder_seq_len, current_token_index, padding_value=padding_value) if use_cache is False or incremental is None else next_token.to(next_sequence.device)
+        return next_sequence, output_sequence, updated_cache, encoder_cache
 
-    def get_initial_next_sequence(sequence: torch.Tensor, max_seq_len: int, padding_value: int):
-        _, K, sequence_length = sequence.shape
-        start_of_sequence_token = get_start_of_sequence_token(K).to(sequence.device)
-        sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
+    def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device):    
+        start_of_sequence_token = get_start_of_sequence_token(codebooks).to(device)
+        if sequence is None:
+            sequence = start_of_sequence_token
+        else:
+            sequence = torch.cat([start_of_sequence_token, sequence.to(device)], dim=-1)
+        sequence_length = sequence.shape[-1]
         interleaved_sequence = apply_interleaving(sequence, padding_value)
         padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value)
 
@@ -96,34 +116,41 @@ def complete_sequence(
         return padded_sequence
     
     model.eval()
-    initial_sequence = input_sequence.clone().detach()
     sliding_window_size = get_params()['sliding_window_size']
+    codebooks = get_params()['codebooks']
     max_seq_len = get_params()['max_seq_len']
+    max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
     output_sequence = None
-    initial_token_index = initial_sequence.shape[-1] - 1
+    # TODO: Allow prediction to start from a pre-existing sequence
+    # initial_token_index = initial_sequence.shape[-1] - 1
+    initial_token_index = 0
 
-    next_sequence = get_initial_next_sequence(initial_sequence, max_seq_len, padding_value).to(device)
+    full_track_sequence = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device).to(device)
+    next_sequence = get_initial_next_sequence(None, max_decoder_seq_len, padding_value, codebooks, device).to(device)
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)
 
     loop = tqdm(range(max_output_tokens)) if show_progress else range(max_output_tokens)
     cache: Optional[List[torch.Tensor]] = None
+    encoder_cache: Optional[torch.Tensor] = None
 
     for iteration in loop:
         current_token_index = min(initial_token_index + iteration, max_seq_len - 1)
         cache_index = min(initial_token_index + iteration, sliding_window_size - 1)
-        next_sequence, new_output_sequence, cache = process_next_note_sequence(
+        next_sequence, new_output_sequence, cache, encoder_cache = process_next_note_sequence(
             model,
             next_sequence,
+            full_track_sequence,
             current_token_index,
             cache,
-            cache_index,
+            cache_index if use_cache else None,
             output_sequence,
-            max_seq_len,
+            max_decoder_seq_len,
             temperature,
             padding_value=padding_value,
             incremental=iteration != 0,
-            use_cache=use_cache
+            use_cache=use_cache,
+            encoder_cache=encoder_cache,
         )
         output_sequence = new_output_sequence
 
@@ -133,13 +160,12 @@ def complete_sequence(
 def complete_audio(
     model: torch.nn.Module,
     device: Device,
-    audio_file: str,
-    max_seq_len: int,
+    audio_file: AudioSegment,
     verbose: bool = False,
     padding_value: int = get_pad_token_id(),
     max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,
     temperature: float = DEFAULT_TEMPERATURE
-) -> str:
+) -> AudioSegment:
     input_sequence, frame_rate = encode_file(audio_file, device)
     output_sequence = complete_sequence(
         model,
@@ -155,4 +181,7 @@ def complete_audio(
     temp_file = generate_random_filename(extension='.wav')
     save_audio(output_audio, temp_file, sample_rate=sr)
 
-    return temp_file
+    segment = AudioSegment.from_file(temp_file)
+    os.remove(temp_file)
+
+    return segment

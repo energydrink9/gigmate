@@ -1,5 +1,6 @@
 import os
 from clearml import Task
+import torch
 from gigmate.dataset.dataset import get_data_loaders
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.training.training_model import get_training_model
@@ -91,6 +92,7 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
 
 if __name__ == '__main__':
     device = get_device()
+    print(f'Running torch version: {torch.__version__}')
     print(f'Running on device: {device}')
 
     params = get_params()

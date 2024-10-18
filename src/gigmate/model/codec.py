@@ -117,5 +117,5 @@ def decode(codes: Tensor, device: Device) -> Tuple[Tensor, int]:
 
     codec = get_codec(device)
     decoded_wav = codec.decode(codes.unsqueeze(0).to(device), [None])
-    output_tensor = decoded_wav['audio_values'].squeeze(0).detach().cpu()
+    output_tensor = decoded_wav['audio_values'].squeeze(0)
     return output_tensor, codec.config.sampling_rate

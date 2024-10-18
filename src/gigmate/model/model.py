@@ -47,7 +47,7 @@ def init_weights(m):
 
 
 class TransformerModel(nn.Module):
-    def __init__(self, encoder_layers: int, decoder_layers: int, d_model: int, codebooks: int, num_heads: int, dff: int, vocab_size: int, batch_size: int, sliding_window_size: int, dropout: float = 0.1, padding_value=0):
+    def __init__(self, encoder_layers: int, decoder_layers: int, d_model: int, codebooks: int, num_heads: int, dff: int, vocab_size: int, sliding_window_size: int, dropout: float = 0.1, padding_value=0):
         super(TransformerModel, self).__init__()
 
         self.num_heads = num_heads
@@ -65,18 +65,31 @@ class TransformerModel(nn.Module):
 
         self.apply(init_weights)
     
-    def forward(self, input: Tensor, conditioning_input: Tensor, sequence_lengths: Optional[List[int]] = None, use_cache: bool = False, cache: Optional[List[Tensor]] = None, cache_index: Optional[int] = None) -> Tuple[Tensor, List[Tensor]]:
+    def forward(
+            self,
+            input: Tensor,
+            conditioning_input: Tensor,
+            sequence_lengths: Optional[List[int]] = None,
+            use_cache: bool = False,
+            cache: Optional[List[Tensor]] = None,
+            cache_index: Optional[int] = None,
+            encoder_cache: Optional[Tensor] = None
+    ) -> Tuple[Tensor, List[Tensor], Tensor]:
 
         full_track_x = sum([self.embeddings[k](conditioning_input[:, k]) for k in range(self.codebooks)])
         x = sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)])
 
         # TODO: Implement kv cache for the encoder
-        cross_attention_src, _ = self.encoder(full_track_x, sequence_lengths)
+        if encoder_cache is None:
+            cross_attention_src, _ = self.encoder(full_track_x, sequence_lengths)
+        else:
+            cross_attention_src = encoder_cache
+
         x, updated_cache = self.decoder(x, sequence_lengths=sequence_lengths, cross_attention_src=cross_attention_src, use_cache=use_cache, cache=cache, cache_index=cache_index)
 
         logits = torch.stack([self.linears[k](x) for k in range(self.codebooks)], dim=1)  # [B, K, S, vocab_size]
 
-        return logits, updated_cache
+        return logits, updated_cache, cross_attention_src
 
 
 def load_ckpt(model, checkpoint_path: str, device: Device) -> None:
@@ -98,7 +111,6 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
         num_heads=params['num_heads'],
         dff=params['dff'],
         vocab_size=params['vocab_size'],
-        batch_size=params['batch_size'],
         sliding_window_size=params['sliding_window_size'],
         dropout=params['dropout_rate'],
         padding_value=get_pad_token_id(),

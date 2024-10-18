@@ -24,6 +24,7 @@ from gigmate.utils.constants import get_pad_token_id
 
 PAD_TOKEN_ID = get_pad_token_id()
 TEMP_DIR = tempfile.gettempdir()
+NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP = 10
 
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
@@ -54,8 +55,8 @@ def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: in
     flat_pred = restore_initial_sequence(pred, sequence_length)
     flat_target = restore_initial_sequence(target, sequence_length)
 
-    pred_audio, pred_audio_sr = decode(flat_pred, 'cpu')
-    target_audio, target_audio_sr = decode(flat_target, 'cpu')
+    pred_audio, pred_audio_sr = decode(flat_pred, logit.device.type)
+    target_audio, target_audio_sr = decode(flat_target, logit.device.type)
 
     return pred_audio, pred_audio_sr, target_audio, target_audio_sr
 
@@ -149,7 +150,7 @@ class TrainingModel(L.LightningModule):
     
     def training_step(self, batch: Tensor, batch_idx: int):
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
+        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
@@ -162,7 +163,7 @@ class TrainingModel(L.LightningModule):
     
     def validation_step(self, batch: Tensor, batch_idx: int):
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
+        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
@@ -181,18 +182,24 @@ class TrainingModel(L.LightningModule):
 
     @torch.compiler.disable
     def log_frechet_audio_distance_metric(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
-        pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
-        frechet_audio_distance_metric = self.frechet_audio_distance_metric['val']
-        if self.device.type == 'cuda':  # fad metric is not supported on mps device
-            frechet_audio_distance_metric = frechet_audio_distance_metric.to(self.device)
-        frechet_audio_distance_metric.update(pred_audio, target_audio)
-        frechet_audio_distance = frechet_audio_distance_metric.compute()
-        self.log_metric('val', 'frechet_audio_distance', frechet_audio_distance)
+        try:
+            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+            frechet_audio_distance_metric = self.frechet_audio_distance_metric['val']
+            if self.device.type == 'cuda':  # fad metric is not supported on mps device
+                frechet_audio_distance_metric = frechet_audio_distance_metric.to(self.device)
+            frechet_audio_distance_metric.update(pred_audio, target_audio)
+            frechet_audio_distance = frechet_audio_distance_metric.compute()
+            self.log_metric('val', 'frechet_audio_distance', frechet_audio_distance)
+        except Exception as e:
+            print('An error occurred while computing Frechet Audio Distance metric:')
+            print(e)
 
     @torch.compiler.disable
     def save_generated_audio(self, index: int, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
         try:
-            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, 500:1000, :].detach(), targets[:1, :, 500:1000].detach(), sequence_lengths[0])
+            pred_audio = pred_audio.detach().to('cpu')
+            target_audio = target_audio.detach().to('cpu')
             pred_audio_path = os.path.join(TEMP_DIR, 'pred_audio.wav')
             target_audio_path = os.path.join(TEMP_DIR, 'target_audio.wav')
             save_audio(path=pred_audio_path, wav=pred_audio, sample_rate=pred_audio_sr)
@@ -203,6 +210,7 @@ class TrainingModel(L.LightningModule):
                 iteration=self.current_epoch,
                 local_path=pred_audio_path,
                 file_extension='.wav',
+                max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
             )
             self.task_logger.report_media(
                 title='Target audio',
@@ -210,6 +218,7 @@ class TrainingModel(L.LightningModule):
                 iteration=self.current_epoch,
                 local_path=target_audio_path,
                 file_extension='.wav',
+                max_history=1,
             )
         except Exception as e:
             print('Error while generating predicted / target audio samples')

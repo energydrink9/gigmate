@@ -1,8 +1,7 @@
-from typing import Union
 import torch
 
 
-Device = Union[torch.device, str, int]
+Device = str
 
 
 def get_device() -> Device:

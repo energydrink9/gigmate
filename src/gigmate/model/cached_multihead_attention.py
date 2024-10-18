@@ -58,8 +58,11 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
     def causal_sliding_padded_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
         return (q_idx >= kv_idx) & (q_idx - kv_idx <= window_size)
 
+    # Converting the cache index to a tensor, because PyTorch raises an error it's not
+    cache_index_tensor = torch.tensor(cache_index) if cache_index is not None else None
+    
     def incremental_causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
-        return (cache_index - kv_idx <= window_size) & (cache_index >= kv_idx)
+        return (kv_idx >= cache_index_tensor - window_size) & (kv_idx <= cache_index_tensor)
 
     if cache_index is not None:
         return incremental_causal_sliding_mask
