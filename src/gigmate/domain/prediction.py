@@ -160,7 +160,7 @@ def complete_sequence(
 def complete_audio(
     model: torch.nn.Module,
     device: Device,
-    audio_file: AudioSegment,
+    audio_file: str,
     verbose: bool = False,
     padding_value: int = get_pad_token_id(),
     max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,

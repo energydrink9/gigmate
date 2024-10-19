@@ -16,7 +16,7 @@ from gigmate.utils.sequence_utils import get_end_of_sequence_token, get_start_of
 def get_codec(device: Device):
     model = EncodecModel.from_pretrained("facebook/encodec_32khz", normalize=False, device_map=device)
     # print(model.config)
-    return model.eval()
+    return model.to(device).eval()
 
 
 @lru_cache(maxsize=1)
@@ -77,6 +77,7 @@ def bundle_chunks_and_add_special_tokens(chunks: List[Tensor], encoded_tokens_pe
 
 def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
 
+    device = device if not device.startswith('mps') else 'cpu'  # Encoding is not supported on MPS
     processor = get_processor(device)
     codec = get_codec(device)
 
@@ -114,7 +115,6 @@ def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: boo
 
 
 def decode(codes: Tensor, device: Device) -> Tuple[Tensor, int]:
-
     codec = get_codec(device)
     decoded_wav = codec.decode(codes.unsqueeze(0).to(device), [None])
     output_tensor = decoded_wav['audio_values'].squeeze(0)
