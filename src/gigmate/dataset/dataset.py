@@ -9,11 +9,14 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 import os
 import re
+import random
 
-from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_params, get_clearml_project_name, get_pad_token_id, get_clearml_dataset_tags
+from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_params, get_clearml_project_name, get_pad_token_id, get_clearml_dataset_tags, get_start_of_sequence_token_id
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, shift_sequence
 
 params = get_params()
+
+MIN_TOKENS_TO_KEEP = 64
 
 
 def get_chunk_number(file_path):
@@ -120,11 +123,18 @@ class ModelInput():
     stem: Tensor
 
 
-def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Union[ModelInput, Tensor, List[int]]]:
+@dataclass
+class SequenceLengths():
+    full_track: List[int]
+    stem: List[int]
+
+
+def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Union[ModelInput, Tensor, SequenceLengths]]:
     full_tracks: List[Tensor] = []
     stems: List[Tensor] = []
     targets: List[Tensor] = []
-    sequence_lengths: List[int] = []
+    full_track_sequence_lengths = []
+    stem_sequence_lengths = []
 
     padding_value = get_pad_token_id()
     max_seq_len = get_params()['max_seq_len']
@@ -137,18 +147,41 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Uni
 
         _, codebooks, sequence_length = full_track.shape
 
-        # Shift labels by 1 position and remove last token that is the result of shifting
-        target = shift_sequence(stem)
-        target = target[:, :, :-1]
+        # We need at least MIN_TOKENS_TO_KEEP tokens both in the full track and in the stem
+        if sequence_length < MIN_TOKENS_TO_KEEP * 2:
+            full_tracks.append(torch.full((1, codebooks, max_seq_len), get_pad_token_id()))
+            stems.append(torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()))
+            targets.append(torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()))
+            full_track_sequence_lengths.append(0)
+            stem_sequence_lengths.append(0)
+            continue
 
-        # Remove last token that does not have label
-        full_track_input = full_track[:, :, :-1]
-        stem_input = stem[:, :, :-1]
+        # Keep a random number of elements *length_to_keep* from the sequence in the full track
+        max_tokens_to_keep = sequence_length - MIN_TOKENS_TO_KEEP
+        length_to_keep = random.randint(MIN_TOKENS_TO_KEEP, max_tokens_to_keep)
+        full_track_input = full_track[:, :, :length_to_keep]
 
-        # Apply padding to sequences
-        full_track_input = pad_sequence(full_track_input, max_seq_len - codebooks + 1, padding_value)
-        stem_input = pad_sequence(stem_input, max_decoder_seq_len - codebooks + 1, padding_value)
-        target = pad_sequence(target, max_decoder_seq_len - codebooks + 1, padding_value)
+        # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
+        stem_input = stem[:, :, length_to_keep + 1:]
+        target = stem_input
+
+        # Shift the stem by 1 position and set the first token to the start of sequence token
+        stem_input = shift_sequence(stem_input, shifts=1)
+        stem_input[:, :, 0] = get_start_of_sequence_token_id()
+
+        # Calculate sequence lengths
+        full_track_sequence_length = min(full_track_input.shape[-1] + codebooks - 1, max_seq_len)
+        stem_sequence_length = min(stem_input.shape[-1] + codebooks - 1, max_decoder_seq_len)
+
+        # Cut sequences if necessary
+        full_track_input = cut_sequence(full_track_input, max_seq_len - codebooks + 1, cut_left=True)
+        stem_input = cut_sequence(stem_input, max_decoder_seq_len - codebooks + 1)
+        target = cut_sequence(target, max_decoder_seq_len - codebooks + 1)
+
+        # Apply padding to the sequences
+        full_track_input = pad_sequence(full_track_input, max_seq_len, padding_value, pad_left=True)
+        stem_input = pad_sequence(stem_input, max_decoder_seq_len, padding_value)
+        target = pad_sequence(target, max_decoder_seq_len, padding_value)
         
         # Apply interleaving
         full_track_input = apply_interleaving(full_track_input, padding_value)
@@ -156,19 +189,26 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Uni
         target = apply_interleaving(target, padding_value)
 
         # Cut sequences if necessary
-        full_track_input = cut_sequence(full_track_input, max_seq_len)
+        full_track_input = cut_sequence(full_track_input, max_seq_len, cut_left=True)
         stem_input = cut_sequence(stem_input, max_decoder_seq_len)
         target = cut_sequence(target, max_decoder_seq_len)
+
+        assert full_track_input.shape == (1, codebooks, max_seq_len), f"Shape of full track is {full_track_input.shape}"
+        assert stem_input.shape == (1, codebooks, max_decoder_seq_len), f"Shape of stem is {stem_input.shape}"
+        assert target.shape == (1, codebooks, max_decoder_seq_len), f"Shape of target is {target.shape}"
+        assert full_track_sequence_length >= MIN_TOKENS_TO_KEEP, f"Full track is shorter than {MIN_TOKENS_TO_KEEP} tokens"
+        assert stem_sequence_length >= MIN_TOKENS_TO_KEEP, f"Stem is shorter than {MIN_TOKENS_TO_KEEP} tokens"
 
         full_tracks.append(full_track_input)
         stems.append(stem_input)
         targets.append(target)
-        sequence_lengths.append(sequence_length - 1)
-    
+        full_track_sequence_lengths.append(full_track_sequence_length)
+        stem_sequence_lengths.append(stem_sequence_length)
+
     return {
         'inputs': ModelInput(full_track=torch.cat(full_tracks, dim=0), stem=torch.cat(stems, dim=0)),
         'labels': torch.cat(targets, dim=0),
-        'sequence_lengths': sequence_lengths,
+        'sequence_lengths': SequenceLengths(full_track=full_track_sequence_lengths, stem=stem_sequence_lengths),
     }
 
 
@@ -195,6 +235,6 @@ def get_data_loaders():
     return get_data_loader('train'), get_data_loader('validation'), get_data_loader('test')
 
 
-def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, Tensor, List[int]]:
+def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, Tensor, SequenceLengths]:
     return batch['inputs'].full_track.to(device), batch['inputs'].stem.to(device), batch['labels'].to(device), batch['sequence_lengths']
 

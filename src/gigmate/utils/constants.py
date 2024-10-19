@@ -2,24 +2,24 @@ from typing import List
 
 # Hyperparameters
 
-MAX_SEQ_LEN = 1024 * 4
-MAX_DECODER_SEQ_LEN = 1024
+MAX_SEQ_LEN = 2048
+MAX_DECODER_SEQ_LEN = 2048
 SLIDING_WINDOW_SIZE = 256
 VOCAB_SIZE = 2048 + 3
 D_MODEL = 512
 CODEBOOKS = 4
 
 ENCODER_LAYERS = 8
-DECODER_LAYERS = 6
+DECODER_LAYERS = 8
 NUM_HEADS = 16
 DROPOUT_RATE = 0.1
 
 EPOCHS = 20
-LEARNING_RATE = 0.00000003  # 0.0001
-MAX_LEARNING_RATE = 0.0000001  # 0.001
+LEARNING_RATE = 0.0001
+MAX_LEARNING_RATE = 0.001
 GRADIENT_CLIP = 1.0
 
-BATCH_SIZE = 6
+BATCH_SIZE = 14
 ACCUMULATE_GRAD_BATCHES = 1
 
 TRAINING_SET_SIZE = 1.0
@@ -74,6 +74,10 @@ def get_end_of_sequence_token_id() -> int:
 
 def get_pad_token_id() -> int:
     return PAD_TOKEN_ID
+
+
+def get_special_tokens() -> List[int]:
+    return [get_start_of_sequence_token_id(), get_end_of_sequence_token_id(), get_pad_token_id()]
 
 
 def get_params():

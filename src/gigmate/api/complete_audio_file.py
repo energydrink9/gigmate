@@ -30,9 +30,14 @@ class SimpleLitAPI(ls.LitAPI):
         output_length_in_seconds = float(request['output_length_in_seconds']) if 'output_length_in_seconds' in request else OUTPUT_LENGTH_IN_SECONDS
         file = request['request'].file
         wav, sr = torchaudio.load(file)
-        sequence, sr = encode(wav, sr, device=self.device, add_start_and_end_tokens=False)
+        sequences, sr = encode(wav, sr, device=self.device, add_start_and_end_tokens=False)
+        last_sequence = sequences[-1]
+        print('shape', last_sequence.shape, len(sequences))
+        print('device', self.device)
+        # output_audio, sr = decode(last_sequence, self.device)
+        # torchaudio.save('output/prova.wav', output_audio.detach().cpu(), sample_rate=sr)
 
-        return sequence[0], sr, output_length_in_seconds
+        return last_sequence, sr, output_length_in_seconds
     
     def predict(self, input: tuple[Tensor, float, float], **kwargs) -> Tensor:
         x, sr, output_length_in_seconds = input
@@ -44,6 +49,8 @@ class SimpleLitAPI(ls.LitAPI):
             frame_rate=self.codec.config.frame_rate,
             padding_value=get_pad_token_id(),
             max_output_length_in_seconds=output_length_in_seconds,
+            use_cache=False,
+            show_progress=True,
         )
         end_time = time.perf_counter()
         print(f"Predicted {len(prediction)} in {end_time - start_time:.2f} seconds.")

@@ -41,7 +41,7 @@ def test_restore_initial_sequence():
     batch = next(iterator)
     full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, device)
     first_element = stem[:1, :4, :]
-    sequence = restore_initial_sequence(first_element, sequence_lengths[0])
+    sequence = restore_initial_sequence(first_element, sequence_lengths.full_track[0])
 
     assert sequence.shape == (1, 4, first_element.shape[2] - 3)
     assert torch.equal(sequence[:, 0:4, 0:1], torch.cat([first_element[:, 0:1, 0:1], first_element[:, 1:2, 1:2], first_element[:, 2:3, 2:3], first_element[:, 3:4, 3:4]], dim=1)), 'Sequences do not match'

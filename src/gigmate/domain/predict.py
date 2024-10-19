@@ -34,7 +34,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
             frame_rate=frame_rate,
             max_output_length_in_seconds=AUDIO_TO_GENERATE_LENGTH,
             padding_value=get_pad_token_id(),
-            use_cache=True,
+            use_cache=False,
             show_progress=True,
         )
         end_time = time.perf_counter()

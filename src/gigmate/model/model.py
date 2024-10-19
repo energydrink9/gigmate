@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torchao
 from torch import Tensor
+from gigmate.dataset.dataset import SequenceLengths
 from gigmate.model.decoder import Decoder
 from gigmate.model.encoder import Encoder
 from gigmate.utils.constants import get_pad_token_id, get_params
@@ -69,7 +70,7 @@ class TransformerModel(nn.Module):
             self,
             input: Tensor,
             conditioning_input: Tensor,
-            sequence_lengths: Optional[List[int]] = None,
+            sequence_lengths: Optional[SequenceLengths] = None,
             use_cache: bool = False,
             cache: Optional[List[Tensor]] = None,
             cache_index: Optional[int] = None,
@@ -81,11 +82,21 @@ class TransformerModel(nn.Module):
 
         # TODO: Implement kv cache for the encoder
         if encoder_cache is None:
-            cross_attention_src, _ = self.encoder(full_track_x, sequence_lengths)
+            cross_attention_src, _ = self.encoder(
+                full_track_x,
+                sequence_lengths.full_track if sequence_lengths is not None else None,
+            )
         else:
             cross_attention_src = encoder_cache
 
-        x, updated_cache = self.decoder(x, sequence_lengths=sequence_lengths, cross_attention_src=cross_attention_src, use_cache=use_cache, cache=cache, cache_index=cache_index)
+        x, updated_cache = self.decoder(
+            x,
+            sequence_lengths=sequence_lengths.stem if sequence_lengths is not None else None,
+            cross_attention_src=cross_attention_src,
+            use_cache=use_cache,
+            cache=cache,
+            cache_index=cache_index,
+        )
 
         logits = torch.stack([self.linears[k](x) for k in range(self.codebooks)], dim=1)  # [B, K, S, vocab_size]
 

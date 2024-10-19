@@ -20,11 +20,14 @@ from gigmate.dataset.dataset import get_inputs_and_targets, restore_initial_sequ
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
 from gigmate.model.model import ENABLE_QUANTIZATION, get_model
-from gigmate.utils.constants import get_pad_token_id
+from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_id, get_special_tokens, get_start_of_sequence_token_id
+from gigmate.utils.sequence_utils import remove_special_tokens
 
 PAD_TOKEN_ID = get_pad_token_id()
 TEMP_DIR = tempfile.gettempdir()
 NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP = 10
+FRECHET_AUDIO_DISTANCE_LENGTH = 128
+AUDIO_SAMPLES_LENGTH = 500
 
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
@@ -52,9 +55,14 @@ def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: in
     # Prevent sampling special tokens as they would cause the decoder to fail
     pred = sample_from_logits(logit, 0., no_special_tokens=True)
 
+    # Inverting interleaving and removing padding
     flat_pred = restore_initial_sequence(pred, sequence_length)
     flat_target = restore_initial_sequence(target, sequence_length)
 
+    # Removing special tokens, as the decoder is not able to handle them
+    flat_target, flat_pred = remove_special_tokens(flat_target, flat_pred, get_special_tokens())
+
+    # Decoding
     pred_audio, pred_audio_sr = decode(flat_pred, logit.device.type)
     target_audio, target_audio_sr = decode(flat_target, logit.device.type)
 
@@ -169,11 +177,13 @@ class TrainingModel(L.LightningModule):
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'val')
 
-        if batch_idx < 10:
-            self.log_frechet_audio_distance_metric(logits, targets, sequence_lengths)
+        if batch_idx < 12:
+            if sequence_lengths.stem[0] > FRECHET_AUDIO_DISTANCE_LENGTH:
+                length = min(sequence_lengths.stem[0], FRECHET_AUDIO_DISTANCE_LENGTH)
+                self.log_frechet_audio_distance_metric(logits[:1, :, :length, :], targets[:1, :, :length], length)
 
-        if batch_idx < 3:
-            self.save_generated_audio(batch_idx, logits, targets, sequence_lengths)
+            if batch_idx < 3:
+                self.save_generated_audio(batch_idx, logits[:1, :, :AUDIO_SAMPLES_LENGTH, :], targets[:1, :, :AUDIO_SAMPLES_LENGTH], sequence_lengths.stem[0])
 
         self.log_metrics('val', loss=loss, **loss_metrics)
         self.log_metrics('val', **metrics)
@@ -181,9 +191,9 @@ class TrainingModel(L.LightningModule):
         return loss
 
     @torch.compiler.disable
-    def log_frechet_audio_distance_metric(self, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
+    def log_frechet_audio_distance_metric(self, logits: Tensor, targets: Tensor, sequence_length: int):
         try:
-            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, :500, :].detach(), targets[:1, :, :500].detach(), sequence_lengths[0])
+            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits.detach(), targets.detach(), sequence_length)
             frechet_audio_distance_metric = self.frechet_audio_distance_metric['val']
             if self.device.type == 'cuda':  # fad metric is not supported on mps device
                 frechet_audio_distance_metric = frechet_audio_distance_metric.to(self.device)
@@ -195,9 +205,9 @@ class TrainingModel(L.LightningModule):
             print(e)
 
     @torch.compiler.disable
-    def save_generated_audio(self, index: int, logits: Tensor, targets: Tensor, sequence_lengths: List[int]):
+    def save_generated_audio(self, index: int, logits: Tensor, targets: Tensor, sequence_length: int):
         try:
-            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits[:1, :, 500:1000, :].detach(), targets[:1, :, 500:1000].detach(), sequence_lengths[0])
+            pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits.detach(), targets.detach(), sequence_length)
             pred_audio = pred_audio.detach().to('cpu')
             target_audio = target_audio.detach().to('cpu')
             pred_audio_path = os.path.join(TEMP_DIR, 'pred_audio.wav')

@@ -12,7 +12,7 @@ import os
 from gigmate.utils.audio_utils import generate_random_filename
 from gigmate.utils.constants import get_pad_token_id, get_params
 from gigmate.utils.device import Device
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence_to_the_left, get_start_of_sequence_token, pad_sequence, revert_interleaving, update_interleaved_sequence
+from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, update_interleaved_sequence
 
 DEFAULT_MAX_OUTPUT_TOKENS = 1000
 DEFAULT_TEMPERATURE = 0.3
@@ -62,7 +62,7 @@ def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: to
     sequence_length = interleaved_sequence.shape[2]
 
     if sequence_length > max_seq_len:
-        return cut_sequence_to_the_left(interleaved_sequence, max_seq_len)
+        return cut_sequence(interleaved_sequence, max_seq_len, cut_left=True)
     
     return interleaved_sequence
 
@@ -73,7 +73,6 @@ def complete_sequence(
     input_sequence: torch.Tensor,
     frame_rate: int,
     padding_value: int,
-    verbose: bool = False,
     max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,
     temperature: float = DEFAULT_TEMPERATURE,
     show_progress: bool = False,
@@ -100,18 +99,21 @@ def complete_sequence(
         next_sequence = update_next_sequence(next_sequence, next_token, max_decoder_seq_len, current_token_index, padding_value=padding_value) if use_cache is False or incremental is None else next_token.to(next_sequence.device)
         return next_sequence, output_sequence, updated_cache, encoder_cache
 
-    def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device):    
+    def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
         start_of_sequence_token = get_start_of_sequence_token(codebooks).to(device)
         if sequence is None:
             sequence = start_of_sequence_token
         else:
-            sequence = torch.cat([start_of_sequence_token, sequence.to(device)], dim=-1)
+            sequence = sequence.to(device)
+            if prepend_sos_token is True:
+                sequence = torch.cat([start_of_sequence_token], dim=-1)
+            
         sequence_length = sequence.shape[-1]
         interleaved_sequence = apply_interleaving(sequence, padding_value)
-        padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value)
+        padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value, pad_left)
 
         if sequence_length > max_seq_len:
-            return cut_sequence_to_the_left(padded_sequence, max_seq_len)
+            return cut_sequence(padded_sequence, max_seq_len, cut_left=True)
 
         return padded_sequence
     
@@ -126,7 +128,7 @@ def complete_sequence(
     # initial_token_index = initial_sequence.shape[-1] - 1
     initial_token_index = 0
 
-    full_track_sequence = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device).to(device)
+    full_track_sequence = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True).to(device)
     next_sequence = get_initial_next_sequence(None, max_decoder_seq_len, padding_value, codebooks, device).to(device)
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)
 
@@ -172,7 +174,6 @@ def complete_audio(
         device,
         input_sequence[0],
         frame_rate=frame_rate,
-        verbose=verbose,
         max_output_length_in_seconds=max_output_length_in_seconds,
         temperature=temperature,
         padding_value=padding_value

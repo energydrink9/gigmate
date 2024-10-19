@@ -1,10 +1,12 @@
+from typing import List, Tuple
 from torch import Tensor
 import torch
+from gigmate.utils.constants import get_special_tokens
 
 from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_id, get_start_of_sequence_token_id
 
 
-def pad_sequence(sequence: Tensor, max_len: int, padding_value: int):
+def pad_sequence(sequence: Tensor, max_len: int, padding_value: int, pad_left: bool = False) -> Tensor:
     B, K, T = sequence.shape
 
     if T >= max_len:
@@ -12,7 +14,11 @@ def pad_sequence(sequence: Tensor, max_len: int, padding_value: int):
 
     pad_length = max_len - T
     padding = torch.tensor([padding_value]).repeat(B * K * pad_length).reshape((B, K, pad_length)).to(sequence.device)
-    return torch.cat([sequence, padding], dim=-1)
+    # Pad the sequence on the left or right based on the pad_left flag
+    if pad_left:
+        return torch.cat([padding, sequence], dim=-1)
+    else:
+        return torch.cat([sequence, padding], dim=-1)
 
 
 def get_padding_token(codebooks: int) -> Tensor:
@@ -135,17 +141,7 @@ def update_interleaved_sequence(sequence: Tensor, position: int, new_tokens: Ten
     return sequence
 
 
-def cut_sequence_to_the_left(sequence: torch.Tensor, length: int) -> torch.Tensor:
-    """
-    Cut the specified sequence keeping only the *length* element on the right.
-
-    Returns:
-        torch.Tensor: the cut sequence
-    """
-    return sequence[:, :, -length:]
-
-
-def cut_sequence(sequence: torch.Tensor, length: int) -> torch.Tensor:
+def cut_sequence(sequence: torch.Tensor, length: int, cut_left: bool = True) -> torch.Tensor:
     """
     Cut the specified sequence keeping only the *length* element on the left.
 
@@ -153,9 +149,37 @@ def cut_sequence(sequence: torch.Tensor, length: int) -> torch.Tensor:
         torch.Tensor: the cut sequence
     """
 
-    return sequence[:, :, :length]
+    if cut_left:
+        return sequence[:, :, -length:]
+    else:
+        return sequence[:, :, :length]
 
 
 def shift_sequence(sequence: torch.Tensor, shifts: int = -1) -> torch.Tensor:
     return torch.roll(sequence, shifts=shifts, dims=-1)
 
+
+def mask_sequence(sequence: torch.Tensor, length: int, mask_value: int) -> torch.Tensor:
+    """
+    Mask *length* elements on the right of the specified sequence.
+
+    Returns:
+        torch.Tensor: the masked sequence
+    """
+
+    sequence[:, :, -length:] = mask_value
+
+    return sequence
+
+
+def remove_special_tokens(target: Tensor, logit: Tensor, special_tokens: List[int]) -> Tuple[Tensor, Tensor]:
+    """
+    Remove special tokens from the target sequence and the elements with the corresponding indices from the logits.
+    """
+
+    mask = ~torch.isin(target[0, 0, :], torch.tensor(special_tokens, device=target.device))
+
+    filtered_target = target[:, :, mask]
+    filtered_logits = logit[:, :, mask]
+
+    return filtered_target, filtered_logits
