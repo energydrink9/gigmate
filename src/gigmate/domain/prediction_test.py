@@ -1,7 +1,7 @@
 import pytest
 import torch
 from typing import Tuple
-from gigmate.domain.prediction import apply_interleaving, cut_sequence_to_the_left, pad_sequence, revert_interleaving, update_interleaved_sequence, update_next_sequence
+from gigmate.domain.prediction import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, update_interleaved_sequence, update_next_sequence
 
 
 def get_sample_data(B: int, K: int, T: int) -> torch.Tensor:
@@ -136,7 +136,7 @@ def test_update_interleaved_sequence_when_position_equals_last_element(test_sequ
 
 def test_cut_sequence_to_length(test_sequence):
     sequence, B, K, T = test_sequence
-    cut_sequence = cut_sequence_to_the_left(sequence, 3)
+    cut_seq = cut_sequence(sequence, 3, cut_left=True)
     
     expected_tensor = torch.tensor([
         [7, 8, 9],
@@ -145,24 +145,24 @@ def test_cut_sequence_to_length(test_sequence):
         [7, 8, 9]
     ]).unsqueeze(0).repeat(B, 1, 1)
 
-    assert cut_sequence.shape == (B, K, 3), "Output shape is incorrect"
-    assert torch.all(cut_sequence == expected_tensor), "Sequence elements are incorrect"
+    assert cut_seq.shape == (B, K, 3), "Output shape is incorrect"
+    assert torch.all(cut_seq == expected_tensor), "Sequence elements are incorrect"
 
 
 def test_cut_sequence_to_length_when_length_equals_sequence_length(test_sequence):
     sequence, B, K, T = test_sequence
-    cut_sequence = cut_sequence_to_the_left(sequence, T)
+    cut_seq = cut_sequence(sequence, T, cut_left=True)
     
-    assert cut_sequence.shape == (B, K, T), "Output shape is incorrect"
-    assert torch.all(cut_sequence == sequence), "Sequence elements are incorrect"
+    assert cut_seq.shape == (B, K, T), "Output shape is incorrect"
+    assert torch.all(cut_seq == sequence), "Sequence elements are incorrect"
 
 
 def test_cut_sequence_to_length_when_length_greater_than_sequence_length(test_sequence):
     sequence, B, K, T = test_sequence
-    cut_sequence = cut_sequence_to_the_left(sequence, T + 1)
+    cut_seq = cut_sequence(sequence, T + 1, cut_left=True)
     
-    assert cut_sequence.shape == (B, K, T), "Output shape is incorrect"
-    assert torch.all(cut_sequence == sequence), "Sequence elements are incorrect"
+    assert cut_seq.shape == (B, K, T), "Output shape is incorrect"
+    assert torch.all(cut_seq == sequence), "Sequence elements are incorrect"
 
 
 def test_update_next_sequence(test_sequence):
@@ -170,7 +170,7 @@ def test_update_next_sequence(test_sequence):
     interleaved_sequence = apply_interleaving(sequence, 0)
     current_token = torch.tensor([[[99], [99], [99], [99]]])
 
-    next_sequence = update_next_sequence(interleaved_sequence, current_token, 20, 4, 0)
+    next_sequence = update_next_sequence(interleaved_sequence, current_token, 20, 4)
 
     assert next_sequence.shape == interleaved_sequence.shape
     assert torch.all(next_sequence[:, :, 4:8] == torch.tensor([

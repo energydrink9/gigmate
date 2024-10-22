@@ -92,6 +92,8 @@ class TransformerModel(nn.Module):
         x, updated_cache = self.decoder(
             x,
             sequence_lengths=sequence_lengths.stem if sequence_lengths is not None else None,
+            
+            cross_attention_sequence_lengths=sequence_lengths.full_track if sequence_lengths is not None else None,
             cross_attention_src=cross_attention_src,
             use_cache=use_cache,
             cache=cache,
@@ -104,13 +106,14 @@ class TransformerModel(nn.Module):
 
 
 def load_ckpt(model, checkpoint_path: str, device: Device) -> None:
+    print(f'Loading ckpt {checkpoint_path}')
     state_dict = torch.load(checkpoint_path, map_location=torch.device(device), weights_only=True)['state_dict']
     
     # Workaround to load the model
     for key in list(state_dict.keys()):
         state_dict[key.replace("model.", "").replace("_orig_mod.", "")] = state_dict.pop(key)
 
-    model.load_state_dict(state_dict, strict=True)
+    model.load_state_dict(state_dict, strict=False)  # TODO: set strict back to True
 
 
 def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu', compile=True) -> TransformerModel:
@@ -130,7 +133,6 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
     model.to(device)
 
     if checkpoint_path is not None:
-        print(f'Loading ckpt {checkpoint_path}')
         load_ckpt(model, checkpoint_path, device)
 
     if compile is True:

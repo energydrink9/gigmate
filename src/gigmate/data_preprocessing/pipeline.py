@@ -31,7 +31,7 @@ def upload_dataset(path: str, version: str, tags: list[str] = [], dataset_set=No
         dataset_name=CLEARML_DATASET_TRAINING_NAME,
         dataset_project=get_clearml_project_name(), 
         dataset_version=version,
-        dataset_tags=tags
+        dataset_tags=tags,
     )
     print('Adding files')
     dataset.add_files(path=path)

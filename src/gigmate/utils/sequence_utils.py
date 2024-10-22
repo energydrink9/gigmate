@@ -13,7 +13,8 @@ def pad_sequence(sequence: Tensor, max_len: int, padding_value: int, pad_left: b
         return sequence
 
     pad_length = max_len - T
-    padding = torch.tensor([padding_value]).repeat(B * K * pad_length).reshape((B, K, pad_length)).to(sequence.device)
+    padding = torch.tensor([padding_value], device=sequence.device).repeat(B * K * pad_length).reshape((B, K, pad_length))
+
     # Pad the sequence on the left or right based on the pad_left flag
     if pad_left:
         return torch.cat([padding, sequence], dim=-1)
@@ -172,7 +173,7 @@ def mask_sequence(sequence: torch.Tensor, length: int, mask_value: int) -> torch
     return sequence
 
 
-def remove_special_tokens(target: Tensor, logit: Tensor, special_tokens: List[int]) -> Tuple[Tensor, Tensor]:
+def remove_special_tokens_from_target_and_logits(target: Tensor, logit: Tensor, special_tokens: List[int]) -> Tuple[Tensor, Tensor]:
     """
     Remove special tokens from the target sequence and the elements with the corresponding indices from the logits.
     """
@@ -183,3 +184,13 @@ def remove_special_tokens(target: Tensor, logit: Tensor, special_tokens: List[in
     filtered_logits = logit[:, :, mask]
 
     return filtered_target, filtered_logits
+
+
+def remove_special_tokens(sequence: Tensor, special_tokens: List[int]) -> Tensor:
+    """
+    Remove special tokens from the target sequence and the elements with the corresponding indices from the logits.
+    """
+
+    mask = ~torch.isin(sequence[0, 0, :], torch.tensor(special_tokens, device=sequence.device))
+
+    return sequence[:, :, mask]

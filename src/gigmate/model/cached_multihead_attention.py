@@ -131,7 +131,11 @@ class CachedMultiheadAttention(torch.nn.Module):
             use_cache: bool = False,
             cache: Optional[Tensor] = None,
             cache_index: Optional[int] = None,
-            sequence_lengths: Optional[List[int]] = None) -> Tuple[Tensor, Optional[Tensor]]:
+            sequence_lengths: Optional[List[int]] = None,
+            kv_sequence_lengths: Optional[List[int]] = None,
+            inverted_query: bool = False,
+            inverted_key_values: bool = False,
+    ) -> Tuple[Tensor, Optional[Tensor]]:
 
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
             query,
@@ -146,6 +150,9 @@ class CachedMultiheadAttention(torch.nn.Module):
             cache=None if self.training or not use_cache else cache,
             cache_index=cache_index,
             sequence_lengths=sequence_lengths,
+            kv_sequence_lengths=kv_sequence_lengths,
+            inverted_query=inverted_query,
+            inverted_key_values=inverted_key_values,
         )
 
         return attn_output.transpose(1, 0), updated_kv_cache
@@ -164,6 +171,9 @@ class CachedMultiheadAttention(torch.nn.Module):
         cache: Optional[Tensor] = None,
         cache_index: Optional[int] = None,
         sequence_lengths: Optional[List[int]] = None,
+        kv_sequence_lengths: Optional[List[int]] = None,
+        inverted_query: bool = False,
+        inverted_key_values: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         query = query.transpose(1, 0)
@@ -216,38 +226,45 @@ class CachedMultiheadAttention(torch.nn.Module):
         else:
             sequence_lengths_tensor = None
 
-        def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
-            alibi_score = self.alibi_score_mod(score, b, h, q_idx, kv_idx)
-
-            if sequence_lengths_tensor is None:
-                return alibi_score
-            else:
-                sequence_length = sequence_lengths_tensor[b]
-                padding_score_q = torch.where(q_idx < sequence_length, 0., float('-inf'))
-                padding_score_kv = torch.where(kv_idx < sequence_length, 0., float('-inf'))
-                return alibi_score + padding_score_q + padding_score_kv
-
-        if q.device.type == 'cuda' or True:
-            attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
-
+        if kv_sequence_lengths is not None:
+            kv_sequence_lengths_tensor = torch.tensor(kv_sequence_lengths, device=q.device.type)
         else:
-            attn_mask = create_flex_attn_mask(
-                generate_sliding_window_mask_mod(sliding_window_size, cache_index),
-                bsz,
-                num_heads,
-                tgt_len,
-                src_len,
-                q.device.type,
-            )
-            attn_mask = torch.where(attn_mask, torch.tensor(0.0), torch.tensor(float('-inf'))).to(q.device.type)
+            kv_sequence_lengths_tensor = None
 
-            def alibi_mask_fn(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
-                return self.alibi_score_mod(torch.tensor([0]), b, h, q_idx, kv_idx)
+        tgt_len_tensor = torch.tensor(tgt_len, device=q.device.type)
+        src_len_tensor = torch.tensor(src_len, device=q.device.type)
+
+        def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
+            q_idx_override = torch.tensor(cache_index, device=q_idx.device) if use_cache and cache_index is not None else q_idx
+            alibi_score = self.alibi_score_mod(score, b, h, q_idx_override, kv_idx)
             
-            alibi_mask = get_alibi_mask((bsz, num_heads, tgt_len, src_len), alibi_mask_fn, q.device.type)
-            attn_plus_alibi = attn_mask + alibi_mask
-            
-            attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_plus_alibi)
+            padding_score_q = None
+            padding_score_kv = None
+
+            if sequence_lengths_tensor is not None:
+                sequence_length = sequence_lengths_tensor[b]
+                if inverted_query is True:
+                    padding_score_q = torch.where(q_idx >= tgt_len_tensor - sequence_length, 0., float('-inf'))
+                else:
+                    padding_score_q = torch.where(q_idx < sequence_length, 0., float('-inf'))
+
+            if kv_sequence_lengths_tensor is not None:
+                kv_sequence_length = kv_sequence_lengths_tensor[b]
+                if inverted_key_values is True:
+                    padding_score_kv = torch.where(kv_idx >= src_len_tensor - kv_sequence_length, 0., float('-inf'))
+                else:
+                    padding_score_kv = torch.where(kv_idx < kv_sequence_length, 0., float('-inf'))
+
+            if padding_score_q is not None and padding_score_kv is not None:
+                return alibi_score + padding_score_q + padding_score_kv
+            elif padding_score_q is not None:
+                return alibi_score + padding_score_q
+            elif padding_score_kv is not None:
+                return alibi_score + padding_score_kv
+            else:
+                return alibi_score
+
+        attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
 
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
 

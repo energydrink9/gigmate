@@ -2,9 +2,9 @@ import requests
 import time
 
 OUTPUT_FILE = 'output/output.wav'
-API_URL = 'https://jm07w014k3g6vv-8000.proxy.runpod.net'
-#API_URL = 'http://localhost:8000'
-FILE_PATH = 'resources/centerpiece.ogg'
+API_URL = 'https://stqni80w6ruurs-8000.proxy.runpod.net'
+API_URL = 'http://localhost:8000'
+FILE_PATH = 'resources/stromae.ogg'
 
 
 def send_request() -> None:

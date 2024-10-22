@@ -32,8 +32,6 @@ class SimpleLitAPI(ls.LitAPI):
         wav, sr = torchaudio.load(file)
         sequences, sr = encode(wav, sr, device=self.device, add_start_and_end_tokens=False)
         last_sequence = sequences[-1]
-        print('shape', last_sequence.shape, len(sequences))
-        print('device', self.device)
         # output_audio, sr = decode(last_sequence, self.device)
         # torchaudio.save('output/prova.wav', output_audio.detach().cpu(), sample_rate=sr)
 

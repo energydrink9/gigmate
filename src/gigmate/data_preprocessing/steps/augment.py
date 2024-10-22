@@ -48,7 +48,7 @@ def augment_pitch_and_tempo(file_paths: List[Tuple[str, str]]) -> None:
         transforms=[
             PitchShift(p=1),
             TimeStretch(p=1, leave_length_unchanged=False),
-            Gain(p=1, min_gain_db=-12, max_gain_db=12)
+            Gain(p=1, min_gain_db=-9, max_gain_db=9)
         ],
         p=1,
     )

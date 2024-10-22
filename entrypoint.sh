@@ -20,4 +20,4 @@ poetry install
 
 # Install PyTorch from pre-releases and run the training module
 pip3 install --upgrade --force-reinstall --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
-python -m gigmate.api.complete_audio_file
+python -m gigmate.training.train

@@ -1,28 +1,31 @@
 import math
 from typing import List, Optional, Tuple, cast
 
+import numpy as np
 from pydub import AudioSegment
+import torchaudio
+from gigmate.dataset.dataset import SequenceLengths
 from gigmate.domain.sampling import sample_from_logits
-from gigmate.model.codec import decode, encode_file
+from gigmate.model.codec import decode, encode
 from encodec.utils import save_audio
 import torch
 from tqdm import tqdm
 import os
 
 from gigmate.utils.audio_utils import generate_random_filename
-from gigmate.utils.constants import get_pad_token_id, get_params
+from gigmate.utils.constants import get_pad_token_id, get_params, get_special_tokens
 from gigmate.utils.device import Device
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, update_interleaved_sequence
+from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, remove_special_tokens, revert_interleaving, shift_sequence, update_interleaved_sequence
 
-DEFAULT_MAX_OUTPUT_TOKENS = 1000
 DEFAULT_TEMPERATURE = 0.3
-DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 20
+DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
 
 
 def predict_next_token(
         model: torch.nn.Module,
         input: torch.Tensor,
         full_track_sequence: torch.Tensor,
+        sequence_lengths: SequenceLengths,
         current_token_index: int,
         incremental: bool,
         temperature: float = DEFAULT_TEMPERATURE,
@@ -33,23 +36,27 @@ def predict_next_token(
 ) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]], torch.Tensor]:
 
     with torch.inference_mode():
+        print(f"Predicting next token at index {current_token_index}...")
+        print(f"Current token is {input}")
         outputs, updated_cache, updated_encoder_cache = model(
             input,
             conditioning_input=full_track_sequence,
+            sequence_lengths=sequence_lengths,
             use_cache=use_cache,
             cache=cache,
             cache_index=cache_index if incremental else None,
             encoder_cache=encoder_cache,
         )
         outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
+        # print('outputs')
+        # print(sample_from_logits(outputs, temperature).unsqueeze(0))
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
-    
         predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
-
+        print(f"Predicted token is {predicted_tokens}")
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 
 
-def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: torch.Tensor, max_seq_len: int, current_token_index: int, padding_value: int):
+def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: torch.Tensor, max_seq_len: int, current_token_index: int):
     """
     Updates the next sequence with the current token, taking into account interleaving and maximum sequence length.
 
@@ -57,21 +64,22 @@ def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: to
         torch.Tensor: the updated next sequence ready for the next inference iteration
     """
     current_token = current_token.to(previous_next_sequence.device)
-    
-    interleaved_sequence = update_interleaved_sequence(previous_next_sequence, current_token_index, current_token, padding_value=padding_value)
-    sequence_length = interleaved_sequence.shape[2]
+    token_sequence_index = current_token_index + 1
+    if token_sequence_index >= max_seq_len:
+        next_sequence = shift_sequence(previous_next_sequence)
+    else:
+        next_sequence = previous_next_sequence
 
-    if sequence_length > max_seq_len:
-        return cut_sequence(interleaved_sequence, max_seq_len, cut_left=True)
+    next_sequence[:, :, token_sequence_index] = current_token.reshape((1, 4))
     
-    return interleaved_sequence
+    return next_sequence
 
 
 def complete_sequence(
     model: torch.nn.Module,
     device: Device,
     input_sequence: torch.Tensor,
-    frame_rate: int,
+    frame_rate: float,
     padding_value: int,
     max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,
     temperature: float = DEFAULT_TEMPERATURE,
@@ -83,6 +91,7 @@ def complete_sequence(
             model,
             next_sequence: torch.Tensor,
             full_track_sequence: torch.Tensor,
+            sequence_lengths: SequenceLengths,
             current_token_index: int,
             cache: Optional[List[torch.Tensor]],
             cache_index: Optional[int],
@@ -94,9 +103,26 @@ def complete_sequence(
             use_cache: bool = True,
             encoder_cache: Optional[torch.Tensor] = None,
     ):
-        next_token, updated_cache, encoder_cache = predict_next_token(model, next_sequence, full_track_sequence, current_token_index, incremental, temperature, use_cache=use_cache, cache=cache, cache_index=cache_index, encoder_cache=encoder_cache)
+        next_token, updated_cache, encoder_cache = predict_next_token(
+            model,
+            next_sequence,
+            full_track_sequence,
+            sequence_lengths,
+            current_token_index,
+            incremental,
+            temperature,
+            use_cache=use_cache,
+            cache=cache,
+            cache_index=cache_index,
+            encoder_cache=encoder_cache
+        )
         output_sequence = next_token if output_sequence is None else torch.cat((output_sequence, next_token), dim=2)
-        next_sequence = update_next_sequence(next_sequence, next_token, max_decoder_seq_len, current_token_index, padding_value=padding_value) if use_cache is False or incremental is None else next_token.to(next_sequence.device)
+        next_sequence = update_next_sequence(
+            next_sequence,
+            next_token,
+            max_decoder_seq_len,
+            current_token_index,
+        ) if use_cache is False else next_token.to(next_sequence.device)
         return next_sequence, output_sequence, updated_cache, encoder_cache
 
     def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
@@ -128,8 +154,21 @@ def complete_sequence(
     # initial_token_index = initial_sequence.shape[-1] - 1
     initial_token_index = 0
 
+    torch.set_printoptions(edgeitems=20)
+    print('--- Input ---')
+    print(input_sequence.shape)
+    print(input_sequence)
+    full_track_sequence_length = input_sequence.shape[-1] + codebooks - 1
+    stem_sequence_length = max_decoder_seq_len + codebooks - 1
+    sequence_lengths = SequenceLengths(full_track=[full_track_sequence_length], stem=[stem_sequence_length])
     full_track_sequence = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True).to(device)
+    print('--- Conditioning ---')
+    print(full_track_sequence.shape)
+    print(full_track_sequence)
     next_sequence = get_initial_next_sequence(None, max_decoder_seq_len, padding_value, codebooks, device).to(device)
+    print('--- Next ---')
+    print(next_sequence.shape)
+    print(next_sequence)
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)
 
     loop = tqdm(range(max_output_tokens)) if show_progress else range(max_output_tokens)
@@ -143,6 +182,7 @@ def complete_sequence(
             model,
             next_sequence,
             full_track_sequence,
+            sequence_lengths,
             current_token_index,
             cache,
             cache_index if use_cache else None,
@@ -156,19 +196,48 @@ def complete_sequence(
         )
         output_sequence = new_output_sequence
 
-    return revert_interleaving(cast(torch.Tensor, output_sequence))
+        print(output_sequence)
+
+    return remove_special_tokens(revert_interleaving(cast(torch.Tensor, output_sequence)), get_special_tokens())
+
+
+def complete_audio_file(
+    model: torch.nn.Module,
+    device: Device,
+    audio_file: str,
+    padding_value: int = get_pad_token_id(),
+    max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,
+    temperature: float = DEFAULT_TEMPERATURE
+) -> AudioSegment:
+    wav, sr = torchaudio.load(audio_file)
+    output_wav, output_sr = complete_audio(
+        model,
+        device,
+        wav,
+        sr,
+        padding_value,
+        max_output_length_in_seconds,
+        temperature,
+    )
+    temp_file = generate_random_filename(extension='.wav')
+    save_audio(output_wav, temp_file, sample_rate=output_sr)
+
+    segment = AudioSegment.from_file(temp_file)
+    os.remove(temp_file)
+
+    return segment
 
 
 def complete_audio(
     model: torch.nn.Module,
     device: Device,
-    audio_file: str,
-    verbose: bool = False,
+    audio_waveform: torch.Tensor,
+    audio_sr: int,
     padding_value: int = get_pad_token_id(),
     max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,
     temperature: float = DEFAULT_TEMPERATURE
-) -> AudioSegment:
-    input_sequence, frame_rate = encode_file(audio_file, device)
+) -> Tuple[torch.Tensor, int]:
+    input_sequence, frame_rate = encode(audio_waveform, audio_sr, device, add_start_and_end_tokens=False)
     output_sequence = complete_sequence(
         model,
         device,
@@ -179,10 +248,5 @@ def complete_audio(
         padding_value=padding_value
     )
     output_audio, sr = decode(output_sequence, device)
-    temp_file = generate_random_filename(extension='.wav')
-    save_audio(output_audio, temp_file, sample_rate=sr)
-
-    segment = AudioSegment.from_file(temp_file)
-    os.remove(temp_file)
-
-    return segment
+    return output_audio, sr
+    

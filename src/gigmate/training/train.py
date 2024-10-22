@@ -12,16 +12,15 @@ from gigmate.utils.device import get_device
 
 DEBUG = False
 OUTPUT_DIRECTORY = 'output'
-UPLOAD_WEIGHTS = True
-BATCH_SIZE = get_params()['batch_size']
-MIXED_PRECISION = False
+UPLOAD_CHECKPOINT = True
+UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 4
+MIXED_PRECISION = True
 
 L.seed_everything(get_random_seed())
-# torch.use_deterministic_algorithms(True) TODO: Enable this
 
 
 def upload_weights(task, epoch, filepath):
-    if UPLOAD_WEIGHTS:
+    if UPLOAD_CHECKPOINT:
         task.upload_artifact(name=f'weights-epoch-{epoch}', artifact_object=filepath, wait_on_upload=False)
 
 
@@ -33,7 +32,7 @@ def init_clearml_task(params):
 
     task.connect(params)
 
-    # Workaround to prevent pytorch.compile errors due to builtins patching operated by clearml
+    # Workaround to prevent pytorch.compile errors due to builtins patching performed by clearml
     import builtins
     builtins.__import__ = builtins.__org_import__
 
@@ -55,25 +54,27 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
     training_model, quantizer = get_training_model(params, ckpt_path, device, task, steps_per_epoch)
 
-    # summary(model, input_size=(BATCH_SIZE, max_seq_len, vocab_size))
+    # summary(model, input_size=(params['batch_size'], max_seq_len, vocab_size))
     print('Loaded model:')
     print(training_model.model)
 
     logger = TensorBoardLogger("tb_logs", name="GigMate")
-    early_stopping = EarlyStopping('val_loss')
+    early_stopping = EarlyStopping('val_loss', patience=10)
     checkpoint_callback = ModelCheckpointUpload(
         task=task,
         dirpath=os.path.join(output_dir, 'checkpoints'),
         filename='{epoch}',
-        every_n_epochs=1,
+        every_n_epochs=UPLOAD_CHECKPOINT_EVERY_N_EPOCHS,
         enable_version_counter=True,
         save_top_k=1,
         save_weights_only=True,
+        save_on_train_epoch_end=True,
     )
     lr_monitor = LearningRateMonitor(logging_interval='step')
     
     trainer = L.Trainer(
-        callbacks=[early_stopping, checkpoint_callback, lr_monitor],
+        # callbacks=[early_stopping, checkpoint_callback, lr_monitor],
+        callbacks=[checkpoint_callback, lr_monitor],
         logger=logger,
         max_epochs=params['epochs'],
         limit_train_batches=params['training_set_size'],
@@ -82,6 +83,8 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
         gradient_clip_val=params['gradient_clip'],
         precision='16-mixed' if device == 'cuda' and MIXED_PRECISION is True else '32-true',
         detect_anomaly=DEBUG,
+        deterministic='warn',
+        check_val_every_n_epoch=1,
     )
     
     trainer.fit(training_model, train_loader, validation_loader)

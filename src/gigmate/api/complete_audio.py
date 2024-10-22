@@ -16,7 +16,7 @@ import torch
 import tempfile
 
 from gigmate.api.latest_concat_map import latest_concat_map
-from gigmate.domain.prediction import complete_sequence
+from gigmate.domain.prediction import complete_audio, complete_sequence
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.utils.device import get_device
@@ -27,10 +27,12 @@ MAX_CHUNKS = 12
 MAX_OUTPUT_LENGTH_IN_SECONDS = 8
 MAX_OUTPUT_TOKENS = 180
 OUTPUT_SAMPLE_RATE = 22050
+INPUT_SAMPLE_RATE = 22050
 DEFAULT_TEMPERATURE = 0.3
 
 T = TypeVar('T')
 U = TypeVar('U')
+
 
 @dataclass(frozen=True)
 class AudioChunk(Generic[T]):
@@ -43,7 +45,7 @@ prediction_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=1)
 synthesis_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=1)
 
 
-def complete_midi_loop(prediction_queue: multiprocessing.Queue, synthesis_queue: multiprocessing.Queue) -> None:
+def complete_audio_loop(prediction_queue: multiprocessing.Queue, synthesis_queue: multiprocessing.Queue) -> None:
     device = get_device()
     device = device
 
@@ -53,8 +55,17 @@ def complete_midi_loop(prediction_queue: multiprocessing.Queue, synthesis_queue:
         chunk, temperature = prediction_queue.get()
         if chunk is None:
             break
-        completed_chunk = complete_sequence(chunk, device, model, temperature=temperature, show_progress=True)
-        synthesis_queue.put(completed_chunk)
+        
+        tensor = torch.from_numpy(chunk.data).unsqueeze(0)
+        output_wav, output_sr = complete_audio(
+            model,
+            device,
+            tensor,
+            INPUT_SAMPLE_RATE,
+            max_output_length_in_seconds=MAX_OUTPUT_LENGTH_IN_SECONDS,
+            temperature=temperature,
+        )
+        synthesis_queue.put(AudioChunk(output_wav, chunk.record_start_time, chunk.record_end_time))
 
 
 @asynccontextmanager
@@ -111,41 +122,19 @@ def get_temporary_file(audio: np.ndarray) -> tempfile._TemporaryFileWrapper:
         return file
 
 
-def complete__sequence(chunk: AudioChunk[Score], device: str, model: torch.nn.Module, temperature, show_progress=False) -> AudioChunk[Score]:
-    start_time = time.perf_counter()
-    input_sequence = cast(list[int], token_sequence.ids)
-    output_sequence = complete_sequence(model, device, input_sequence, max_output_tokens=MAX_OUTPUT_TOKENS, max_output_length_in_seconds=MAX_OUTPUT_LENGTH_IN_SECONDS, temperature=temperature, show_progress=show_progress)
-    end_time = time.perf_counter()
-    print(f'4. Completed sequence in {end_time - start_time} seconds')
-    return AudioChunk(output_sequence, chunk.record_start_time, chunk.record_end_time)
-
-
 @app.websocket("/ws/complete-audio")  # Define the WebSocket route
 async def audio_websocket(websocket: WebSocket):
+
     await websocket.accept()
-    
-    # Access resources from app.state
-    state = websocket.app.state
-    separator = state.separator
 
     # Create an observable for processing audio chunks
     subject: reactivex.Subject[AudioChunk[np.ndarray]] = reactivex.subject.Subject()
 
-    def get_audio_stems_step(chunk: AudioChunk[np.ndarray]) -> AudioChunk[dict[str, np.ndarray]]:
-        return get_audio_stems(chunk, separator=separator)
-    
-    def from_iterable(chunk: AudioChunk[dict[str, np.ndarray]]) -> reactivex.Observable[AudioChunk[dict[str, np.ndarray]]]:
-        return reactivex.from_iterable([chunk])
-    
-    def from_callable(callable: Callable[[], U]) -> reactivex.Observable[U]:
-        return reactivex.from_callable(callable)
-
-    def complete_sequence_step(chunk: AudioChunk[Score]) -> AudioChunk[Score]:
+    def complete_sequence_step(chunk: AudioChunk[np.ndarray]) -> AudioChunk[np.ndarray]:
         app.state.prediction_queue.put((chunk, DEFAULT_TEMPERATURE))
         return app.state.synthesis_queue.get()
-
+    
     chunk_observable: reactivex.Observable = subject.pipe(
-        latest_concat_map(lambda chunk: reactivex.from_callable(lambda: get_audio_stems_step(chunk))),
         ops.buffer_with_count(MAX_CHUNKS, 4),
         ops.map(merge_chunks),
         latest_concat_map(lambda chunk: reactivex.from_callable(lambda: complete_sequence_step(chunk))),
@@ -171,7 +160,7 @@ async def audio_websocket(websocket: WebSocket):
 
     # Subscribe to the observable
     subscription = chunk_observable.subscribe(
-        on_next=on_next,  # Send MIDI data back to the client
+        on_next=on_next,  # Complete audio and send data back to the client
         on_error=on_error,  # Handle errors
         scheduler=reactivex.scheduler.ThreadPoolScheduler(max_workers=multiprocessing.cpu_count())
     )

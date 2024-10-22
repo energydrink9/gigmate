@@ -1,7 +1,7 @@
 from gigmate.utils.constants import get_pad_token_id
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
-from gigmate.domain.prediction import complete_audio
+from gigmate.domain.prediction import complete_audio_file
 from gigmate.utils.device import get_device
 from pydub import AudioSegment
 import pydub.utils
@@ -20,7 +20,7 @@ def test_generation_of_audio():
     output_filename = 'output/completed_audio.ogg'
     conditioning_segment = AudioSegment.from_file(conditioning_file)
 
-    completion_segment = complete_audio(model, device, conditioning_segment, max_output_length_in_seconds=10, padding_value=get_pad_token_id())
+    completion_segment = complete_audio_file(model, device, conditioning_file, max_output_length_in_seconds=10, padding_value=get_pad_token_id())
     completed_segment = conditioning_segment + completion_segment
     completed_segment.export(output_filename, format='ogg', codec="libvorbis")
 
@@ -38,7 +38,7 @@ def test_timing_of_generated_audio_with_processing_time():
     conditioning_segment = AudioSegment.from_file(conditioning_file)
     conditioning_segment_cut = conditioning_segment[:-frames_to_remove]
 
-    completion_segment = complete_audio(model, device, conditioning_segment_cut, max_output_length_in_seconds=10, padding_value=get_pad_token_id())
+    completion_segment = complete_audio_file(model, device, conditioning_segment_cut, max_output_length_in_seconds=10, padding_value=get_pad_token_id())
     completed_segment = conditioning_segment + completion_segment[frames_to_remove:]
     completed_segment.export(output_filename, format='ogg', codec="libvorbis")
 

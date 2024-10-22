@@ -16,7 +16,8 @@ from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_s
 
 params = get_params()
 
-MIN_TOKENS_TO_KEEP = 64
+MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK = 64
+MIN_TOKENS_TO_KEEP_FROM_STEM = 512
 
 
 def get_chunk_number(file_path):
@@ -87,13 +88,14 @@ def get_dataset(directory: str):
 
 
 def get_remote_dataset(dataset_set: str) -> str:
+    tags = [f"{dataset_set}-set"]
     dataset = ClearmlDataset.get(
         alias=f'{get_clearml_dataset_name()}-{dataset_set}',
         dataset_project=get_clearml_project_name(),
         dataset_name=get_clearml_dataset_name(),
         dataset_version=get_clearml_dataset_version(),
-        dataset_tags=[f"{dataset_set}-set", *get_clearml_dataset_tags()],
-        only_completed=False,
+        dataset_tags=tags,
+        only_completed=True,
         only_published=False,
     )
     return dataset.get_local_copy()
@@ -129,7 +131,28 @@ class SequenceLengths():
     stem: List[int]
 
 
-def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Union[ModelInput, Tensor, SequenceLengths]]:
+@dataclass
+class DatasetBatch():
+    size: int
+    inputs: ModelInput
+    labels: Tensor
+    sequence_lengths: SequenceLengths
+
+
+def get_empty_item(codebooks: int, max_seq_len: int, max_decoder_seq_len: int) -> Tuple[Tensor, Tensor, Tensor, int, int]:
+    return (
+        torch.full((1, codebooks, max_seq_len), get_pad_token_id()),
+        torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()),
+        torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()),
+        0,
+        0,
+    )
+
+
+def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
+    batch_size = params['batch_size']
+    codebooks = params['codebooks']
+
     full_tracks: List[Tensor] = []
     stems: List[Tensor] = []
     targets: List[Tensor] = []
@@ -145,59 +168,57 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Uni
         assert stem.ndim == 3, 'Expected 3 dimensions for stem'
         assert full_track.shape == stem.shape, 'Full track and stem have different shapes'
 
-        _, codebooks, sequence_length = full_track.shape
+        _, _, sequence_length = full_track.shape
 
         # We need at least MIN_TOKENS_TO_KEEP tokens both in the full track and in the stem
-        if sequence_length < MIN_TOKENS_TO_KEEP * 2:
-            full_tracks.append(torch.full((1, codebooks, max_seq_len), get_pad_token_id()))
-            stems.append(torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()))
-            targets.append(torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()))
-            full_track_sequence_lengths.append(0)
-            stem_sequence_lengths.append(0)
+        if sequence_length < MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK + MIN_TOKENS_TO_KEEP_FROM_STEM:
+            full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
             continue
 
-        # Keep a random number of elements *length_to_keep* from the sequence in the full track
-        max_tokens_to_keep = sequence_length - MIN_TOKENS_TO_KEEP
-        length_to_keep = random.randint(MIN_TOKENS_TO_KEEP, max_tokens_to_keep)
-        full_track_input = full_track[:, :, :length_to_keep]
+        else:
 
-        # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
-        stem_input = stem[:, :, length_to_keep + 1:]
-        target = stem_input
+            # Keep a random number of elements *length_to_keep* from the sequence in the full track
+            max_tokens_to_keep_from_full_track = sequence_length - MIN_TOKENS_TO_KEEP_FROM_STEM
+            tokens_to_keep_from_full_track = random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_tokens_to_keep_from_full_track)
+            full_track_input = full_track[:, :, :tokens_to_keep_from_full_track]
 
-        # Shift the stem by 1 position and set the first token to the start of sequence token
-        stem_input = shift_sequence(stem_input, shifts=1)
-        stem_input[:, :, 0] = get_start_of_sequence_token_id()
+            # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
+            stem_input = stem[:, :, tokens_to_keep_from_full_track + 1:]
+            target = stem_input
 
-        # Calculate sequence lengths
-        full_track_sequence_length = min(full_track_input.shape[-1] + codebooks - 1, max_seq_len)
-        stem_sequence_length = min(stem_input.shape[-1] + codebooks - 1, max_decoder_seq_len)
+            # Shift the stem by 1 position and set the first token to the start of sequence token
+            stem_input = shift_sequence(stem_input, shifts=1)
+            stem_input[:, :, 0] = get_start_of_sequence_token_id()
 
-        # Cut sequences if necessary
-        full_track_input = cut_sequence(full_track_input, max_seq_len - codebooks + 1, cut_left=True)
-        stem_input = cut_sequence(stem_input, max_decoder_seq_len - codebooks + 1)
-        target = cut_sequence(target, max_decoder_seq_len - codebooks + 1)
+            # Calculate sequence lengths
+            full_track_sequence_length = min(full_track_input.shape[-1] + codebooks - 1, max_seq_len)
+            stem_sequence_length = min(stem_input.shape[-1] + codebooks - 1, max_decoder_seq_len)
 
-        # Apply padding to the sequences
-        full_track_input = pad_sequence(full_track_input, max_seq_len, padding_value, pad_left=True)
-        stem_input = pad_sequence(stem_input, max_decoder_seq_len, padding_value)
-        target = pad_sequence(target, max_decoder_seq_len, padding_value)
-        
-        # Apply interleaving
-        full_track_input = apply_interleaving(full_track_input, padding_value)
-        stem_input = apply_interleaving(stem_input, padding_value)
-        target = apply_interleaving(target, padding_value)
+            # Cut sequences if necessary
+            full_track_input = cut_sequence(full_track_input, max_seq_len - codebooks + 1, cut_left=True)
+            stem_input = cut_sequence(stem_input, max_decoder_seq_len - codebooks + 1)
+            target = cut_sequence(target, max_decoder_seq_len - codebooks + 1)
 
-        # Cut sequences if necessary
-        full_track_input = cut_sequence(full_track_input, max_seq_len, cut_left=True)
-        stem_input = cut_sequence(stem_input, max_decoder_seq_len)
-        target = cut_sequence(target, max_decoder_seq_len)
+            # Apply padding to the sequences
+            full_track_input = pad_sequence(full_track_input, max_seq_len, padding_value, pad_left=True)
+            stem_input = pad_sequence(stem_input, max_decoder_seq_len, padding_value)
+            target = pad_sequence(target, max_decoder_seq_len, padding_value)
+            
+            # Apply interleaving
+            full_track_input = apply_interleaving(full_track_input, padding_value)
+            stem_input = apply_interleaving(stem_input, padding_value)
+            target = apply_interleaving(target, padding_value)
 
-        assert full_track_input.shape == (1, codebooks, max_seq_len), f"Shape of full track is {full_track_input.shape}"
-        assert stem_input.shape == (1, codebooks, max_decoder_seq_len), f"Shape of stem is {stem_input.shape}"
-        assert target.shape == (1, codebooks, max_decoder_seq_len), f"Shape of target is {target.shape}"
-        assert full_track_sequence_length >= MIN_TOKENS_TO_KEEP, f"Full track is shorter than {MIN_TOKENS_TO_KEEP} tokens"
-        assert stem_sequence_length >= MIN_TOKENS_TO_KEEP, f"Stem is shorter than {MIN_TOKENS_TO_KEEP} tokens"
+            # Cut sequences if necessary
+            full_track_input = cut_sequence(full_track_input, max_seq_len, cut_left=True)
+            stem_input = cut_sequence(stem_input, max_decoder_seq_len)
+            target = cut_sequence(target, max_decoder_seq_len)
+
+            assert full_track_input.shape == (1, codebooks, max_seq_len), f"Shape of full track is {full_track_input.shape}"
+            assert stem_input.shape == (1, codebooks, max_decoder_seq_len), f"Shape of stem is {stem_input.shape}"
+            assert target.shape == (1, codebooks, max_decoder_seq_len), f"Shape of target is {target.shape}"
+            assert full_track_sequence_length >= MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, f"Full track is shorter than {MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK} tokens"
+            assert stem_sequence_length >= MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, f"Stem is shorter than {MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK} tokens"
 
         full_tracks.append(full_track_input)
         stems.append(stem_input)
@@ -205,11 +226,23 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> Dict[str, Uni
         full_track_sequence_lengths.append(full_track_sequence_length)
         stem_sequence_lengths.append(stem_sequence_length)
 
-    return {
-        'inputs': ModelInput(full_track=torch.cat(full_tracks, dim=0), stem=torch.cat(stems, dim=0)),
-        'labels': torch.cat(targets, dim=0),
-        'sequence_lengths': SequenceLengths(full_track=full_track_sequence_lengths, stem=stem_sequence_lengths),
-    }
+    empty_items_count = len(batch) - batch_size
+
+    # Fill the batch with empty items to avoid recompilations when needed (last batch can be smaller)
+    for _ in range(empty_items_count):
+        full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
+        full_tracks.append(full_track_input)
+        stems.append(stem_input)
+        targets.append(target)
+        full_track_sequence_lengths.append(full_track_sequence_length)
+        stem_sequence_lengths.append(stem_sequence_length)
+
+    return DatasetBatch(
+        size=batch_size,
+        inputs=ModelInput(full_track=torch.cat(full_tracks, dim=0), stem=torch.cat(stems, dim=0)),
+        labels=torch.cat(targets, dim=0),
+        sequence_lengths=SequenceLengths(full_track=full_track_sequence_lengths, stem=stem_sequence_lengths),
+    )
 
 
 def get_data_loader(dataset: str):
@@ -236,5 +269,8 @@ def get_data_loaders():
 
 
 def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, Tensor, SequenceLengths]:
-    return batch['inputs'].full_track.to(device), batch['inputs'].stem.to(device), batch['labels'].to(device), batch['sequence_lengths']
+    return batch.inputs.full_track.to(device), batch.inputs.stem.to(device), batch.labels.to(device), batch.sequence_lengths
 
+
+if __name__ == '__main__':
+    get_data_loaders()
