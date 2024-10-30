@@ -8,11 +8,11 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 from gigmate.utils.constants import get_random_seed
 
-SOURCE_FILES_DIR = '/Users/michele/Music/soundstripe/encoded'
-OUTPUT_FILES_DIR = '/Users/michele/Music/soundstripe/split'
+SOURCE_FILES_DIR = '../dataset/encoded'
+OUTPUT_FILES_DIR = '../dataset/split'
 SPLIT_NAMES = ['train', 'validation', 'test']
-VALIDATION_SIZE = 0.10
-TEST_SIZE = 0.10
+VALIDATION_SIZE = 0.8
+TEST_SIZE = 0.6
 
 
 def get_directories_containing_pkl_files(dir: str) -> Set[str]:

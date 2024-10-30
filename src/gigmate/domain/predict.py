@@ -30,15 +30,15 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
 
         input_sequence = data_items[i].inputs.full_track[:1, :, :]
         input_sequence = revert_interleaving(input_sequence)
-        input_sequence = cut_sequence(input_sequence, data_items[i].sequence_lengths.full_track[0])
         input_sequence = remove_special_tokens(input_sequence, get_special_tokens())
+        input_sequence = cut_sequence(input_sequence, data_items[i].sequence_lengths.full_track[0])
         input_tensor, sr = decode(input_sequence, device)
         save_audio(input_tensor.detach().cpu(), input_file, sample_rate=sr)
 
         stem_sequence = data_items[i].inputs.stem[:1, :, :]
         stem_sequence = revert_interleaving(stem_sequence)
-        stem_sequence = cut_sequence(stem_sequence, data_items[i].sequence_lengths.stem[0])
         stem_sequence = remove_special_tokens(stem_sequence, get_special_tokens())
+        stem_sequence = cut_sequence(stem_sequence, data_items[i].sequence_lengths.stem[0], cut_left=False)
         stem_tensor, sr = decode(stem_sequence, device)
         save_audio(stem_tensor.detach().cpu(), stem_file, sample_rate=sr)
 
@@ -67,7 +67,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path(), compile=False)
-    data_loader = get_data_loader('train')
+    data_loader = get_data_loader('validation')
     codec = get_codec(device)
     frame_rate = codec.config.frame_rate
 

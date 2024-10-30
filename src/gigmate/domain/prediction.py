@@ -15,7 +15,7 @@ import os
 from gigmate.utils.audio_utils import generate_random_filename
 from gigmate.utils.constants import get_pad_token_id, get_params, get_special_tokens
 from gigmate.utils.device import Device
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, remove_special_tokens, revert_interleaving, shift_sequence, update_interleaved_sequence
+from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, remove_special_tokens, revert_interleaving, shift_sequence
 
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
@@ -37,7 +37,8 @@ def predict_next_token(
 
     with torch.inference_mode():
         print(f"Predicting next token at index {current_token_index}...")
-        print(f"Current token is {input}")
+        print(f"Current input is {input.shape} {input}")
+        print(f'sequence lengths: {sequence_lengths}')
         outputs, updated_cache, updated_encoder_cache = model(
             input,
             conditioning_input=full_track_sequence,
@@ -48,8 +49,6 @@ def predict_next_token(
             encoder_cache=encoder_cache,
         )
         outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
-        # print('outputs')
-        # print(sample_from_logits(outputs, temperature).unsqueeze(0))
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
         predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
         print(f"Predicted token is {predicted_tokens}")
@@ -98,7 +97,6 @@ def complete_sequence(
             output_sequence,
             max_decoder_seq_len,
             temperature,
-            padding_value: int,
             incremental: bool,
             use_cache: bool = True,
             encoder_cache: Optional[torch.Tensor] = None,
@@ -132,7 +130,7 @@ def complete_sequence(
         else:
             sequence = sequence.to(device)
             if prepend_sos_token is True:
-                sequence = torch.cat([start_of_sequence_token], dim=-1)
+                sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
             
         sequence_length = sequence.shape[-1]
         interleaved_sequence = apply_interleaving(sequence, padding_value)
@@ -150,7 +148,7 @@ def complete_sequence(
     max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
     output_sequence = None
-    # TODO: Allow prediction to start from a pre-existing sequence
+    # TODO: Allow prediction to start from a pre-existing full track sequence
     # initial_token_index = initial_sequence.shape[-1] - 1
     initial_token_index = 0
 
@@ -189,13 +187,14 @@ def complete_sequence(
             output_sequence,
             max_decoder_seq_len,
             temperature,
-            padding_value=padding_value,
             incremental=iteration != 0,
             use_cache=use_cache,
             encoder_cache=encoder_cache,
         )
         output_sequence = new_output_sequence
 
+        print('output')
+        print(output_sequence.shape)
         print(output_sequence)
 
     return remove_special_tokens(revert_interleaving(cast(torch.Tensor, output_sequence)), get_special_tokens())

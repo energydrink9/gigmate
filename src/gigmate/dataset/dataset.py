@@ -170,7 +170,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
 
         _, _, sequence_length = full_track.shape
 
-        # We need at least MIN_TOKENS_TO_KEEP tokens both in the full track and in the stem
+        # We need at least MIN_TOKENS_TO_KEEP tokens in the full track and in the stem
         if sequence_length < MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK + MIN_TOKENS_TO_KEEP_FROM_STEM:
             full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
             continue

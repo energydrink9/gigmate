@@ -5,8 +5,8 @@ from tqdm import tqdm
 from gigmate.model.codec import encode_file
 from gigmate.utils.device import get_device
 
-SOURCE_FILES_DIR = '/Users/michele/Music/soundstripe/augmented'
-OUTPUT_FILES_DIR = '/Users/michele/Music/soundstripe/encoded'
+SOURCE_FILES_DIR = '../dataset/augmented'
+OUTPUT_FILES_DIR = '../dataset/encoded'
 
 
 def get_ogg_files(dir: str):

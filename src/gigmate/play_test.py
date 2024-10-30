@@ -22,7 +22,7 @@ def test_generation_of_audio():
 
     completion_segment = complete_audio_file(model, device, conditioning_file, max_output_length_in_seconds=10, padding_value=get_pad_token_id())
     completed_segment = conditioning_segment + completion_segment
-    completed_segment.export(output_filename, format='ogg', codec="libvorbis")
+    completed_segment.export(output_filename, format='ogg', codec="opus")
 
     print(f'Generated completed audio file at: {output_filename}')
 
@@ -40,6 +40,6 @@ def test_timing_of_generated_audio_with_processing_time():
 
     completion_segment = complete_audio_file(model, device, conditioning_segment_cut, max_output_length_in_seconds=10, padding_value=get_pad_token_id())
     completed_segment = conditioning_segment + completion_segment[frames_to_remove:]
-    completed_segment.export(output_filename, format='ogg', codec="libvorbis")
+    completed_segment.export(output_filename, format='ogg', codec="opus")
 
     print(f'Generated completed audio file at: {output_filename}')
