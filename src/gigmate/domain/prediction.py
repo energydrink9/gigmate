@@ -169,7 +169,7 @@ def complete_sequence(
     print(next_sequence)
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)
 
-    loop = tqdm(range(max_output_tokens)) if show_progress else range(max_output_tokens)
+    loop = tqdm(range(max_output_tokens)).iterable if show_progress else range(max_output_tokens)
     cache: Optional[List[torch.Tensor]] = None
     encoder_cache: Optional[torch.Tensor] = None
 

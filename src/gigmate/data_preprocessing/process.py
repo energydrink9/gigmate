@@ -1,7 +1,7 @@
 from clearml import PipelineDecorator
 
 from gigmate.data_preprocessing.dataset import get_remote_dataset_by_tag
-from gigmate.data_preprocessing.pipeline import AUGMENTED_FILES_DIR, DISTORTED_FILES_DIR, ENCODED_FILES_DIR, MERGED_FILES_DIR, RANDOM_ASSORTMENTS_PER_SONG, SPLIT_FILES_DIR, STEM_NAME, dataset_creation_pipeline
+from gigmate.data_preprocessing.pipeline import AUGMENTED_FILES_DIR, DISTORTED_FILES_DIR, ENCODED_FILES_DIR, MERGED_FILES_DIR, RANDOM_ASSORTMENTS_PER_SONG, SPLIT_FILES_DIR, dataset_creation_pipeline
 from gigmate.data_preprocessing.constants import STEM_NAME
 
 

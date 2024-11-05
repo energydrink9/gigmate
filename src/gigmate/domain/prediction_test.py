@@ -1,7 +1,7 @@
 import pytest
 import torch
 from typing import Tuple
-from gigmate.domain.prediction import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, update_interleaved_sequence, update_next_sequence
+from gigmate.domain.prediction import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, update_next_sequence
 
 
 def get_sample_data(B: int, K: int, T: int) -> torch.Tensor:
@@ -98,40 +98,6 @@ def test_dtype_and_device_preservation():
     reverted = revert_interleaving(interleaved)
     assert reverted.dtype == sequence.dtype, "Data type not preserved after reversion"
     assert reverted.device == sequence.device, "Device not preserved after reversion"
-
-
-def test_update_interleaved_sequence(test_sequence):
-    sequence, B, K, T = test_sequence
-    sequence = apply_interleaving(sequence, 0)
-    position = 4
-
-    interleaved = update_interleaved_sequence(sequence, position, torch.tensor([[[-5], [-5], [-5], [-5]]]), padding_value=0)
-
-    assert interleaved.shape == (B, K, T + K - 1), "Output shape is incorrect"
-
-    assert torch.all(interleaved[:, :, 4:8] == torch.tensor([
-        [-5, 6, 7, 8],
-        [4, -5, 6, 7],
-        [3, 4, -5, 6],
-        [2, 3, 4, -5]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
-
-
-def test_update_interleaved_sequence_when_position_equals_last_element(test_sequence):
-    sequence, B, K, T = test_sequence
-    sequence = apply_interleaving(sequence, 0)
-    position = 9
-
-    interleaved = update_interleaved_sequence(sequence, position, torch.tensor([[[10], [10], [10], [10]]]), padding_value=0)
-    
-    assert interleaved.shape == (B, K, position + K), "Output shape is incorrect"
-
-    assert torch.all(interleaved[:, :, -K:] == torch.tensor([
-        [10, 0, 0, 0],
-        [9, 10, 0, 0],
-        [8, 9, 10, 0],
-        [7, 8, 9, 10]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
 
 
 def test_cut_sequence_to_length(test_sequence):

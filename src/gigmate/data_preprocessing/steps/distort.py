@@ -48,7 +48,7 @@ def distort_audio(original_audio: AudioSegment) -> AudioSegment:
     augmented_audio = transform(audio, sample_rate=sample_rate)
     data = convert_audio_to_int_16(clamp_audio_data(augmented_audio))
     data = data.reshape((-1, 2))
-    return AudioSegment(data=data, sample_width=2, frame_rate=sample_rate, channels=channels)
+    return AudioSegment(data=data, sample_width=2, frame_rate=sample_rate, channels=channels)  # type: ignore
 
 
 def distort(params: Tuple[Tuple[str, str], str, str]) -> None:

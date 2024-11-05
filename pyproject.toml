@@ -60,6 +60,7 @@ coiled = "1.58.0"
 [tool.poetry.dev-dependencies]
 pytest = "^8.3.3"
 pydub-stubs = "^0.25.1.1"
+types-pyaudio = "^0.2.16.20240516"
 
 [tool.poetry.extras]
 test = ["pytest", "pytest-cov"]
@@ -118,3 +119,20 @@ exclude_lines = [
 
 [tool.poetry.scripts]
 train = "gigmate.training.train:main"
+
+[[tool.mypy.overrides]]
+module = [
+    "audiomentations.*",
+    "soundfile.*",
+    "s3fs.*",
+    "clearml.*",
+    "transformers.*",
+    "torchaudio.*",
+    "sounddevice.*",
+    "sklearn.*",
+    "scipy.*",
+    "torchao.*",
+    "litserve.*",
+    "coiled.*",
+]
+ignore_missing_imports = true

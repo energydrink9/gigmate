@@ -132,7 +132,7 @@ def create_stems_assortments(other_stems: List[StemFile], current_stem_file: str
 def is_mostly_silent(fs: S3FileSystem, file_path: str) -> bool:
     with fs.open(file_path, 'rb') as file:
         
-        audio, sr = librosa.load(file)
+        audio, sr = librosa.load(file)  # type: ignore
         no_of_samples = audio.shape[-1]
         splits = librosa.effects.split(audio, top_db=60)
         non_silent_samples = sum([end - start for (start, end) in splits])
@@ -159,21 +159,21 @@ def assort(fs: S3FileSystem, directory: str, stem_name: str, random_assortments_
 def merge_stems(fs: S3FileSystem, ogg_files: List[str], output_file: str):
     # Load the first stem as the base track
     with fs.open(ogg_files[0], 'rb') as first_file:
-        bytes_io = io.BytesIO(first_file.read())
-        merged_track = AudioSegment.from_file(bytes_io, format="ogg", codec='opus')
+        bytes_io = io.BytesIO(first_file.read())  # type: ignore
+        merged_track = AudioSegment.from_file(bytes_io, format="ogg", codec='opus')  # type: ignore
     
     # Load and overlay the rest of the stems
     for ogg_file in ogg_files[1:]:
         with fs.open(ogg_file, 'rb') as file:
-            bytes_io = io.BytesIO(file.read())
-            stem = AudioSegment.from_file(bytes_io, format="ogg", codec='opus')
+            bytes_io = io.BytesIO(file.read())  # type: ignore
+            stem = AudioSegment.from_file(bytes_io, format="ogg", codec='opus')  # type: ignore
             merged_track = merged_track.overlay(stem)
     
     # Export the final merged track to a single .ogg file
     with fs.open(output_file, 'wb') as file:
         bytes_io = io.BytesIO()
-        merged_track.export(bytes_io, format='ogg')
-        file.write(bytes_io.getvalue())
+        merged_track.export(bytes_io, format='ogg')  # type: ignore
+        file.write(bytes_io.getvalue())  # type: ignore
 
 
 def assort_directory(params: Tuple[S3FileSystem, str, str, str, str, int]) -> None:

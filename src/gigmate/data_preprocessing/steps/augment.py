@@ -1,10 +1,8 @@
-from concurrent.futures import wait
 import os
 import shutil
 from typing import Any, List, Tuple, cast
 from dask.distributed import Client
 from distributed import progress
-from distributed.diagnostics.progressbar import TextProgressBar
 import numpy as np
 from pydub import AudioSegment
 from audiomentations import Compose, PitchShift, TimeStretch, Gain
@@ -101,7 +99,7 @@ def augment_all(source_directory: str, output_directory: str):
     fs = S3FileSystem()
     files = get_full_track_files(fs, f'{BUCKET}{source_directory}')
 
-    client, dataset_path = cast(Tuple[Client, str], get_client(RUN_LOCALLY, mount_bucket=BUCKET))
+    client, dataset_path = cast(Tuple[Client, str], get_client(RUN_LOCALLY, mount_bucket=BUCKET, n_workers=[4, 100]))
 
     source_directory = dataset_path + source_directory
     output_directory = dataset_path + output_directory
@@ -111,8 +109,6 @@ def augment_all(source_directory: str, output_directory: str):
     print('Augmenting audio tracks')
     futures = client.map(augment, params_list)
     progress(futures)
-
-    client.gather(futures)
 
     return output_directory
 

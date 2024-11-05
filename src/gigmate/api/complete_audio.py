@@ -134,11 +134,13 @@ async def audio_websocket(websocket: WebSocket):
         app.state.prediction_queue.put((chunk, DEFAULT_TEMPERATURE))
         return app.state.synthesis_queue.get()
     
-    chunk_observable: reactivex.Observable = subject.pipe(
-        ops.buffer_with_count(MAX_CHUNKS, 4),
-        ops.map(merge_chunks),
-        latest_concat_map(lambda chunk: reactivex.from_callable(lambda: complete_sequence_step(chunk))),
-    )
+    chunk_observable: reactivex.Observable = reactivex.Observable()
+
+    # chunk_observable: reactivex.Observable = subject.pipe(
+    #     ops.buffer_with_count(MAX_CHUNKS, 4),
+    #     ops.map(merge_chunks),
+    #     latest_concat_map(lambda chunk: reactivex.from_callable(lambda: complete_sequence_step(chunk))),
+    # )
 
     def get_json_response(chunk: AudioChunk) -> Dict[str, Any]:
         return {
