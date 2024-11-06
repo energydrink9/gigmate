@@ -1,5 +1,6 @@
 import os
 import shutil
+import traceback
 from typing import Any, List, Tuple, cast
 from dask.distributed import Client
 from distributed import progress
@@ -59,20 +60,27 @@ def augment_pitch_and_tempo(file_paths: List[Tuple[str, str]]) -> None:
 
 
 def augment(params: Tuple[str, str, str]) -> None:
+    
     file_path, source_directory, output_directory = params
+
     try:
         file_dir = os.path.dirname(file_path)
         stem_file_path = os.path.join(file_dir, 'stem.ogg')
         file_dir = os.path.dirname(file_path)
         relative_path = os.path.relpath(file_dir, source_directory)
         output_file_path = os.path.join(output_directory, relative_path + '-original')
-        full_track_output_file_path = os.path.join(output_file_path, os.path.basename(file_path))
-        stem_output_file_path = os.path.join(output_file_path, os.path.basename(stem_file_path))
 
-        if not os.path.exists(full_track_output_file_path) or not os.path.exists(stem_output_file_path):
+        full_track_output_file_path = os.path.join(output_file_path, os.path.basename(file_path))
+
+        if not os.path.exists(full_track_output_file_path):
             os.makedirs(os.path.dirname(full_track_output_file_path), exist_ok=True)
             if os.path.exists(file_path):
                 shutil.copyfile(file_path, full_track_output_file_path)
+
+        stem_output_file_path = os.path.join(output_file_path, os.path.basename(stem_file_path))
+
+        if not os.path.exists(stem_output_file_path):
+            os.makedirs(os.path.dirname(full_track_output_file_path), exist_ok=True)
             if os.path.exists(stem_file_path):
                 shutil.copyfile(stem_file_path, stem_output_file_path)
 
@@ -82,6 +90,7 @@ def augment(params: Tuple[str, str, str]) -> None:
             output_file_path = os.path.join(output_directory, relative_path + f'-augmented{i}')
             full_track_output_file_path = os.path.join(output_file_path, os.path.basename(file_path))
             stem_output_file_path = os.path.join(output_file_path, os.path.basename(stem_file_path))
+
             if not os.path.exists(full_track_output_file_path) or not os.path.exists(stem_output_file_path):
                 os.makedirs(output_file_path, exist_ok=True)
                 augment_pitch_and_tempo(
@@ -90,8 +99,10 @@ def augment(params: Tuple[str, str, str]) -> None:
                         (stem_file_path, stem_output_file_path)
                     ]
                 )
+
     except Exception as e:
         print(f'Error augmenting file {file_path}: {e}')
+        print(traceback.format_exc())
 
 
 def augment_all(source_directory: str, output_directory: str):
@@ -99,7 +110,15 @@ def augment_all(source_directory: str, output_directory: str):
     fs = S3FileSystem()
     files = get_full_track_files(fs, f'{BUCKET}{source_directory}')
 
-    client, dataset_path = cast(Tuple[Client, str], get_client(RUN_LOCALLY, mount_bucket=BUCKET, n_workers=[4, 100]))
+    client, dataset_path = cast(
+        Tuple[Client, str],
+        get_client(
+            RUN_LOCALLY,
+            n_workers=[4, 100],
+            worker_vm_types=["c4.large"],
+            scheduler_vm_types=['c4.large'],
+        ),
+    )
 
     source_directory = dataset_path + source_directory
     output_directory = dataset_path + output_directory

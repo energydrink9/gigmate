@@ -1,19 +1,23 @@
 from functools import lru_cache
 import math
+from os import PathLike
 from transformers import EncodecModel, AutoProcessor
 from encodec.utils import convert_audio
 import torchaudio
 import torch
 from torch import Tensor
-from typing import List, Tuple
+from typing import BinaryIO, List, Optional, Tuple, Union
 
 from gigmate.utils.constants import get_params
 from gigmate.utils.device import Device
 from gigmate.utils.sequence_utils import get_end_of_sequence_token, get_start_of_sequence_token
 
+LIMIT_CHUNKS_LENGTH_TO_MAX_SEQ_LEN = False
+
 
 @lru_cache(maxsize=1)
 def get_codec(device: Device):
+    print(f'Encoding using device {device}')
     model = EncodecModel.from_pretrained("facebook/encodec_32khz", normalize=False, device_map=device)
     # print(model.config)
     return model.to(device).eval()
@@ -24,9 +28,9 @@ def get_processor(device: Device):
     return AutoProcessor.from_pretrained("facebook/encodec_32khz", device_map=device)
 
 
-def encode_file(audio_path: str, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
+def encode_file(audio_path: Union[BinaryIO, str, PathLike], device: Device, add_start_and_end_tokens: bool = False, format: Optional[str] = None) -> Tuple[List[Tensor], float]:
     # Load and pre-process the audio waveform
-    wav, sr = torchaudio.load(audio_path)
+    wav, sr = torchaudio.load(audio_path, format=format)
     return encode(wav, sr, device, add_start_and_end_tokens=add_start_and_end_tokens)
 
 
@@ -51,11 +55,16 @@ def get_total_chunks(samples_per_chunk: int, num_samples: int, samples_per_token
 
 
 def bundle_chunks_and_add_special_tokens(chunks: List[Tensor], encoded_tokens_per_chunk: int, add_start_and_end_token: bool, device: Device) -> List[Tensor]:
-    max_seq_len = get_params()['max_seq_len']
-    chunks_per_set: int = math.ceil(max_seq_len / encoded_tokens_per_chunk)
-    total_chunks = len(chunks)
-    total_sets = math.ceil(total_chunks / chunks_per_set)
-    chunks_sets = [chunks[i:i + chunks_per_set] for i in range(0, total_chunks, chunks_per_set)]
+    if LIMIT_CHUNKS_LENGTH_TO_MAX_SEQ_LEN:
+        max_seq_len = get_params()['max_seq_len']
+        chunks_per_set: int = math.ceil(max_seq_len / encoded_tokens_per_chunk)
+        total_chunks = len(chunks)
+        total_sets = math.ceil(total_chunks / chunks_per_set)
+        chunks_sets = [chunks[i:i + chunks_per_set] for i in range(0, total_chunks, chunks_per_set)]
+
+    else:
+        total_sets = 1
+        chunks_sets = [chunks]
 
     final_chunks = []
     

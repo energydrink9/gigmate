@@ -160,19 +160,19 @@ def merge_stems(fs: S3FileSystem, ogg_files: List[str], output_file: str):
     # Load the first stem as the base track
     with fs.open(ogg_files[0], 'rb') as first_file:
         bytes_io = io.BytesIO(first_file.read())  # type: ignore
-        merged_track = AudioSegment.from_file(bytes_io, format="ogg", codec='opus')  # type: ignore
+        merged_track = AudioSegment.from_file(bytes_io, format="ogg", codec='libopus')  # type: ignore
     
     # Load and overlay the rest of the stems
     for ogg_file in ogg_files[1:]:
         with fs.open(ogg_file, 'rb') as file:
             bytes_io = io.BytesIO(file.read())  # type: ignore
-            stem = AudioSegment.from_file(bytes_io, format="ogg", codec='opus')  # type: ignore
+            stem = AudioSegment.from_file(bytes_io, format="ogg", codec='libopus')  # type: ignore
             merged_track = merged_track.overlay(stem)
     
     # Export the final merged track to a single .ogg file
     with fs.open(output_file, 'wb') as file:
         bytes_io = io.BytesIO()
-        merged_track.export(bytes_io, format='ogg')  # type: ignore
+        merged_track.export(bytes_io, format='ogg', codec='libopus')  # type: ignore
         file.write(bytes_io.getvalue())  # type: ignore
 
 

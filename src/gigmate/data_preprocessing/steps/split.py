@@ -2,10 +2,11 @@ import glob
 import os
 import random
 import shutil
-from typing import List, Set
-
+from typing import List, Set, cast
+from s3fs.core import S3FileSystem
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+
 from gigmate.utils.constants import get_random_seed
 
 SOURCE_FILES_DIR = '../dataset/encoded'
@@ -15,8 +16,8 @@ VALIDATION_SIZE = 0.8
 TEST_SIZE = 0.6
 
 
-def get_directories_containing_pkl_files(dir: str) -> Set[str]:
-    files = glob.glob(os.path.join(dir, '**/*.pkl'), recursive=True)
+def get_directories_containing_pkl_files(fs: S3FileSystem, dir: str) -> Set[str]:
+    files = cast(List[str], fs.glob(os.path.join(dir, '**/*.pkl')))
     directories = {os.path.dirname(file) for file in files}
     
     return directories
@@ -34,8 +35,10 @@ def split_by_artist(file_paths_with_artists, artists, validation_size, test_size
 
 
 def split_all(source_directory: str, output_directory: str) -> List[str]:
+    
+    fs = S3FileSystem(use_listings_cache=False)
 
-    file_paths = get_directories_containing_pkl_files(source_directory)
+    file_paths = get_directories_containing_pkl_files(fs, source_directory)
     file_paths_artists = [os.path.split(os.path.split(file_path)[0])[-1] for file_path in file_paths]
 
     file_paths_with_artists = list(zip(file_paths, file_paths_artists))

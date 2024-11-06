@@ -19,4 +19,4 @@ poetry install --with dataset
 # pip3 install --upgrade --force-reinstall --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
 # python -m gigmate.training.train
 
-python -m gigmate.data_preprocessing.process
+poetry run python -m gigmate.data_preprocessing.steps.encode
