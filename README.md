@@ -1,3 +1,6 @@
+![example workflow](https://github.com/energydrink9/gigmate/actions/workflows/python-app.yml/badge.svg)
+
+
 ### Initial setup
 
 In order to start using the application, make sure to run the following commands that will install the package and the necessary dependencies.
