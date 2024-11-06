@@ -6,7 +6,7 @@ from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.training.training_model import get_training_model
 from gigmate.utils.constants import get_clearml_project_name, get_params, get_random_seed
 import lightning as L
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.utils.device import get_device
 
@@ -25,9 +25,18 @@ def upload_weights(task, epoch, filepath):
 
 
 def init_clearml_task(params):
+    
+    task_name = f'train enc_seq_len {params["max_seq_len"]}'
+    task_name += f'dec_seq_len {params["max_decoder_seq_len"]}'
+    task_name += f'batch {params["batch_size"]}'
+    task_name += f'layers {params["encoder_layers"]}-{params["decoder_layers"]}'
+    task_name += f'heads {params["num_heads"]}'
+    task_name += f'lr {params["learning_rate"]}'
+    task_name += f'dff {params["dff"]}'
+    
     task = Task.init(
         project_name=get_clearml_project_name(),
-        task_name=f'train enc_seq_len {params["max_seq_len"]} dec_seq_len {params["max_decoder_seq_len"]} batch {params["batch_size"]} layers {params["encoder_layers"]}-{params["decoder_layers"]} heads {params["num_heads"]} lr {params["learning_rate"]} dff {params["dff"]}',
+        task_name=task_name,
     )
 
     task.connect(params)
@@ -59,7 +68,7 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
     print(training_model.model)
 
     logger = TensorBoardLogger("tb_logs", name="GigMate")
-    early_stopping = EarlyStopping('val_loss', patience=10)
+    # early_stopping = EarlyStopping('val_loss', patience=10)
     checkpoint_callback = ModelCheckpointUpload(
         task=task,
         dirpath=os.path.join(output_dir, 'checkpoints'),

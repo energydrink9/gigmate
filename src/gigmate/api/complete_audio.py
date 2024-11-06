@@ -3,20 +3,18 @@ import multiprocessing
 import reactivex.scheduler
 import time
 import traceback
-from typing import Any, Callable, Dict, Generic, TypeVar, cast
+from typing import Any, Dict, Generic, TypeVar
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import asynccontextmanager
 import soundfile as sf
 import uvicorn
 import reactivex
-import reactivex.operators as ops
 import numpy as np
 from dataclasses import dataclass
 import torch
 import tempfile
 
-from gigmate.api.latest_concat_map import latest_concat_map
-from gigmate.domain.prediction import complete_audio, complete_sequence
+from gigmate.domain.prediction import complete_audio
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.utils.device import get_device

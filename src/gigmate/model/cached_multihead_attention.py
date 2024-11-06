@@ -6,13 +6,12 @@ from torch import Tensor
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from torch.nn.init import xavier_uniform_
 from torch.nn.parameter import Parameter
-from torch.nn import functional as F
 import torch.overrides
 import torch.utils.backend_registration
 import torch.utils._python_dispatch
 import torch._C
 import torch.fx.experimental.proxy_tensor
-from torch.nn.attention.flex_attention import create_mask as create_flex_attn_mask, flex_attention, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask
+from torch.nn.attention.flex_attention import flex_attention, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask
 
 pad = torch._C._nn.pad,
 linear = torch._C._nn.linear
@@ -157,7 +156,8 @@ class CachedMultiheadAttention(torch.nn.Module):
 
         return attn_output.transpose(1, 0), updated_kv_cache
         
-    def multi_head_attention_forward(
+    # TODO: refactor this function
+    def multi_head_attention_forward(  # noqa: C901
         self,
         query: Tensor,
         key: Tensor,

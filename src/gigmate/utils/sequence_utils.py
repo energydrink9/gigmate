@@ -1,8 +1,6 @@
 from typing import List, Tuple
 from torch import Tensor
 import torch
-from gigmate.utils.constants import get_special_tokens
-
 from gigmate.utils.constants import get_end_of_sequence_token_id, get_pad_token_id, get_start_of_sequence_token_id
 
 

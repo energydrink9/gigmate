@@ -46,14 +46,33 @@ class TransformerBlock(nn.Module):
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         norm1 = self.layernorm1(x)
-        tgt2, cache = self.self_attention(norm1, norm1, norm1, use_cache=use_cache, cache=cache, cache_index=cache_index, sequence_lengths=sequence_lengths, kv_sequence_lengths=sequence_lengths, inverted_query=encoder, inverted_key_values=encoder)
+        tgt2, cache = self.self_attention(
+            norm1,
+            norm1,
+            norm1,
+            use_cache=use_cache,
+            cache=cache,
+            cache_index=cache_index,
+            sequence_lengths=sequence_lengths,
+            kv_sequence_lengths=sequence_lengths,
+            inverted_query=encoder,
+            inverted_key_values=encoder,
+        )
         torch.isnan(tgt2).any()  # Seems to prevent nans from propagating. TODO: understand why
 
         x = x + self.dropout1(tgt2)
 
         if self.has_cross_attention is True:
             tgt2 = self.layernorm2(x)
-            tgt2, cache = self.cross_attention(tgt2, cross_attention_src, cross_attention_src, use_cache=False, sequence_lengths=sequence_lengths, kv_sequence_lengths=cross_attention_sequence_lengths, inverted_key_values=True)
+            tgt2, cache = self.cross_attention(
+                tgt2,
+                cross_attention_src,
+                cross_attention_src,
+                use_cache=False,
+                sequence_lengths=sequence_lengths,
+                kv_sequence_lengths=cross_attention_sequence_lengths,
+                inverted_key_values=True,
+            )
             torch.isnan(tgt2).any()  # Seems to prevent nans from propagating. TODO: understand why
             x = x + self.dropout2(tgt2)
 

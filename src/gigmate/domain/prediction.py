@@ -1,7 +1,5 @@
 import math
 from typing import List, Optional, Tuple, cast
-
-import numpy as np
 from pydub import AudioSegment
 import torchaudio
 from gigmate.dataset.dataset import SequenceLengths

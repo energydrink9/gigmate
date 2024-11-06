@@ -28,12 +28,30 @@ class Decoder(nn.Module):
             dropout=self.dropout
         )
 
-    def forward(self, x: Tensor, cross_attention_src: Tensor, sequence_lengths: Optional[Tensor], cross_attention_sequence_lengths: Optional[Tensor], use_cache: bool = False, cache: Optional[List[Tensor]] = None, cache_index: Optional[int] = None) -> Tuple[Tensor, Optional[List[Tensor]]]:
+    def forward(
+        self,
+        x: Tensor,
+        cross_attention_src: Tensor,
+        sequence_lengths: Optional[Tensor],
+        cross_attention_sequence_lengths: Optional[Tensor],
+        use_cache: bool = False,
+        cache: Optional[List[Tensor]] = None,
+        cache_index: Optional[int] = None,
+    ) -> Tuple[Tensor, Optional[List[Tensor]]]:
+        
         updated_cache: List[Tensor] = []
 
         for i, layer in enumerate(list(self.transformer_layers)):
             layer_cache = cache[i] if use_cache and cache is not None else None
-            x, updated_layer_cache = layer(x, cross_attention_src=cross_attention_src, sequence_lengths=sequence_lengths, cross_attention_sequence_lengths=cross_attention_sequence_lengths, use_cache=use_cache, cache=layer_cache, cache_index=cache_index)
+            x, updated_layer_cache = layer(
+                x,
+                cross_attention_src=cross_attention_src,
+                sequence_lengths=sequence_lengths,
+                cross_attention_sequence_lengths=cross_attention_sequence_lengths,
+                use_cache=use_cache,
+                cache=layer_cache,
+                cache_index=cache_index,
+            )
             updated_cache.append(updated_layer_cache)
         
         return x, updated_cache

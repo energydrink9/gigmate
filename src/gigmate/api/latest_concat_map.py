@@ -13,7 +13,7 @@ _T1 = TypeVar("_T1")
 _T2 = TypeVar("_T2")
 
 
-def merge_latest(
+def merge_latest(  # noqa: C901
     max_concurrent: Optional[int] = None
 ) -> Callable[[Observable[Observable[_T]]], Observable[_T]]:
     def merge(source: Observable[Observable[_T]]) -> Observable[_T]:
@@ -74,26 +74,26 @@ def merge_latest(
     return merge
 
 
-"""
-Merges the items emitted by an Observable of Observables into a single Observable, 
-ensuring that only the latest inner Observable is subscribed to sequentially, but 
-without canceling any inner Observable once it has begun.
-
-This operator is similar to `concatMap` and `switchMap`, combining the characteristics 
-of both. Unlike `concatMap`, it takes the latest item like `switchMap`, but unlike 
-`switchMap`, it does not cancel an inner Observable once subscribed.
-
-Args:
-    max_concurrent: The maximum number of inner Observables that can be subscribed 
-    to concurrently. This argument is optional, with the default ensuring only 
-    sequential execution.
-
-Returns:
-    A function that takes an Observable of Observables and returns a flattened 
-    Observable sequence.
-"""
 def latest_concat_map(
     project: Mapper[_T1, Observable[_T2]], max_concurrent: Optional[int] = 1
 ) -> Callable[[Observable[_T1]], Observable[_T2]]:
+    """
+    Merges the items emitted by an Observable of Observables into a single Observable, 
+    ensuring that only the latest inner Observable is subscribed to sequentially, but 
+    without canceling any inner Observable once it has begun.
+
+    This operator is similar to `concatMap` and `switchMap`, combining the characteristics 
+    of both. Unlike `concatMap`, it takes the latest item like `switchMap`, but unlike 
+    `switchMap`, it does not cancel an inner Observable once subscribed.
+
+    Args:
+        max_concurrent: The maximum number of inner Observables that can be subscribed 
+        to concurrently. This argument is optional, with the default ensuring only 
+        sequential execution.
+
+    Returns:
+        A function that takes an Observable of Observables and returns a flattened 
+        Observable sequence.
+    """
     
     return compose(ops.map(project), merge_latest(max_concurrent=max_concurrent))

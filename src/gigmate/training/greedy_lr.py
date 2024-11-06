@@ -105,7 +105,11 @@ class GreedyLR(LRScheduler):
 
         return lrs
 
-    def step(self, metrics: Optional[Tensor] = None, epoch: Optional[int] = None) -> None:  # type: ignore[override]
+    def step(  # type: ignore[override] # noqa: C901
+        self,
+        metrics: Optional[Tensor] = None,
+        epoch: Optional[int] = None,
+    ) -> None:
         """
         Adjust the learning rate based on metrics.
         

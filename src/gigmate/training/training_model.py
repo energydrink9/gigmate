@@ -9,7 +9,6 @@ from torch import autocast, nn, Tensor
 import lightning as L
 from torchmetrics.text import Perplexity
 import torch.optim
-from torch.optim.lr_scheduler import OneCycleLR
 from typing import Literal
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
@@ -104,12 +103,12 @@ class TrainingModel(L.LightningModule):
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
 
-        one_cycle_lr_scheduler = OneCycleLR(
-            optimizer,
-            max_lr=self.max_learning_rate,
-            epochs=self.trainer.max_epochs,
-            steps_per_epoch=self.steps_per_epoch,
-        )
+        # one_cycle_lr_scheduler = OneCycleLR(
+        #     optimizer,
+        #     max_lr=self.max_learning_rate,
+        #     epochs=self.trainer.max_epochs,
+        #     steps_per_epoch=self.steps_per_epoch,
+        # )
         greedy_lr_scheduler = GreedyLR(
             optimizer,
             initial_lr=self.learning_rate,
