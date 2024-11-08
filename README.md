@@ -60,7 +60,7 @@ The pipeline will augment, distort, encode and split the samples into chunks, ge
 
 In order to start a training run, make sure to have a dataset available and then install the [latest nightly version](https://pytorch.org/get-started/locally/) of PyTorch. On Mac you can use the following command:
 ```
-pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
+pip3 install --pre torch torchvision torchaudio torchvision --index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 After that, run the following command to start training:

@@ -154,10 +154,10 @@ def complete_sequence(
     print('--- Input ---')
     print(input_sequence.shape)
     print(input_sequence)
-    full_track_sequence_length = input_sequence.shape[-1] + codebooks - 1
-    stem_sequence_length = max_decoder_seq_len + codebooks - 1
-    sequence_lengths = SequenceLengths(full_track=[full_track_sequence_length], stem=[stem_sequence_length])
     full_track_sequence = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True).to(device)
+    stem_sequence_length = max_decoder_seq_len + codebooks - 1
+    full_track_sequence_length = full_track_sequence.shape[-1]
+    sequence_lengths = SequenceLengths(full_track=[full_track_sequence_length], stem=[stem_sequence_length])
     print('--- Conditioning ---')
     print(full_track_sequence.shape)
     print(full_track_sequence)

@@ -44,7 +44,7 @@ def get_alibi_mask(shape: Tuple[int, int, int, int], fn: Callable[[Tensor, Tenso
     return result.to(device)
 
 
-def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int]) -> _mask_mod_signature:
+def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int], device_type: str) -> _mask_mod_signature:
     """Generates a sliding window attention mask with a given window size.
     Args:
         window_size: The size of the sliding window.
@@ -58,7 +58,7 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
         return (q_idx >= kv_idx) & (q_idx - kv_idx <= window_size)
 
     # Converting the cache index to a tensor, because PyTorch raises an error it's not
-    cache_index_tensor = torch.tensor(cache_index) if cache_index is not None else None
+    cache_index_tensor = torch.tensor(cache_index, device=device_type) if cache_index is not None else None
     
     def incremental_causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
         return (kv_idx >= cast(Tensor, cache_index_tensor) - window_size) & (kv_idx <= cache_index_tensor)
@@ -72,7 +72,7 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
 @functools.lru_cache(maxsize=1)
 def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
     return create_block_mask(
-        mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index),
+        mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index, device),
         B=None,
         H=None,
         Q_LEN=q_len,

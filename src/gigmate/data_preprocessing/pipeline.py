@@ -1,8 +1,7 @@
 import os
 from typing import List
-from clearml import Dataset, PipelineDecorator
-
-from gigmate.data_preprocessing.constants import CLEARML_DATASET_TRAINING_NAME, CLEARML_DATASET_TRAINING_VERSION, DATASET_TAGS
+from clearml import PipelineDecorator
+from gigmate.data_preprocessing.constants import CLEARML_DATASET_TRAINING_VERSION, DATASET_TAGS
 from gigmate.data_preprocessing.dataset import get_remote_dataset_by_tag
 from gigmate.data_preprocessing.steps.augment import augment_all
 from gigmate.data_preprocessing.steps.convert_to_ogg import convert_to_ogg
@@ -10,6 +9,8 @@ from gigmate.data_preprocessing.steps.encode import encode_all
 from gigmate.data_preprocessing.steps.merge import assort_and_merge_all
 from gigmate.data_preprocessing.steps.split import split_all
 from gigmate.data_preprocessing.steps.uncompress import uncompress_files
+from gigmate.data_preprocessing.steps.upload import upload
+from gigmate.data_preprocessing.utils import upload_dataset
 from gigmate.utils.constants import get_clearml_project_name
 from gigmate.data_preprocessing.steps.distort import distort_all
 
@@ -21,23 +22,6 @@ DISTORTED_FILES_DIR = os.path.join(BASE_DIR, 'distorted')
 ENCODED_FILES_DIR = os.path.join(BASE_DIR, 'encoded')
 SPLIT_FILES_DIR = os.path.join(BASE_DIR, 'split')
 RANDOM_ASSORTMENTS_PER_SONG = 1
-
-
-def upload_dataset(path: str, version: str, tags: list[str] = [], dataset_set=None):
-    print(f'Creating dataset (set: {dataset_set}, tags: {tags})')
-    tags = [f'{dataset_set}-set'] + tags if dataset_set is not None else tags
-    dataset = Dataset.create(
-        dataset_project=get_clearml_project_name(), 
-        dataset_name=CLEARML_DATASET_TRAINING_NAME,
-        dataset_version=version,
-        dataset_tags=tags,
-    )
-    print('Adding files')
-    dataset.add_files(path=path)
-    print('Uploading')
-    dataset.upload(show_progress=True, preview=False)
-    print('Finalizing')
-    dataset.finalize()
 
 
 @PipelineDecorator.component(return_values=['uncompressed_dir'], cache=False)
@@ -95,12 +79,12 @@ def split_step(output_dir: str, tags: List[str]) -> List[str]:
     source_dir = get_remote_dataset_by_tag('encoded')
     split_dirs = split_all(source_dir, output_dir)
 
-    for split_dir in split_dirs:
-        set = os.path.split(split_dir)[1]
-        print(f'Uploading {set} dataset')
-        upload_dataset(path=split_dir, version=CLEARML_DATASET_TRAINING_VERSION, tags=tags + ['final'], dataset_set=set)
-
     return split_dirs
+
+@PipelineDecorator.component(return_values=[], cache=False)
+def upload_step(input_dirs: List[str], tags: List[str]):
+
+    upload(input_dirs, tags)
 
 
 @PipelineDecorator.pipeline(
@@ -133,4 +117,5 @@ def dataset_creation_pipeline(stem_name: str, random_assortments_per_song: int, 
     augment_step(augmented_dir, tags)
     distort_step(distorted_dir, tags)
     encode_step(encoded_dir, tags)
-    split_step(split_dir, tags)
+    split_dirs = split_step(split_dir, tags)
+    upload_step(split_dirs, tags)

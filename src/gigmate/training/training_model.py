@@ -29,6 +29,13 @@ TEMP_DIR = tempfile.gettempdir()
 NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP = 10
 FRECHET_AUDIO_DISTANCE_LENGTH = 128
 AUDIO_SAMPLES_LENGTH = 500
+# Weights for the codebooks in loss calculation
+CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
+    0: 1,
+    1: 0.5,
+    2: 0.25,
+    3: 0.125,
+}
 
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
@@ -128,16 +135,15 @@ class TrainingModel(L.LightningModule):
             },
         }
 
-    def log_metrics(self, dataset: Literal['train', 'val', 'test'], batch_size: int, **kwargs):
+    def log_metrics(self, dataset: Literal['train', 'val', 'test'], batch_size: Optional[int], interval: Literal['step', 'epoch'] = 'step', **kwargs):
         for (key, value) in kwargs.items():
-            self.log_metric(dataset, batch_size, key, value)
+            self.log_metric(dataset, batch_size, key, value, interval=interval)
 
     @torch.compiler.disable
-    def log_metric(self, dataset: Literal['train', 'val', 'test'], batch_size: int, metric_name: str, value: Union[float, int]):
+    def log_metric(self, dataset: Literal['train', 'val', 'test'], batch_size: Optional[int], metric_name: str, value: Union[float, int], interval: Literal['step', 'epoch'] = 'step'):
         is_train_dataset = dataset == 'train'
-        on_step = metric_name in ['loss', 'accuracy']
         prog_bar = metric_name in ['loss', 'accuracy'] or (metric_name in ['perplexity', 'frechet_audio_distance'] and not is_train_dataset)
-        self.log(f"{dataset}_{metric_name}", value, on_step=is_train_dataset and on_step, on_epoch=True, prog_bar=prog_bar, batch_size=batch_size)
+        self.log(f"{dataset}_{metric_name}", value, on_step=interval == 'step', on_epoch=interval == 'epoch', prog_bar=prog_bar, batch_size=batch_size)
 
     def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tuple[Tensor, Dict[str, Tensor]]:
         total_loss = torch.tensor(0., device=self.device)
@@ -146,7 +152,9 @@ class TrainingModel(L.LightningModule):
         for k in range(self.codebooks):
             codebook_loss = self.loss[set][k](logits[k], targets[k])
             metrics[f'loss-{k}'] = codebook_loss
-            total_loss += codebook_loss
+
+            weight = CODEBOOKS_LOSS_WEIGHTS[k]
+            total_loss += codebook_loss * weight
         
         total_loss = total_loss / (self.codebooks)
         
@@ -157,16 +165,14 @@ class TrainingModel(L.LightningModule):
         accuracy_sum = torch.tensor(0., device=self.device)
         perplexity_sum = torch.tensor(0., device=self.device)
 
-        for k in range(self.codebooks):
+        for k in range(self.codebook{k}]: {logits_for_loss[k].shape}')
             accuracy = self.accuracy_metric[set][k].to(self.device)(logits_for_loss[k], target[k])
-            accuracy_sum += accuracy
-
-            perplexity = self.perplexity_metric[set][k].to(self.device)(logits[k], target[k])
+            accuracy_sum += accuracy            perplexity = self.perplexity_metric[set][k].to(self.device)(logits[k], target[k])
             perplexity_sum += perplexity
 
             metrics[f'accuracy-{k}'] = accuracy
             metrics[f'perplexity-{k}'] = perplexity
-            
+        
         metrics['accuracy'] = accuracy_sum / self.codebooks
         metrics['perplexity'] = perplexity_sum / self.codebooks
 
@@ -180,8 +186,8 @@ class TrainingModel(L.LightningModule):
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'train')
         
-        self.log_metrics('train', batch.size, loss=loss, **loss_metrics)
-        self.log_metrics("train", batch.size, **metrics)
+        self.log_metrics('train', batch.size, interval='step', loss=loss, **loss_metrics)
+        self.log_metrics('train', batch.size, interval='step', **metrics)
 
         return loss
     
@@ -201,10 +207,36 @@ class TrainingModel(L.LightningModule):
             if batch_idx < 8:
                 self.save_generated_audio(batch_idx, logits[:1, :, :AUDIO_SAMPLES_LENGTH, :], targets[:1, :, :AUDIO_SAMPLES_LENGTH], sequence_lengths.stem[0])
 
-        self.log_metrics('val', batch.size, loss=loss, **loss_metrics)
-        self.log_metrics('val', batch.size, **metrics)
+        self.log_metrics('val', batch.size, loss=loss, interval='step', **loss_metrics)
+        self.log_metrics('val', batch.size, interval='step', **metrics)
 
         return loss
+
+    def log_epoch_metrics(self, dataset_set: Literal['train', 'val', 'test']):
+        accuracy_sum = 0
+        perplexity_sum = 0
+
+        for k in range(self.codebooks):
+            accuracy_k = self.accuracy_metric[dataset_set][k].compute()
+            perplexity_k = self.perplexity_metric[dataset_set][k].compute()
+            
+            accuracy_sum += accuracy_k
+            perplexity_sum += perplexity_k
+            
+            self.log_metric(dataset_set, None, f'accuracy-{k}', accuracy_k, interval='epoch')
+            self.log_metric(dataset_set, None, f'perplexity-{k}', perplexity_k, interval='epoch')
+
+        accuracy = accuracy_sum / self.codebooks
+        perplexity = perplexity_sum / self.codebooks
+
+        self.log_metric(dataset_set, None, 'accuracy', accuracy, interval='epoch')
+        self.log_metric(dataset_set, None, 'perplexity', perplexity, interval='epoch')
+
+    def on_train_epoch_end(self):
+        self.log_epoch_metrics('train')
+
+    def on_validation_epoch_end(self):
+        self.log_epoch_metrics('val')
 
     @torch.compiler.disable
     def log_frechet_audio_distance_metric(self, batch_size: int, logits: Tensor, targets: Tensor, sequence_length: int):
@@ -219,7 +251,7 @@ class TrainingModel(L.LightningModule):
                 frechet_audio_distance_metric.update(pred_audio.to(dtype=torch.float32), target_audio.to(dtype=torch.float32))
                 frechet_audio_distance = frechet_audio_distance_metric.compute()
                 
-            self.log_metric('val', batch_size, 'frechet_audio_distance', frechet_audio_distance)
+            self.log_metric('val', batch_size, 'frechet_audio_distance', frechet_audio_distance, interval='epoch')
 
         except Exception as e:
             print('An error occurred while computing Frechet Audio Distance metric:')

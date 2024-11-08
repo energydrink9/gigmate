@@ -1,19 +1,22 @@
-import glob
 import os
 import random
-import shutil
-from typing import List, Set, cast
+from typing import Callable, List, Set, Tuple, cast
 from s3fs.core import S3FileSystem
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from multiprocessing.pool import Pool 
+import multiprocessing
 
 from gigmate.utils.constants import get_random_seed
 
-SOURCE_FILES_DIR = '../dataset/encoded'
-OUTPUT_FILES_DIR = '../dataset/split'
+BUCKET_NAME = 'soundstripe-dataset'
+PROTOCOL = 's3://'
+BUCKET = f'{PROTOCOL}{BUCKET_NAME}'
+SOURCE_FILES_DIR = 'encoded'
+OUTPUT_FILES_DIR = 'split'
 SPLIT_NAMES = ['train', 'validation', 'test']
-VALIDATION_SIZE = 0.8
-TEST_SIZE = 0.6
+VALIDATION_SIZE = 0.08
+TEST_SIZE = 0.06
 
 
 def get_directories_containing_pkl_files(fs: S3FileSystem, dir: str) -> Set[str]:
@@ -23,39 +26,45 @@ def get_directories_containing_pkl_files(fs: S3FileSystem, dir: str) -> Set[str]
     return directories
 
 
-def split_by_artist(file_paths_with_artists, artists, validation_size, test_size, seed=get_random_seed()):
+def split_by_artist(artists, validation_size, test_size, seed=get_random_seed()) -> Tuple[List[str], List[str], List[str]]:
     train_artists, rest_artists = train_test_split(artists, test_size=validation_size + test_size, random_state=seed)
     validation_artists, test_artists = train_test_split(rest_artists, test_size=0.5, random_state=seed)
 
-    train_paths = [path for path, artist in file_paths_with_artists if artist in train_artists]
-    validation_paths = [path for path, artist in file_paths_with_artists if artist in validation_artists]
-    test_paths = [path for path, artist in file_paths_with_artists if artist in test_artists]
+    return train_artists, validation_artists, test_artists
 
-    return train_paths, validation_paths, test_paths
+
+def copy_artist(fs: S3FileSystem, source_directory: str, output_directory: str) -> Callable[[str], None]:
+
+    def fn(artist):
+        artist_path = os.path.join(source_directory, artist)
+        relative_path = os.path.relpath(artist_path, source_directory)
+        file_output_dir = os.path.join(output_directory, relative_path)
+        fs.copy(artist_path, file_output_dir, recursive=True)
+
+    return fn
 
 
 def split_all(source_directory: str, output_directory: str) -> List[str]:
     
     fs = S3FileSystem(use_listings_cache=False)
 
-    file_paths = get_directories_containing_pkl_files(fs, source_directory)
+    source_directory_bucket = os.path.join(BUCKET, source_directory)
+    output_directory_bucket = os.path.join(BUCKET, output_directory)
+
+    file_paths = get_directories_containing_pkl_files(fs, source_directory_bucket)
     file_paths_artists = [os.path.split(os.path.split(file_path)[0])[-1] for file_path in file_paths]
 
-    file_paths_with_artists = list(zip(file_paths, file_paths_artists))
     artists = list(set(file_paths_artists))
-    splits = split_by_artist(file_paths_with_artists, artists, validation_size=VALIDATION_SIZE, test_size=TEST_SIZE)
-
+    splits = split_by_artist(artists, validation_size=VALIDATION_SIZE, test_size=TEST_SIZE)
     output_directories = []
 
     for i, split in enumerate(splits):
-        split_directory = os.path.join(output_directory, SPLIT_NAMES[i])
-        output_directories.append(split_directory)
-
-        for split_file in tqdm(split, f'Creating split {SPLIT_NAMES[i]}'):
-            relative_path = os.path.relpath(split_file, source_directory)
-            
-            file_output_dir = os.path.join(split_directory, relative_path)
-            shutil.copytree(split_file, file_output_dir, dirs_exist_ok=True)
+        print(f'Creating split {SPLIT_NAMES[i]}')
+        split_directory = os.path.join(output_directory_bucket, SPLIT_NAMES[i])
+        with Pool(multiprocessing.cpu_count()) as pool:
+            fn = copy_artist(fs, source_directory_bucket, split_directory)
+            list(tqdm(pool.imap(fn, split), total=len(split)))
+            output_directories.append(split_directory)
 
     return output_directories
 

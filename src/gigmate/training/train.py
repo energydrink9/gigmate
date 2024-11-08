@@ -13,7 +13,7 @@ from gigmate.utils.device import get_device
 DEBUG = False
 OUTPUT_DIRECTORY = 'output'
 UPLOAD_CHECKPOINT = True
-UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 4
+UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 3
 MIXED_PRECISION = True
 
 L.seed_everything(get_random_seed())

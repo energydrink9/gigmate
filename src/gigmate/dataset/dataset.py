@@ -171,19 +171,27 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
         _, _, sequence_length = full_track.shape
 
         # We need at least MIN_TOKENS_TO_KEEP tokens in the full track and in the stem
-        if sequence_length < MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK + MIN_TOKENS_TO_KEEP_FROM_STEM:
+        if sequence_length < max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM:
             full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
+            print('Warning: skipping dataset item')
             continue
 
         else:
 
-            # Keep a random number of elements *length_to_keep* from the sequence in the full track
-            max_tokens_to_keep_from_full_track = sequence_length - MIN_TOKENS_TO_KEEP_FROM_STEM
-            tokens_to_keep_from_full_track = random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_tokens_to_keep_from_full_track)
-            full_track_input = full_track[:, :, :tokens_to_keep_from_full_track]
+            # Use a partial input sequence 10% of the time
+            use_partial_input_sequence = random.randint(0, 9) == 0
+
+            # Cut a random part of the full track
+            min_full_track_start_position = 0
+            max_full_track_start_position = sequence_length - MIN_TOKENS_TO_KEEP_FROM_STEM - max_seq_len
+            
+            full_track_start_position = random.randint(min_full_track_start_position, max_full_track_start_position - 1)
+            full_track_end_position = full_track_start_position + random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_seq_len - 1) if use_partial_input_sequence else full_track_start_position + max_seq_len
+            
+            full_track_input = full_track[:, :, full_track_start_position:full_track_end_position]
 
             # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
-            stem_input = stem[:, :, tokens_to_keep_from_full_track + 1:]
+            stem_input = stem[:, :, full_track_end_position + 1:]
             target = stem_input
 
             # Shift the stem by 1 position and set the first token to the start of sequence token
