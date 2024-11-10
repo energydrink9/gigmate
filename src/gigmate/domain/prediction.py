@@ -129,15 +129,15 @@ def complete_sequence(
             sequence = sequence.to(device)
             if prepend_sos_token is True:
                 sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
-            
-        sequence_length = sequence.shape[-1]
+        
         interleaved_sequence = apply_interleaving(sequence, padding_value)
+        sequence_length = sequence.shape[-1]
         padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value, pad_left)
 
         if sequence_length > max_seq_len:
-            return cut_sequence(padded_sequence, max_seq_len, cut_left=True)
+            return cut_sequence(padded_sequence, max_seq_len, cut_left=True), max_seq_len
 
-        return padded_sequence
+        return padded_sequence, sequence_length
     
     model.eval()
     sliding_window_size = get_params()['sliding_window_size']
@@ -154,14 +154,13 @@ def complete_sequence(
     print('--- Input ---')
     print(input_sequence.shape)
     print(input_sequence)
-    full_track_sequence = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True).to(device)
-    stem_sequence_length = max_decoder_seq_len + codebooks - 1
-    full_track_sequence_length = full_track_sequence.shape[-1]
-    sequence_lengths = SequenceLengths(full_track=[full_track_sequence_length], stem=[stem_sequence_length])
+    full_track_sequence, full_track_sequence_length = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True)
+    stem_sequence_length = max_decoder_seq_len
     print('--- Conditioning ---')
     print(full_track_sequence.shape)
     print(full_track_sequence)
-    next_sequence = get_initial_next_sequence(None, max_decoder_seq_len, padding_value, codebooks, device).to(device)
+    next_sequence, _ = get_initial_next_sequence(None, max_decoder_seq_len, padding_value, codebooks, device)
+    sequence_lengths = SequenceLengths(full_track=[full_track_sequence_length], stem=[stem_sequence_length])
     print('--- Next ---')
     print(next_sequence.shape)
     print(next_sequence)

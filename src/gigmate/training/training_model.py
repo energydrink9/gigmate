@@ -21,7 +21,7 @@ from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
 from gigmate.model.model import ENABLE_QUANTIZATION, get_model
 from gigmate.training.greedy_lr import GreedyLR
-from gigmate.utils.constants import get_pad_token_id, get_special_tokens
+from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id, get_special_tokens
 from gigmate.utils.sequence_utils import remove_special_tokens_from_target_and_logits
 
 PAD_TOKEN_ID = get_pad_token_id()
@@ -36,6 +36,34 @@ CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
     2: 0.25,
     3: 0.125,
 }
+
+
+# Define the weighted cross-entropy loss function
+def weighted_cross_entropy_loss(logits, targets, weights):
+    """
+    Custom cross-entropy loss for curriculum learning with token-based weights.
+    
+    Args:
+        logits (torch.Tensor): Model output logits of shape [batch_size, seq_length, vocab_size].
+        targets (torch.Tensor): Ground truth labels of shape [batch_size, seq_length].
+        weights (torch.Tensor): 1D tensor of shape [seq_length] with progressive weights for each token index.
+        
+    Returns:
+        torch.Tensor: The computed weighted cross-entropy loss.
+    """
+    
+    # Reshape weights to apply to each token in the sequence
+    weights = weights.view(1, -1, 1)  # Shape [1, seq_length, 1]
+    
+    # Calculate cross-entropy loss for each token individually
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # Compute log probabilities
+    target_log_probs = log_probs.gather(dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)  # Gather log probabilities for target tokens
+    
+    # Compute weighted loss per token
+    weighted_token_loss = -target_log_probs * weights  # Apply weights to each token
+    loss = weighted_token_loss.mean()  # Average across batch and sequence
+    
+    return loss
 
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
@@ -140,16 +168,21 @@ class TrainingModel(L.LightningModule):
             self.log_metric(dataset, batch_size, key, value, interval=interval)
 
     @torch.compiler.disable
-    def log_metric(self, dataset: Literal['train', 'val', 'test'], batch_size: Optional[int], metric_name: str, value: Union[float, int], interval: Literal['step', 'epoch'] = 'step'):
+    def log_metric(self, dataset: Optional[Literal['train', 'val', 'test']], batch_size: Optional[int], metric_name: str, value: Union[float, int], interval: Literal['step', 'epoch'] = 'step'):
         is_train_dataset = dataset == 'train'
         prog_bar = metric_name in ['loss', 'accuracy'] or (metric_name in ['perplexity', 'frechet_audio_distance'] and not is_train_dataset)
-        self.log(f"{dataset}_{metric_name}", value, on_step=interval == 'step', on_epoch=interval == 'epoch', prog_bar=prog_bar, batch_size=batch_size)
+        metric_name_with_dataset = f"{dataset}_{metric_name}" if dataset is not None else metric_name
+        self.log(metric_name_with_dataset, value, on_step=interval == 'step', on_epoch=interval == 'epoch', prog_bar=prog_bar, batch_size=batch_size)
 
-    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tuple[Tensor, Dict[str, Tensor]]:
+    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str, step: int) -> Tuple[Tensor, Dict[str, Tensor]]:
+        # logits have shape (B, V, S) == (B, 2048, 512)
+        w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
+        position_weights = torch.clamp(w, max=1)
         total_loss = torch.tensor(0., device=self.device)
         metrics: Dict[str, Tensor] = dict()
 
         for k in range(self.codebooks):
+            
             codebook_loss = self.loss[set][k](logits[k], targets[k])
             metrics[f'loss-{k}'] = codebook_loss
 
@@ -165,9 +198,11 @@ class TrainingModel(L.LightningModule):
         accuracy_sum = torch.tensor(0., device=self.device)
         perplexity_sum = torch.tensor(0., device=self.device)
 
-        for k in range(self.codebook{k}]: {logits_for_loss[k].shape}')
+        for k in range(self.codebooks):
             accuracy = self.accuracy_metric[set][k].to(self.device)(logits_for_loss[k], target[k])
-            accuracy_sum += accuracy            perplexity = self.perplexity_metric[set][k].to(self.device)(logits[k], target[k])
+            accuracy_sum += accuracy
+            
+            perplexity = self.perplexity_metric[set][k].to(self.device)(logits[k], target[k])
             perplexity_sum += perplexity
 
             metrics[f'accuracy-{k}'] = accuracy
@@ -178,12 +213,18 @@ class TrainingModel(L.LightningModule):
 
         return metrics
     
+    def get_curriculum_learning_step(self) -> int:
+        return int(self.global_step / self.steps_per_epoch * 4)
+
     def training_step(self, batch: DatasetBatch, batch_idx: int):
+        curriculum_learning_step = self.get_curriculum_learning_step()
+        self.log_metric(None, None, 'curriculum-learning-step', curriculum_learning_step, interval='step')
+        
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
         logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
+        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train', curriculum_learning_step)
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'train')
         
         self.log_metrics('train', batch.size, interval='step', loss=loss, **loss_metrics)
@@ -192,11 +233,12 @@ class TrainingModel(L.LightningModule):
         return loss
     
     def validation_step(self, batch: DatasetBatch, batch_idx: int):
+        curriculum_learning_step = self.get_curriculum_learning_step()
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
         logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
+        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val', curriculum_learning_step)
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'val')
 
         if batch_idx < 12:

@@ -27,12 +27,12 @@ def upload_weights(task, epoch, filepath):
 def init_clearml_task(params):
     
     task_name = f'train enc_seq_len {params["max_seq_len"]}'
-    task_name += f'dec_seq_len {params["max_decoder_seq_len"]}'
-    task_name += f'batch {params["batch_size"]}'
-    task_name += f'layers {params["encoder_layers"]}-{params["decoder_layers"]}'
-    task_name += f'heads {params["num_heads"]}'
-    task_name += f'lr {params["learning_rate"]}'
-    task_name += f'dff {params["dff"]}'
+    task_name += f' dec_seq_len {params["max_decoder_seq_len"]}'
+    task_name += f' batch {params["batch_size"]}'
+    task_name += f' layers {params["encoder_layers"]}-{params["decoder_layers"]}'
+    task_name += f' heads {params["num_heads"]}'
+    task_name += f' lr {params["learning_rate"]}'
+    task_name += f' dff {params["dff"]}'
     
     task = Task.init(
         project_name=get_clearml_project_name(),

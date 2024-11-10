@@ -58,7 +58,6 @@ class TransformerBlock(nn.Module):
             inverted_query=encoder,
             inverted_key_values=encoder,
         )
-        torch.isnan(tgt2).any()  # Seems to prevent nans from propagating. TODO: understand why
 
         x = x + self.dropout1(tgt2)
 
@@ -73,7 +72,7 @@ class TransformerBlock(nn.Module):
                 kv_sequence_lengths=cross_attention_sequence_lengths,
                 inverted_key_values=True,
             )
-            torch.isnan(tgt2).any()  # Seems to prevent nans from propagating. TODO: understand why
+            
             x = x + self.dropout2(tgt2)
 
         tgt2 = self.layernorm3(x)

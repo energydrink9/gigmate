@@ -77,11 +77,11 @@ class TransformerModel(nn.Module):
             encoder_cache: Optional[Tensor] = None
     ) -> Tuple[Tensor, List[Tensor], Tensor]:
 
-        full_track_x = sum([self.embeddings[k](conditioning_input[:, k]) for k in range(self.codebooks)])
         x = sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)])
 
         # TODO: Implement kv cache for the encoder
         if encoder_cache is None:
+            full_track_x = sum([self.embeddings[k](conditioning_input[:, k]) for k in range(self.codebooks)])
             cross_attention_src, _ = self.encoder(
                 full_track_x,
                 sequence_lengths.full_track if sequence_lengths is not None else None,
@@ -92,7 +92,6 @@ class TransformerModel(nn.Module):
         x, updated_cache = self.decoder(
             x,
             sequence_lengths=sequence_lengths.stem if sequence_lengths is not None else None,
-            
             cross_attention_sequence_lengths=sequence_lengths.full_track if sequence_lengths is not None else None,
             cross_attention_src=cross_attention_src,
             use_cache=use_cache,
@@ -137,7 +136,7 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
 
     if compile is True:
         # TODO: fix torch compile full graph
-        backend = 'aot_eager' if device == 'mps' or device == 'cuda' else 'inductor'
+        backend = 'aot_eager' if device == 'mps' else 'inductor'
         model = cast(TransformerModel, torch.compile(model, fullgraph=False, backend=backend))
 
     # TODO: enable quantization if on CUDA

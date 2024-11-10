@@ -25,7 +25,8 @@ class Decoder(nn.Module):
             self.num_heads,
             self.dff,
             sliding_window_size=self.sliding_window_size,
-            dropout=self.dropout
+            dropout=self.dropout,
+            has_cross_attention=True,
         )
 
     def forward(
@@ -38,7 +39,7 @@ class Decoder(nn.Module):
         cache: Optional[List[Tensor]] = None,
         cache_index: Optional[int] = None,
     ) -> Tuple[Tensor, Optional[List[Tensor]]]:
-        
+
         updated_cache: List[Tensor] = []
 
         for i, layer in enumerate(list(self.transformer_layers)):
