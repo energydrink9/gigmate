@@ -93,6 +93,7 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
         detect_anomaly=DEBUG,
         deterministic='warn',
         check_val_every_n_epoch=1,
+        val_check_interval=0.5,  # Check validation set twice per epoch
     )
     
     trainer.fit(training_model, train_loader, validation_loader)

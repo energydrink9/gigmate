@@ -78,7 +78,7 @@ def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, 
         Q_LEN=q_len,
         KV_LEN=kv_len,
         device=device,
-        _compile=True,
+        _compile=device != 'mps',
     )
 
 

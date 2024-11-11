@@ -32,10 +32,11 @@ AUDIO_SAMPLES_LENGTH = 500
 # Weights for the codebooks in loss calculation
 CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
     0: 1,
-    1: 0.5,
-    2: 0.25,
-    3: 0.125,
+    1: 1,
+    2: 1,
+    3: 1,
 }
+CURRICULUM_LEARNING = False
 
 
 # Define the weighted cross-entropy loss function
@@ -151,6 +152,7 @@ class TrainingModel(L.LightningModule):
             max_lr=self.max_learning_rate,
             patience=2,
             window=6,
+            warmup=8,
         )
         return {
             "optimizer": optimizer,
@@ -158,7 +160,7 @@ class TrainingModel(L.LightningModule):
                 "scheduler": greedy_lr_scheduler,
                 "interval": "step",
                 "reduce_on_plateau": True,
-                "monitor": "train_loss",
+                "monitor": "train_loss_step",
                 "strict": True,
             },
         }
@@ -172,36 +174,55 @@ class TrainingModel(L.LightningModule):
         is_train_dataset = dataset == 'train'
         prog_bar = metric_name in ['loss', 'accuracy'] or (metric_name in ['perplexity', 'frechet_audio_distance'] and not is_train_dataset)
         metric_name_with_dataset = f"{dataset}_{metric_name}" if dataset is not None else metric_name
-        self.log(metric_name_with_dataset, value, on_step=interval == 'step', on_epoch=interval == 'epoch', prog_bar=prog_bar, batch_size=batch_size)
+        self.log(f'{metric_name_with_dataset}_{interval}', value, on_step=interval == 'step', on_epoch=interval == 'epoch', prog_bar=prog_bar, batch_size=batch_size)
 
     def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str, step: int) -> Tuple[Tensor, Dict[str, Tensor]]:
-        # logits have shape (B, V, S) == (B, 2048, 512)
-        # w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
-        # position_weights = torch.clamp(w, max=1)
+        if CURRICULUM_LEARNING:
+            # logits have shape (B, V, S) == (B, 2048, 512)
+            w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
+            weights = torch.clamp(w, max=1)
 
-        total_loss = torch.tensor(0., device=self.device)
-        metrics: Dict[str, Tensor] = dict()
+            total_loss = torch.tensor(0., device=self.device)
+            metrics: Dict[str, Tensor] = dict()
 
-        for k in range(self.codebooks):
+            for k in range(self.codebooks):
+                codebook_loss = weighted_cross_entropy_loss(logits[k], targets[k], weights)
+                metrics[f'loss-{k}'] = codebook_loss
+
+                weight = CODEBOOKS_LOSS_WEIGHTS[k]
+                total_loss += codebook_loss * weight
             
-            codebook_loss = self.loss[set][k](logits[k], targets[k])
-            metrics[f'loss-{k}'] = codebook_loss
+            total_loss = total_loss / self.codebooks
+            
+            return total_loss, metrics
+        
+        else:
 
-            weight = CODEBOOKS_LOSS_WEIGHTS[k]
-            total_loss += codebook_loss * weight
+            total_loss = torch.tensor(0., device=self.device)
+            metrics: Dict[str, Tensor] = dict()
+
+            for k in range(self.codebooks):
+                
+                codebook_loss = self.loss[set][k](logits[k], targets[k])
+                metrics[f'loss-{k}'] = codebook_loss
+
+                weight = CODEBOOKS_LOSS_WEIGHTS[k]
+                total_loss += codebook_loss * weight
+            
+            total_loss = total_loss / self.codebooks
+            
+            return total_loss, metrics
         
-        total_loss = total_loss / (self.codebooks)
-        
-        return total_loss, metrics
-    
     def compute_metrics(self, logits: Dict[int, Tensor], target: Dict[int, Tensor], logits_for_loss: Dict[int, Tensor], set: str) -> Dict[str, Tensor]:
         metrics = dict()
         accuracy_sum = torch.tensor(0., device=self.device)
+        accuracy_real = torch.tensor(1., device=self.device)
         perplexity_sum = torch.tensor(0., device=self.device)
 
         for k in range(self.codebooks):
             accuracy = self.accuracy_metric[set][k].to(self.device)(logits_for_loss[k], target[k])
             accuracy_sum += accuracy
+            accuracy_real *= accuracy
             
             perplexity = self.perplexity_metric[set][k].to(self.device)(logits[k], target[k])
             perplexity_sum += perplexity
@@ -210,6 +231,7 @@ class TrainingModel(L.LightningModule):
             metrics[f'perplexity-{k}'] = perplexity
         
         metrics['accuracy'] = accuracy_sum / self.codebooks
+        metrics['accuracy_real'] = accuracy_real
         metrics['perplexity'] = perplexity_sum / self.codebooks
 
         return metrics
@@ -257,6 +279,7 @@ class TrainingModel(L.LightningModule):
 
     def log_epoch_metrics(self, dataset_set: Literal['train', 'val', 'test']):
         accuracy_sum = 0
+        accuracy_real = 1.
         perplexity_sum = 0
 
         for k in range(self.codebooks):
@@ -264,6 +287,7 @@ class TrainingModel(L.LightningModule):
             perplexity_k = self.perplexity_metric[dataset_set][k].compute()
             
             accuracy_sum += accuracy_k
+            accuracy_real *= accuracy_k
             perplexity_sum += perplexity_k
             
             self.log_metric(dataset_set, None, f'accuracy-{k}', accuracy_k, interval='epoch')
@@ -273,6 +297,7 @@ class TrainingModel(L.LightningModule):
         perplexity = perplexity_sum / self.codebooks
 
         self.log_metric(dataset_set, None, 'accuracy', accuracy, interval='epoch')
+        self.log_metric(dataset_set, None, 'accuracy_real', accuracy_real, interval='epoch')
         self.log_metric(dataset_set, None, 'perplexity', perplexity, interval='epoch')
 
     def on_train_epoch_end(self):

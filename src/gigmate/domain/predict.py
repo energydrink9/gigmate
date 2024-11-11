@@ -12,8 +12,9 @@ from gigmate.utils.device import get_device, Device
 from gigmate.utils.sequence_utils import cut_sequence, remove_special_tokens, revert_interleaving
 
 NUM_OUTPUT_FILES = 5
-SUBSET_OF_TEST_DATASET_NUMBER = 5
+SUBSET_OF_TEST_DATASET_NUMBER = 4
 AUDIO_TO_GENERATE_LENGTH = 4
+TEMPERATURE = 0.5
 # NUMBER_OF_SECONDS_FOR_PREDICTION = 10
 
 
@@ -53,7 +54,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
             padding_value=get_pad_token_id(),
             use_cache=False,
             show_progress=True,
-            temperature=0,
+            temperature=TEMPERATURE,
         )
         end_time = time.perf_counter()
         print(f'Prediction took {end_time - start_time} seconds')

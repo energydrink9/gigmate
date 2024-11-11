@@ -42,15 +42,15 @@ def distort_audio(original_audio: AudioSegment) -> AudioSegment:
     audio = convert_audio_to_float_32(np.array(original_audio.get_array_of_samples()))
     transform = Compose(
         transforms=[
-            AddGaussianSNR(min_snr_db=10., max_snr_db=50., p=0.15),
+            AddGaussianSNR(min_snr_db=10., max_snr_db=50., p=0.2),
             # ApplyImpulseResponse(),
-            BitCrush(min_bit_depth=3, max_bit_depth=7, p=0.2),
+            # BitCrush(min_bit_depth=3, max_bit_depth=7, p=0.2),
             # BandPassFilter(min_center_freq=200., max_center_freq=4000., p=1.0),
             BandStopFilter(min_center_freq=200., max_center_freq=4000., p=0.2),
             RoomSimulator(p=0.6, leave_length_unchanged=True),
             SevenBandParametricEQ(p=0.5, min_gain_db=-3.5, max_gain_db=3.5),
         ],
-        p=0.8,
+        p=0.4,
         shuffle=True
     )
     augmented_audio = transform(audio, sample_rate=sample_rate)
