@@ -67,8 +67,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path(), compile=False)
-    data_loader = get_data_loader('train')
-    #data_loader = get_data_loader('validation')
+    data_loader = get_data_loader('validation')
     codec = get_codec(device)
     frame_rate = codec.config.frame_rate
 

@@ -3,7 +3,7 @@ import functools
 from typing import Callable, List, Optional, Tuple, cast
 import torch
 from torch import Tensor
-from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
+from torch.nn.modules.linear import Linear
 from torch.nn.init import xavier_uniform_
 from torch.nn.parameter import Parameter
 import torch.overrides
@@ -69,7 +69,7 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
         return causal_sliding_padded_mask
 
 
-@functools.lru_cache(maxsize=1)
+@functools.lru_cache(maxsize=2)
 def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
     return create_block_mask(
         mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index, device),
@@ -111,13 +111,8 @@ class CachedMultiheadAttention(torch.nn.Module):
         self.register_parameter('k_proj_weight', None)
         self.register_parameter('v_proj_weight', None)
         self.register_parameter('in_proj_bias', None)
-        self.out_proj = NonDynamicallyQuantizableLinear(embed_dim, embed_dim, bias=False)
+        self.out_proj = Linear(embed_dim, embed_dim, bias=False)
         self._reset_parameters()
-
-        # ALiBi slope
-        m = torch.arange(1, self.num_heads + 1)
-        m = 1.0 / torch.pow(2, m / self.num_heads)
-        self.register_buffer("m", m.unsqueeze(0).unsqueeze(1).unsqueeze(1))  # [1, 1, 1, num_heads]
 
     def _reset_parameters(self):
         xavier_uniform_(self.in_proj_weight)
@@ -134,6 +129,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             kv_sequence_lengths: Optional[List[int]] = None,
             inverted_query: bool = False,
             inverted_key_values: bool = False,
+            causal: bool = True,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
@@ -152,6 +148,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             kv_sequence_lengths=kv_sequence_lengths,
             inverted_query=inverted_query,
             inverted_key_values=inverted_key_values,
+            causal=causal,
         )
 
         return attn_output.transpose(1, 0), updated_kv_cache
@@ -174,6 +171,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         kv_sequence_lengths: Optional[List[int]] = None,
         inverted_query: bool = False,
         inverted_key_values: bool = False,
+        causal: bool = True,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         query = query.transpose(1, 0)
@@ -198,7 +196,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         # compute in-projection
         #
         assert in_proj_weight is not None, "use_separate_proj_weight is False but in_proj_weight is None"
-        q, k, v = _in_projection_packed(query, in_proj_weight, None)
+        q, k, v = _in_projection_packed(query, key, value, in_proj_weight, None)
 
         updated_cache: Optional[Tensor] = None
 
@@ -219,8 +217,11 @@ class CachedMultiheadAttention(torch.nn.Module):
         k = k.view(bsz, num_heads, src_len, head_dim)
         v = v.view(bsz, num_heads, src_len, head_dim)
 
-        block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=q.device.type)
-        
+        if causal:
+            block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=q.device.type)
+        else:
+            block_mask = None
+
         if sequence_lengths is not None:
             sequence_lengths_tensor = torch.tensor(sequence_lengths, device=q.device.type)
         else:
@@ -233,6 +234,11 @@ class CachedMultiheadAttention(torch.nn.Module):
 
         tgt_len_tensor = torch.tensor(tgt_len, device=q.device.type)
         src_len_tensor = torch.tensor(src_len, device=q.device.type)
+
+        if kv_sequence_lengths is not None:
+            for length in kv_sequence_lengths:
+                if length <= 0:
+                    print('Warning: the length of kv sequence length is less or equal to 0')
 
         def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
             q_idx_override = torch.tensor(cache_index, device=q_idx.device) if use_cache and cache_index is not None else q_idx
@@ -263,8 +269,15 @@ class CachedMultiheadAttention(torch.nn.Module):
                 return alibi_score + padding_score_kv
             else:
                 return alibi_score
-
+        if torch.isnan(q).any():
+            print('Warning: nan in q')
+        if torch.isnan(k).any():
+            print('Warning: nan in k')
+        if torch.isnan(v).any():
+            print('Warning: nan in v')
         attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
+        if torch.isnan(attn_output).any():
+            print('Warning: nan in attn_output')
 
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
 
@@ -317,12 +330,34 @@ def update_kv_cache(kv_cache: Optional[Tensor], q: Tensor, k: Tensor, v: Tensor,
 
 def _in_projection_packed(
     q: Tensor,
+    k: Tensor,
+    v: Tensor,
     w: Tensor,
     b: Optional[Tensor] = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
     E = q.size(-1)
-    # self-attention
-    proj = linear(q, w, b)
-    # reshape to 3, E and not E, 3 is deliberate for better memory coalescing and keeping same order as chunk()
-    proj = proj.unflatten(-1, (3, E)).unsqueeze(0).transpose(0, -2).squeeze(-2).contiguous()
-    return proj[0], proj[1], proj[2]
+    if q is k:
+        # self-attention
+        proj = linear(q, w, b)
+        # reshape to 3, E and not E, 3 is deliberate for better memory coalescing and keeping same order as chunk()
+        proj = proj.unflatten(-1, (3, E)).unsqueeze(0).transpose(0, -2).squeeze(-2).contiguous()
+        return proj[0], proj[1], proj[2]
+
+    else:
+        # encoder-decoder attention
+        w_q, w_kv = w.split([E, E * 2])
+        if b is None:
+            b_q = b_kv = None
+        else:
+            b_q, b_kv = b.split([E, E * 2])
+        q_proj = linear(q, w_q, b_q)
+        kv_proj = linear(k, w_kv, b_kv)
+        # reshape to 2, E and not E, 2 is deliberate for better memory coalescing and keeping same order as chunk()
+        kv_proj = (
+            kv_proj.unflatten(-1, (2, E))
+            .unsqueeze(0)
+            .transpose(0, -2)
+            .squeeze(-2)
+            .contiguous()
+        )
+        return (q_proj, kv_proj[0], kv_proj[1])

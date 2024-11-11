@@ -173,7 +173,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
         # We need at least MIN_TOKENS_TO_KEEP tokens in the full track and in the stem
         if sequence_length < max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM:
             full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
-            print('Warning: skipping dataset item')
+            print('Warning: skipping dataset item because too short')
             continue
 
         else:
@@ -228,6 +228,11 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
             assert full_track_sequence_length >= MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, f"Full track is shorter than {MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK} tokens"
             assert stem_sequence_length >= MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, f"Stem is shorter than {MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK} tokens"
 
+        if full_track_sequence_length <= 0:
+            print('Warning: full track sequence length is <= 0')
+        if stem_sequence_length <= 0:
+            print('Warning: stem sequence length is <= 0')
+
         full_tracks.append(full_track_input)
         stems.append(stem_input)
         targets.append(target)
@@ -236,14 +241,18 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
 
     empty_items_count = len(batch) - batch_size
 
-    # Fill the batch with empty items to avoid recompilations when needed (last batch can be smaller)
-    for _ in range(empty_items_count):
-        full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
-        full_tracks.append(full_track_input)
-        stems.append(stem_input)
-        targets.append(target)
-        full_track_sequence_lengths.append(full_track_sequence_length)
-        stem_sequence_lengths.append(stem_sequence_length)
+    if empty_items_count > 0:
+
+        print('Warning: detected partially empty batch. This is expected for the last batch of the dataset. Empty items: {empty_items_count}')
+
+        # Fill the batch with empty items to avoid recompilations when needed (last batch can be smaller)
+        for _ in range(empty_items_count):
+            full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
+            full_tracks.append(full_track_input)
+            stems.append(stem_input)
+            targets.append(target)
+            full_track_sequence_lengths.append(full_track_sequence_length)
+            stem_sequence_lengths.append(stem_sequence_length)
 
     return DatasetBatch(
         size=batch_size,

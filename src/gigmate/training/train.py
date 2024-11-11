@@ -31,8 +31,7 @@ def init_clearml_task(params):
     task_name += f' batch {params["batch_size"]}'
     task_name += f' layers {params["encoder_layers"]}-{params["decoder_layers"]}'
     task_name += f' heads {params["num_heads"]}'
-    task_name += f' lr {params["learning_rate"]}'
-    task_name += f' dff {params["dff"]}'
+    task_name += f' dmodel {params["d_model"]}'
     
     task = Task.init(
         project_name=get_clearml_project_name(),

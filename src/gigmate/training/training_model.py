@@ -176,8 +176,9 @@ class TrainingModel(L.LightningModule):
 
     def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str, step: int) -> Tuple[Tensor, Dict[str, Tensor]]:
         # logits have shape (B, V, S) == (B, 2048, 512)
-        w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
-        position_weights = torch.clamp(w, max=1)
+        # w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
+        # position_weights = torch.clamp(w, max=1)
+
         total_loss = torch.tensor(0., device=self.device)
         metrics: Dict[str, Tensor] = dict()
 

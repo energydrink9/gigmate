@@ -35,8 +35,5 @@ class Encoder(nn.Module):
             layer_cache = cache[i] if use_cache and cache is not None else None
             x, updated_layer_cache = layer(x, sequence_lengths=sequence_lengths, use_cache=use_cache, cache=layer_cache, cache_index=cache_index, encoder=True)
             updated_cache.append(updated_layer_cache)
-
-        # Only the last sliding window length is used for cross attention
-        x = x[:, :, -self.sliding_window_size:]
         
         return x, updated_cache

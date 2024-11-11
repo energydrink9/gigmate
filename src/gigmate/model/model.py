@@ -54,6 +54,7 @@ class TransformerModel(nn.Module):
         self.num_heads = num_heads
         self.codebooks = codebooks
         self.num_layers = decoder_layers
+        self.sliding_window_size = sliding_window_size
 
         embeddings = [nn.Embedding(vocab_size, d_model, padding_idx=padding_value) for _ in range(codebooks)]
         self.embeddings = nn.ModuleList(embeddings)
@@ -86,6 +87,9 @@ class TransformerModel(nn.Module):
                 full_track_x,
                 sequence_lengths.full_track if sequence_lengths is not None else None,
             )
+            # Only the last sliding window is used for cross attention
+            cross_attention_src = cross_attention_src[:, -self.sliding_window_size:, :]
+
         else:
             cross_attention_src = encoder_cache
 
@@ -136,7 +140,7 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
 
     if compile is True:
         # TODO: fix torch compile full graph
-        backend = 'aot_eager' if device == 'mps' else 'inductor'
+        backend = 'aot_eager' if device == 'mps' or device == 'cuda' else 'inductor'
         model = cast(TransformerModel, torch.compile(model, fullgraph=False, backend=backend))
 
     # TODO: enable quantization if on CUDA
