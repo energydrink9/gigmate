@@ -2,8 +2,8 @@ from typing import Optional
 from clearml import Task
 from gigmate.utils.constants import get_clearml_project_name
 
-LATEST_TASK_CHECKPOINT_ID = 'e23c53128d6c4dec9c5fc01c0be40850'
-ARTIFACT_NAME = 'weights-epoch-2'
+LATEST_TASK_CHECKPOINT_ID = '39335d084c42472fa93e65355a22da9b'
+ARTIFACT_NAME = 'weights-epoch-6'
 
 
 def get_task_artifact(task_id: str, artifact_name: str):

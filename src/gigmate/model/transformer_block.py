@@ -46,8 +46,6 @@ class TransformerBlock(nn.Module):
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
         norm1 = self.layernorm1(x)
-        if torch.isnan(norm1).any():
-            print('Warning: nan in norm1')
 
         tgt2, cache = self.self_attention(
             norm1,
@@ -61,19 +59,11 @@ class TransformerBlock(nn.Module):
             inverted_query=encoder,
             inverted_key_values=encoder,
         )
-        if torch.isnan(tgt2).any():
-            print('Warning: nan in self attention')
 
         x = x + self.dropout1(tgt2)
-        if torch.isnan(x).any():
-            print('Warning: nan in dropout 1')
 
         if self.has_cross_attention is True:
             tgt2 = self.layernorm2(x)
-            if torch.isnan(tgt2).any():
-                print('Warning: nan in layernorm2')
-            if cross_attention_src is not None and torch.isnan(cross_attention_src).any():
-                print('Warning: nan in cross_attention_src')
             tgt2, cross_attention_cache = self.cross_attention(
                 tgt2,
                 cross_attention_src,
@@ -84,21 +74,11 @@ class TransformerBlock(nn.Module):
                 inverted_key_values=True,
                 causal=False,
             )
-            if torch.isnan(tgt2).any():
-                print('Warning: nan in cross attention')
             
             x = x + self.dropout2(tgt2)
-            if torch.isnan(x).any():
-                print('Warning: nan in dropout 2')
 
         tgt2 = self.layernorm3(x)
-        if torch.isnan(tgt2).any():
-            print('Warning: nan in norm 3')
         tgt2 = self.ffn(tgt2)
-        if torch.isnan(tgt2).any():
-            print('Warning: nan in ffn')
         x = x + self.dropout3(tgt2)
-        if torch.isnan(x).any():
-            print('Warning: nan in dropout 3')
 
         return x, cache

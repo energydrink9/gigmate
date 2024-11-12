@@ -107,15 +107,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
 
         self.in_proj_weight = Parameter(torch.empty((3 * embed_dim, embed_dim)))
-        self.register_parameter('q_proj_weight', None)
-        self.register_parameter('k_proj_weight', None)
-        self.register_parameter('v_proj_weight', None)
-        self.register_parameter('in_proj_bias', None)
         self.out_proj = Linear(embed_dim, embed_dim, bias=False)
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        xavier_uniform_(self.in_proj_weight)
 
     def forward(
             self,
@@ -269,16 +261,8 @@ class CachedMultiheadAttention(torch.nn.Module):
                 return alibi_score + padding_score_kv
             else:
                 return alibi_score
-        if torch.isnan(q).any():
-            print('Warning: nan in q')
-        if torch.isnan(k).any():
-            print('Warning: nan in k')
-        if torch.isnan(v).any():
-            print('Warning: nan in v')
-        attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
-        if torch.isnan(attn_output).any():
-            print('Warning: nan in attn_output')
 
+        attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
 
         attn_output = linear(attn_output, out_proj_weight, None)
@@ -344,7 +328,7 @@ def _in_projection_packed(
         return proj[0], proj[1], proj[2]
 
     else:
-        # encoder-decoder attention
+        # cross attention
         w_q, w_kv = w.split([E, E * 2])
         if b is None:
             b_q = b_kv = None

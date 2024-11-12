@@ -76,8 +76,8 @@ class AudioDataset(Dataset):
 
         if (full_track_length != stem_length):
             length_to_keep = min(full_track_length, stem_length)
-            full_track = cut_sequence(full_track, length_to_keep)
-            stem = cut_sequence(stem, length_to_keep)
+            full_track = cut_sequence(full_track, length_to_keep, cut_left=False)
+            stem = cut_sequence(stem, length_to_keep, cut_left=False)
 
         return full_track, stem
     
@@ -204,8 +204,8 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
 
             # Cut sequences if necessary
             full_track_input = cut_sequence(full_track_input, max_seq_len - codebooks + 1, cut_left=True)
-            stem_input = cut_sequence(stem_input, max_decoder_seq_len - codebooks + 1)
-            target = cut_sequence(target, max_decoder_seq_len - codebooks + 1)
+            stem_input = cut_sequence(stem_input, max_decoder_seq_len - codebooks + 1, cut_left=False)
+            target = cut_sequence(target, max_decoder_seq_len - codebooks + 1, cut_left=False)
 
             # Apply padding to the sequences
             full_track_input = pad_sequence(full_track_input, max_seq_len, padding_value, pad_left=True)
@@ -219,8 +219,8 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
 
             # Cut sequences if necessary
             full_track_input = cut_sequence(full_track_input, max_seq_len, cut_left=True)
-            stem_input = cut_sequence(stem_input, max_decoder_seq_len)
-            target = cut_sequence(target, max_decoder_seq_len)
+            stem_input = cut_sequence(stem_input, max_decoder_seq_len, cut_left=False)
+            target = cut_sequence(target, max_decoder_seq_len, cut_left=False)
 
             assert full_track_input.shape == (1, codebooks, max_seq_len), f"Shape of full track is {full_track_input.shape}"
             assert stem_input.shape == (1, codebooks, max_decoder_seq_len), f"Shape of stem is {stem_input.shape}"

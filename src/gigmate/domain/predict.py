@@ -1,6 +1,7 @@
 import itertools
 import time
 from encodec.utils import save_audio
+import torch
 from gigmate.dataset.dataset import get_data_loader
 from gigmate.model.codec import decode, get_codec
 
@@ -12,9 +13,9 @@ from gigmate.utils.device import get_device, Device
 from gigmate.utils.sequence_utils import cut_sequence, remove_special_tokens, revert_interleaving
 
 NUM_OUTPUT_FILES = 5
-SUBSET_OF_TEST_DATASET_NUMBER = 4
+SUBSET_OF_TEST_DATASET_NUMBER = 0
 AUDIO_TO_GENERATE_LENGTH = 4
-TEMPERATURE = 0.5
+TEMPERATURE = 0
 # NUMBER_OF_SECONDS_FOR_PREDICTION = 10
 
 
@@ -29,10 +30,14 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
         print(f'Generating audio file output {i}:')
         # input_file = 'resources/test_generation.wav'
 
+        torch.set_printoptions(edgeitems=20)
+        print('Input sequence', data_items[i].inputs.full_track[:1, :, :].shape, data_items[i].inputs.full_track[:1, :, :])
+        print('Expected Stem', data_items[i].inputs.stem[:1, :, :].shape, data_items[i].inputs.stem[:1, :, :])
+
         input_sequence = data_items[i].inputs.full_track[:1, :, :]
         input_sequence = revert_interleaving(input_sequence)
         input_sequence = remove_special_tokens(input_sequence, get_special_tokens())
-        input_sequence = cut_sequence(input_sequence, data_items[i].sequence_lengths.full_track[0])
+        input_sequence = cut_sequence(input_sequence, data_items[i].sequence_lengths.full_track[0], cut_left=True)
         input_tensor, sr = decode(input_sequence, device)
         save_audio(input_tensor.detach().cpu(), input_file, sample_rate=sr)
 
@@ -68,7 +73,8 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path(), compile=False)
-    data_loader = get_data_loader('validation')
+    data_loader = get_data_loader('train')
+    #data_loader = get_data_loader('validation')
     codec = get_codec(device)
     frame_rate = codec.config.frame_rate
 

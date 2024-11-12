@@ -15,7 +15,7 @@ from gigmate.utils.constants import get_pad_token_id, get_params, get_special_to
 from gigmate.utils.device import Device
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, remove_special_tokens, revert_interleaving, shift_sequence
 
-DEFAULT_TEMPERATURE = 0.3
+DEFAULT_TEMPERATURE = 0
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
 
 
@@ -47,9 +47,13 @@ def predict_next_token(
             encoder_cache=encoder_cache,
         )
         outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
+        print('Result from model:')
+        complete_outputs = sample_from_logits(outputs, temperature, no_special_tokens=False)
+        print(f'outputs: {complete_outputs.shape} {complete_outputs}')
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
-        predicted_tokens = sample_from_logits(outputs, temperature).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
+        predicted_tokens = sample_from_logits(outputs, temperature, no_special_tokens=False).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
         print(f"Predicted token is {predicted_tokens}")
+        
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 
 
@@ -150,7 +154,6 @@ def complete_sequence(
     # initial_token_index = initial_sequence.shape[-1] - 1
     initial_token_index = 0
 
-    torch.set_printoptions(edgeitems=20)
     print('--- Input ---')
     print(input_sequence.shape)
     print(input_sequence)
@@ -194,7 +197,7 @@ def complete_sequence(
         print(output_sequence.shape)
         print(output_sequence)
 
-    return remove_special_tokens(revert_interleaving(cast(torch.Tensor, output_sequence)), get_special_tokens())
+    return revert_interleaving(cast(torch.Tensor, output_sequence))
 
 
 def complete_audio_file(
