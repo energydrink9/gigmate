@@ -12,9 +12,9 @@ from gigmate.utils.device import get_device, Device
 from gigmate.utils.sequence_utils import cut_sequence, remove_special_tokens, revert_interleaving
 
 NUM_OUTPUT_FILES = 5
-SUBSET_OF_TEST_DATASET_NUMBER = 0
-TEMPERATURE = 0.5
+SUBSET_OF_TEST_DATASET_NUMBER = 4
 AUDIO_TO_GENERATE_LENGTH = 4
+TEMPERATURE = 0.5
 # NUMBER_OF_SECONDS_FOR_PREDICTION = 10
 
 
@@ -68,8 +68,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path(), compile=False)
-    #data_loader = get_data_loader('validation')
-    data_loader = get_data_loader('train')
+    data_loader = get_data_loader('validation')
     codec = get_codec(device)
     frame_rate = codec.config.frame_rate
 

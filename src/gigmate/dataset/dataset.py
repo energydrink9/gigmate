@@ -61,7 +61,7 @@ class AudioDataset(Dataset):
         return len(self.entries)
     
     def __getitem__(self, idx):
-        idx = idx % 10
+
         full_track_file_path, stem_file_path = self.entries[idx]
 
         with open(full_track_file_path, 'rb') as full_track_file:
@@ -267,7 +267,7 @@ def get_data_loader(dataset: str):
     ds = get_pt_dataset_from_remote_dataset(dataset)
     num_workers = multiprocessing.cpu_count()
     prefetch_factor = 4
-    shuffle = False# dataset == 'train'
+    shuffle = dataset == 'train'
 
     return DataLoader(
         ds,
