@@ -174,16 +174,16 @@ class TrainingModel(L.LightningModule):
         is_train_dataset = dataset == 'train'
         prog_bar = metric_name in ['loss', 'accuracy'] or (metric_name in ['perplexity', 'frechet_audio_distance'] and not is_train_dataset)
         metric_name_with_dataset = f"{dataset}_{metric_name}" if dataset is not None else metric_name
-        self.log(f'{metric_name_with_dataset}_{interval}', value, on_step=interval == 'step', on_epoch=interval == 'epoch', prog_bar=prog_bar, batch_size=batch_size)
+        self.log(metric_name_with_dataset, value, on_step=interval == 'step', on_epoch=True, prog_bar=prog_bar, batch_size=batch_size)
 
     def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str, step: int) -> Tuple[Tensor, Dict[str, Tensor]]:
+        metrics: Dict[str, Tensor] = dict()
+        total_loss = torch.tensor(0., device=self.device)
+
         if CURRICULUM_LEARNING:
             # logits have shape (B, V, S) == (B, 2048, 512)
             w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
             weights = torch.clamp(w, max=1)
-
-            total_loss = torch.tensor(0., device=self.device)
-            metrics: Dict[str, Tensor] = dict()
 
             for k in range(self.codebooks):
                 codebook_loss = weighted_cross_entropy_loss(logits[k], targets[k], weights)
@@ -197,9 +197,6 @@ class TrainingModel(L.LightningModule):
             return total_loss, metrics
         
         else:
-
-            total_loss = torch.tensor(0., device=self.device)
-            metrics: Dict[str, Tensor] = dict()
 
             for k in range(self.codebooks):
                 
