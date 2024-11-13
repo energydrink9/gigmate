@@ -17,7 +17,7 @@ from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_s
 params = get_params()
 
 MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK = 64
-MIN_TOKENS_TO_KEEP_FROM_STEM = 512
+MIN_TOKENS_TO_KEEP_FROM_STEM = params['max_decoder_seq_len']
 
 
 def get_chunk_number(file_path):
@@ -76,8 +76,8 @@ class AudioDataset(Dataset):
 
         if (full_track_length != stem_length):
             length_to_keep = min(full_track_length, stem_length)
-            full_track = cut_sequence(full_track, length_to_keep, cut_left=False)
-            stem = cut_sequence(stem, length_to_keep, cut_left=False)
+            full_track = cut_sequence(full_track, length_to_keep)
+            stem = cut_sequence(stem, length_to_keep)
 
         return full_track, stem
     
@@ -113,9 +113,9 @@ def get_datasets():
     return train_ds, validation_ds, test_ds
 
 
-def restore_initial_sequence(tensor: Tensor, sequence_length: int) -> Tensor:
+def restore_initial_sequence(tensor: Tensor, sequence_length: int, cut_left=False) -> Tensor:
     tensor = revert_interleaving(tensor)
-    tensor = cut_sequence(tensor, sequence_length)
+    tensor = cut_sequence(tensor, sequence_length, cut_left=cut_left)
     return tensor
 
 
@@ -149,6 +149,48 @@ def get_empty_item(codebooks: int, max_seq_len: int, max_decoder_seq_len: int) -
     )
 
 
+def get_model_input(full_track, stem, sequence_length, max_seq_len, max_decoder_seq_len, codebooks, padding_value, use_partial_input_sequence=False):
+    
+    assert sequence_length >= max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM, "Invalid sequence length: must be larger than max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM"
+
+    # Cut a random part of the full track
+    min_full_track_start_position = 0
+    max_full_track_start_position = sequence_length - MIN_TOKENS_TO_KEEP_FROM_STEM - max_seq_len
+    
+    full_track_start_position = random.randint(min_full_track_start_position, max_full_track_start_position - 1)
+    full_track_end_position = full_track_start_position + random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_seq_len - 1) if use_partial_input_sequence else full_track_start_position + max_seq_len
+    full_track_input = full_track[:, :, full_track_start_position:full_track_end_position]
+
+    # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
+    stem_input = stem[:, :, full_track_end_position + 1:]
+    target = stem_input
+
+    # Shift the stem by 1 position and set the first token to the start of sequence token
+    stem_input = shift_sequence(stem_input, shifts=1)
+    stem_input[:, :, 0] = get_start_of_sequence_token_id()
+
+    # Apply interleaving
+    full_track_input = apply_interleaving(full_track_input, padding_value)
+    stem_input = apply_interleaving(stem_input, padding_value)
+    target = apply_interleaving(target, padding_value)
+
+    # Cut sequences if necessary
+    full_track_input = cut_sequence(full_track_input, max_seq_len, cut_left=True)
+    stem_input = cut_sequence(stem_input, max_decoder_seq_len, cut_left=False)
+    target = cut_sequence(target, max_decoder_seq_len, cut_left=False)
+
+    # Calculate sequence lengths
+    full_track_sequence_length = full_track_input.shape[-1]
+    stem_sequence_length = stem_input.shape[-1]
+
+    # Apply padding to the sequences
+    full_track_input = pad_sequence(full_track_input, max_seq_len, padding_value, pad_left=True)
+    stem_input = pad_sequence(stem_input, max_decoder_seq_len, padding_value)
+    target = pad_sequence(target, max_decoder_seq_len, padding_value)
+
+    return full_track_input, full_track_sequence_length, stem_input, stem_sequence_length, target
+
+
 def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
     batch_size = params['batch_size']
     codebooks = params['codebooks']
@@ -177,50 +219,20 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
             continue
 
         else:
-
             # Use a partial input sequence 10% of the time
-            use_partial_input_sequence = random.randint(0, 9) == 0
+            random_number = random.randint(0, 9)
+            use_partial_input_sequence = random_number == 0
 
-            # Cut a random part of the full track
-            min_full_track_start_position = 0
-            max_full_track_start_position = sequence_length - MIN_TOKENS_TO_KEEP_FROM_STEM - max_seq_len
-            
-            full_track_start_position = random.randint(min_full_track_start_position, max_full_track_start_position - 1)
-            full_track_end_position = full_track_start_position + random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_seq_len - 1) if use_partial_input_sequence else full_track_start_position + max_seq_len
-            
-            full_track_input = full_track[:, :, full_track_start_position:full_track_end_position]
-
-            # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
-            stem_input = stem[:, :, full_track_end_position + 1:]
-            target = stem_input
-
-            # Shift the stem by 1 position and set the first token to the start of sequence token
-            stem_input = shift_sequence(stem_input, shifts=1)
-            stem_input[:, :, 0] = get_start_of_sequence_token_id()
-
-            # Calculate sequence lengths
-            full_track_sequence_length = min(full_track_input.shape[-1] + codebooks - 1, max_seq_len)
-            stem_sequence_length = min(stem_input.shape[-1] + codebooks - 1, max_decoder_seq_len)
-
-            # Cut sequences if necessary
-            full_track_input = cut_sequence(full_track_input, max_seq_len - codebooks + 1, cut_left=True)
-            stem_input = cut_sequence(stem_input, max_decoder_seq_len - codebooks + 1, cut_left=False)
-            target = cut_sequence(target, max_decoder_seq_len - codebooks + 1, cut_left=False)
-
-            # Apply padding to the sequences
-            full_track_input = pad_sequence(full_track_input, max_seq_len, padding_value, pad_left=True)
-            stem_input = pad_sequence(stem_input, max_decoder_seq_len, padding_value)
-            target = pad_sequence(target, max_decoder_seq_len, padding_value)
-            
-            # Apply interleaving
-            full_track_input = apply_interleaving(full_track_input, padding_value)
-            stem_input = apply_interleaving(stem_input, padding_value)
-            target = apply_interleaving(target, padding_value)
-
-            # Cut sequences if necessary
-            full_track_input = cut_sequence(full_track_input, max_seq_len, cut_left=True)
-            stem_input = cut_sequence(stem_input, max_decoder_seq_len, cut_left=False)
-            target = cut_sequence(target, max_decoder_seq_len, cut_left=False)
+            full_track_input, full_track_sequence_length, stem_input, stem_sequence_length, target = get_model_input(
+                full_track,
+                stem,
+                sequence_length,
+                max_seq_len,
+                max_decoder_seq_len,
+                codebooks,
+                padding_value,
+                use_partial_input_sequence=use_partial_input_sequence,
+            )
 
             assert full_track_input.shape == (1, codebooks, max_seq_len), f"Shape of full track is {full_track_input.shape}"
             assert stem_input.shape == (1, codebooks, max_decoder_seq_len), f"Shape of stem is {stem_input.shape}"
@@ -262,7 +274,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
     )
 
 
-def get_data_loader(dataset: str):
+def get_data_loader(dataset: str) -> DataLoader:
 
     ds = get_pt_dataset_from_remote_dataset(dataset)
     num_workers = multiprocessing.cpu_count()
@@ -281,7 +293,7 @@ def get_data_loader(dataset: str):
     )
 
 
-def get_data_loaders():
+def get_data_loaders() -> Tuple[DataLoader, DataLoader, DataLoader]:
     return get_data_loader('train'), get_data_loader('validation'), get_data_loader('test')
 
 

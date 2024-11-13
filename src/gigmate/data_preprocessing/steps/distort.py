@@ -4,7 +4,7 @@ import traceback
 from typing import List, Tuple, cast
 import numpy as np
 from pydub import AudioSegment
-from audiomentations import Compose, AddGaussianSNR, BitCrush, BandStopFilter, RoomSimulator, SevenBandParametricEQ
+from audiomentations import Compose, AddGaussianSNR, BandStopFilter, RoomSimulator, SevenBandParametricEQ
 from s3fs.core import S3FileSystem
 from dask.distributed import Client
 from distributed import progress

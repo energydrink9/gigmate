@@ -81,6 +81,7 @@ def split_step(output_dir: str, tags: List[str]) -> List[str]:
 
     return split_dirs
 
+
 @PipelineDecorator.component(return_values=[], cache=False)
 def upload_step(input_dirs: List[str], tags: List[str]):
 

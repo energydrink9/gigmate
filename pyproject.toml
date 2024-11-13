@@ -47,12 +47,13 @@ numpy = "^1.26.4"
 accelerate = "^1.1.1"
 
 [tool.poetry.dev-dependencies]
-pytest = "^8.3.3"
-pydub-stubs = "^0.25.1.1"
-types-pyaudio = "^0.2.16.20240516"
 flake8 = "^7.1.1"
+mypy = "^1.13.0"
+pydub-stubs = "^0.25.1.1"
+pytest = "^8.3.3"
 types-tqdm = "^4.66.0.20240417"
 types-requests = "^2.32.0.20240914"
+sounddevice = "^0.5.1"
 
 [tool.poetry.extras]
 test = ["pytest", "pytest-cov"]

@@ -59,7 +59,7 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
     cache_index_tensor = torch.tensor(cache_index, device=device_type) if cache_index is not None else None
     
     def incremental_causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
-        return (kv_idx >= cast(Tensor, cache_index_tensor) - window_size) & (kv_idx <= cache_index_tensor)
+        return (kv_idx >= cast(Tensor, cache_index_tensor) - window_size) & (kv_idx <= cast(Tensor, cache_index_tensor))
 
     if cache_index is not None:
         return incremental_causal_sliding_mask

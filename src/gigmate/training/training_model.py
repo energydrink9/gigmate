@@ -21,8 +21,7 @@ from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
 from gigmate.model.model import ENABLE_QUANTIZATION, get_model
 from gigmate.training.greedy_lr import GreedyLR
-from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id, get_special_tokens
-from gigmate.utils.sequence_utils import remove_special_tokens_from_target_and_logits
+from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id
 
 PAD_TOKEN_ID = get_pad_token_id()
 TEMP_DIR = tempfile.gettempdir()
@@ -97,7 +96,7 @@ def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: in
     flat_target = restore_initial_sequence(target, sequence_length)
 
     # Removing special tokens, as the decoder is not able to handle them
-    flat_target, flat_pred = remove_special_tokens_from_target_and_logits(flat_target, flat_pred, get_special_tokens())
+    # flat_target, flat_pred = remove_special_tokens_from_target_and_logits(flat_target, flat_pred, get_special_tokens())
 
     # Decoding
     pred_audio, pred_audio_sr = decode(flat_pred, logit.device.type)
@@ -247,6 +246,11 @@ class TrainingModel(L.LightningModule):
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train', curriculum_learning_step)
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'train')
         
+        if batch_idx < 25:
+            if sequence_lengths.stem[0] > FRECHET_AUDIO_DISTANCE_LENGTH:
+                length = min(sequence_lengths.stem[0], FRECHET_AUDIO_DISTANCE_LENGTH)
+                self.log_frechet_audio_distance_metric(batch.size, logits[:1, :, :length, :], targets[:1, :, :length], length, 'train')
+
         self.log_metrics('train', batch.size, interval='step', loss=loss, **loss_metrics)
         self.log_metrics('train', batch.size, interval='step', **metrics)
 
@@ -261,10 +265,10 @@ class TrainingModel(L.LightningModule):
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val', curriculum_learning_step)
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'val')
 
-        if batch_idx < 12:
+        if batch_idx < 25:
             if sequence_lengths.stem[0] > FRECHET_AUDIO_DISTANCE_LENGTH:
                 length = min(sequence_lengths.stem[0], FRECHET_AUDIO_DISTANCE_LENGTH)
-                self.log_frechet_audio_distance_metric(batch.size, logits[:1, :, :length, :], targets[:1, :, :length], length)
+                self.log_frechet_audio_distance_metric(batch.size, logits[:1, :, :length, :], targets[:1, :, :length], length, 'val')
 
             if batch_idx < 8:
                 self.save_generated_audio(batch_idx, logits[:1, :, :AUDIO_SAMPLES_LENGTH, :], targets[:1, :, :AUDIO_SAMPLES_LENGTH], sequence_lengths.stem[0])
@@ -304,7 +308,7 @@ class TrainingModel(L.LightningModule):
         self.log_epoch_metrics('val')
 
     @torch.compiler.disable
-    def log_frechet_audio_distance_metric(self, batch_size: int, logits: Tensor, targets: Tensor, sequence_length: int):
+    def log_frechet_audio_distance_metric(self, batch_size: int, logits: Tensor, targets: Tensor, sequence_length: int, dataset_set: Literal['train', 'val', 'test']):
         try:
             pred_audio, pred_audio_sr, target_audio, target_audio_sr = get_pred_and_target_audio(logits.detach(), targets.detach(), sequence_length)
             frechet_audio_distance_metric = self.frechet_audio_distance_metric['val']
@@ -316,7 +320,7 @@ class TrainingModel(L.LightningModule):
                 frechet_audio_distance_metric.update(pred_audio.to(dtype=torch.float32), target_audio.to(dtype=torch.float32))
                 frechet_audio_distance = frechet_audio_distance_metric.compute()
                 
-            self.log_metric('val', batch_size, 'frechet_audio_distance', frechet_audio_distance, interval='epoch')
+            self.log_metric(dataset_set, batch_size, 'frechet_audio_distance', frechet_audio_distance, interval='epoch')
 
         except Exception as e:
             print('An error occurred while computing Frechet Audio Distance metric:')

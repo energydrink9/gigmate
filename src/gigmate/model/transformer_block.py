@@ -1,5 +1,4 @@
 from typing import List, Optional, Tuple, Union
-import torch
 import torch.nn as nn
 from torch import Tensor
 from gigmate.model.cached_multihead_attention import CachedMultiheadAttention
