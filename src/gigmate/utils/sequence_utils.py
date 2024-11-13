@@ -140,7 +140,7 @@ def update_interleaved_sequence(sequence: Tensor, position: int, new_tokens: Ten
     return sequence
 
 
-def cut_sequence(sequence: torch.Tensor, length: int, cut_left: bool = True) -> torch.Tensor:
+def cut_sequence(sequence: torch.Tensor, length: int, cut_left: bool = False) -> torch.Tensor:
     """
     Cut the specified sequence keeping only the *length* element on the left.
 

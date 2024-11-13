@@ -1,7 +1,15 @@
 import pytest
 import torch
 from typing import Tuple
-from gigmate.domain.prediction import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, update_next_sequence
+from gigmate.domain.prediction import apply_interleaving, get_initial_next_sequence, update_next_sequence
+from gigmate.utils.constants import get_pad_token_id
+from gigmate.utils.device import get_device
+from gigmate.utils.sequence_utils import get_start_of_sequence_token, pad_sequence
+
+
+CODEBOOKS = 4
+PADDING_VALUE = get_pad_token_id()
+device = 'cpu'
 
 
 def get_sample_data(B: int, K: int, T: int) -> torch.Tensor:
@@ -15,136 +23,50 @@ def get_sample_data(B: int, K: int, T: int) -> torch.Tensor:
 
 @pytest.fixture
 def test_sequence() -> Tuple[torch.Tensor, int, int, int]:
-    B, K, T = 2, 4, 9
+    B, K, T = 2, CODEBOOKS, 9
     sequence = get_sample_data(B, K, T)
     return sequence, B, K, T
-
-
-def test_apply_interleaving(test_sequence):
-    sequence, B, K, T = test_sequence
-    
-    interleaved = apply_interleaving(sequence, 0)
-    
-    assert interleaved.shape == (B, K, T + K - 1), "Output shape is incorrect"
-
-    assert torch.all(interleaved[:, :, :K] == torch.tensor([
-        [1, 2, 3, 4],
-        [0, 1, 2, 3],
-        [0, 0, 1, 2],
-        [0, 0, 0, 1]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "First K elements of the sequence are incorrect"
-
-    assert torch.all(interleaved[:, :, -K:] == torch.tensor([
-        [9, 0, 0, 0],
-        [8, 9, 0, 0],
-        [7, 8, 9, 0],
-        [6, 7, 8, 9]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
-
-
-def test_revert_interleaving(test_sequence):
-    sequence, B, K, T = test_sequence
-    
-    interleaved = apply_interleaving(sequence, 0)
-    reverted = revert_interleaving(interleaved)
-    
-    assert reverted.shape == sequence.shape, "Reverted shape doesn't match initial shape"
-    assert torch.all(reverted == sequence), "Reverted sequence doesn't match initial sequence"
-
-
-def test_custom_padding_value():
-    B, K, T = 2, 3, 5
-    sequence = get_sample_data(B, K, T)
-    padding_value = -1
-    
-    interleaved = apply_interleaving(sequence, padding_value)
-    assert torch.all(interleaved[:, :, :K] == torch.tensor([
-        [1, 2, 3],
-        [-1, 1, 2],
-        [-1, -1, 1],
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Custom padding value not applied correctly"
-
-
-def test_edge_cases():
-    # Test with K=1 (no interleaving)
-    sequence = torch.randn(2, 1, 10)
-    interleaved = apply_interleaving(sequence, 0)
-    assert torch.all(interleaved == sequence), "K=1 case failed"
-    
-    # Test with T=1 (minimal sequence length)
-    sequence = torch.randn(2, 3, 1)
-    interleaved = apply_interleaving(sequence, 0)
-    reverted = revert_interleaving(interleaved)
-    assert torch.all(reverted == sequence), "T=1 case failed"
-
-
-def test_large_input():
-    B, K, T = 10, 20, 1000
-    sequence = torch.randn(B, K, T)
-    interleaved = apply_interleaving(sequence, 0)
-    reverted = revert_interleaving(interleaved)
-    assert torch.all(torch.isclose(reverted, sequence, atol=1e-6)), "Large input test failed"
-
-
-def test_dtype_and_device_preservation():
-    sequence = torch.randn(2, 3, 5, dtype=torch.float64)
-    if torch.cuda.is_available():
-        sequence = sequence.cuda()
-    
-    interleaved = apply_interleaving(sequence, 0)
-    assert interleaved.dtype == sequence.dtype, "Data type not preserved"
-    assert interleaved.device == sequence.device, "Device not preserved"
-    
-    reverted = revert_interleaving(interleaved)
-    assert reverted.dtype == sequence.dtype, "Data type not preserved after reversion"
-    assert reverted.device == sequence.device, "Device not preserved after reversion"
-
-
-def test_cut_sequence_to_length(test_sequence):
-    sequence, B, K, T = test_sequence
-    cut_seq = cut_sequence(sequence, 3, cut_left=True)
-    
-    expected_tensor = torch.tensor([
-        [7, 8, 9],
-        [7, 8, 9],
-        [7, 8, 9],
-        [7, 8, 9]
-    ]).unsqueeze(0).repeat(B, 1, 1)
-
-    assert cut_seq.shape == (B, K, 3), "Output shape is incorrect"
-    assert torch.all(cut_seq == expected_tensor), "Sequence elements are incorrect"
-
-
-def test_cut_sequence_to_length_when_length_equals_sequence_length(test_sequence):
-    sequence, B, K, T = test_sequence
-    cut_seq = cut_sequence(sequence, T, cut_left=True)
-    
-    assert cut_seq.shape == (B, K, T), "Output shape is incorrect"
-    assert torch.all(cut_seq == sequence), "Sequence elements are incorrect"
-
-
-def test_cut_sequence_to_length_when_length_greater_than_sequence_length(test_sequence):
-    sequence, B, K, T = test_sequence
-    cut_seq = cut_sequence(sequence, T + 1, cut_left=True)
-    
-    assert cut_seq.shape == (B, K, T), "Output shape is incorrect"
-    assert torch.all(cut_seq == sequence), "Sequence elements are incorrect"
 
 
 def test_update_next_sequence(test_sequence):
     sequence, B, K, T = test_sequence
     interleaved_sequence = apply_interleaving(sequence, 0)
     current_token = torch.tensor([[[99], [99], [99], [99]]])
+    token_index = 5
 
-    next_sequence = update_next_sequence(interleaved_sequence, current_token, 20, 4)
+    next_sequence = update_next_sequence(interleaved_sequence, current_token, 20, token_index)
 
     assert next_sequence.shape == interleaved_sequence.shape
-    assert torch.all(next_sequence[:, :, 4:8] == torch.tensor([
-        [99, 6, 7, 8],
-        [4, 99, 6, 7],
-        [3, 4, 99, 6],
-        [2, 3, 4, 99]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
+    assert torch.all(next_sequence[:, :, token_index: token_index + 1] == torch.tensor([
+        [99],
+        [99],
+        [99],
+        [99],
+    ]).unsqueeze(0).repeat(B, 1, 1)), f"Elements at position {token_index} of the sequence have not been updated"
+
+    assert torch.all(
+        torch.cat([next_sequence[:, :, :token_index], next_sequence[:, :, token_index + 1:]], dim=-1) == torch.cat([interleaved_sequence[:, :, :token_index], interleaved_sequence[:, :, token_index + 1:]], dim=-1)
+    ), "Elements at other positions should remain the same"
+
+
+def test_update_next_sequence_when_position_equals_max_seq_len(test_sequence):
+    sequence, B, K, T = test_sequence
+    interleaved_sequence = apply_interleaving(sequence, 0)
+    current_token = torch.tensor([[[99], [99], [99], [99]]])
+    sequence_length = interleaved_sequence.shape[-1]
+    index = sequence_length
+    last_element = interleaved_sequence[0, :, -1]
+
+    next_sequence = update_next_sequence(interleaved_sequence, current_token, sequence_length, index)
+
+    assert next_sequence.shape == (B, K, sequence_length), "Output shape is incorrect"
+
+    assert torch.all(next_sequence[:, :, -2:] == torch.tensor([
+        [last_element[0], 99],
+        [last_element[1], 99],
+        [last_element[2], 99],
+        [last_element[3], 99],
+    ]).unsqueeze(0).repeat(B, 1, 1)), "Last elements of the sequence are incorrect"
 
 
 def test_update_next_sequence_when_position_equals_last_element(test_sequence):
@@ -152,53 +74,49 @@ def test_update_next_sequence_when_position_equals_last_element(test_sequence):
     interleaved_sequence = apply_interleaving(sequence, 0)
     current_token = torch.tensor([[[99], [99], [99], [99]]])
     sequence_length = interleaved_sequence.shape[2]
-    last_element = sequence_length - 1
+    index = sequence_length - 1
+    second_last_element = interleaved_sequence[0, :, -2]
 
-    next_sequence = update_next_sequence(interleaved_sequence, current_token, sequence_length, last_element, 0)
-
-    assert next_sequence.shape == (B, K, sequence_length), "Output shape is incorrect"
-
-    assert torch.all(next_sequence[:, :, -K:] == torch.tensor([
-        [99, 0, 0, 0],
-        [0, 99, 0, 0],
-        [0, 0, 99, 0],
-        [9, 0, 0, 99]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
-
-
-def test_update_next_sequence_when_position_equals_second_last_element(test_sequence):
-    sequence, B, K, T = test_sequence
-    interleaved_sequence = apply_interleaving(sequence, 0)
-    current_token = torch.tensor([[[99], [99], [99], [99]]])
-    sequence_length = interleaved_sequence.shape[2]
-    last_element = sequence_length - 2
-
-    next_sequence = update_next_sequence(interleaved_sequence, current_token, sequence_length, last_element, 0)
+    next_sequence = update_next_sequence(interleaved_sequence, current_token, sequence_length, index)
 
     assert next_sequence.shape == (B, K, sequence_length), "Output shape is incorrect"
 
-    assert torch.all(next_sequence[:, :, -K:] == torch.tensor([
-        [99, 0, 0, 0],
-        [0, 99, 0, 0],
-        [9, 0, 99, 0],
-        [8, 9, 0, 99]
-    ]).unsqueeze(0).repeat(B, 1, 1)), "Last K elements of the sequence are incorrect"
+    assert torch.all(next_sequence[:, :, -2:] == torch.tensor([
+        [second_last_element[0], 99],
+        [second_last_element[1], 99],
+        [second_last_element[2], 99],
+        [second_last_element[3], 99],
+    ]).unsqueeze(0).repeat(B, 1, 1)), "Last elements of the sequence are incorrect"
 
 
-def test_pad_sequence(test_sequence):
+def test_get_initial_next_sequence_with_empty_sequence():
+    initial_sequence, seq_len = get_initial_next_sequence(None, CODEBOOKS, PADDING_VALUE, CODEBOOKS, device)
+    expected_sequence = apply_interleaving(get_start_of_sequence_token(CODEBOOKS), PADDING_VALUE)
+
+    assert torch.equal(initial_sequence, expected_sequence), "Should return interleaved sequence containing start token only"
+    assert seq_len == CODEBOOKS, "Returned sequence length should be equal to number of codebooks (because of interleaving)"
+
+
+def test_get_initial_next_sequence(test_sequence: torch.Tensor) -> None:
+    max_seq_len = 12
     sequence, B, K, T = test_sequence
-    padded_sequence = pad_sequence(sequence, 32, 0)
-    
-    assert padded_sequence.shape == (B, K, 32), "Invalid shape after padding"
-    assert padded_sequence[:, :, T:].sum() == 0, "Padding elements are not zeros"
+    initial_sequence, seq_len = get_initial_next_sequence(sequence, max_seq_len, PADDING_VALUE, CODEBOOKS, device)
+    expected_sequence = pad_sequence(apply_interleaving(sequence, PADDING_VALUE), max_seq_len, PADDING_VALUE, pad_left=False)
+
+    assert initial_sequence.shape == expected_sequence.shape
+    assert torch.equal(initial_sequence, expected_sequence), "Sequence different from expected"
+    assert seq_len == T + CODEBOOKS - 1, "Returned sequence length is not correct"
 
 
-def test_pad_sequence_when_length_equals_sequence_length(test_sequence):
+def test_get_initial_next_sequence_with_pad_left(test_sequence: torch.Tensor) -> None:
+    max_seq_len = 12
     sequence, B, K, T = test_sequence
-    padded_sequence = pad_sequence(sequence, T, 0)
-    
-    assert padded_sequence.shape == (B, K, T), "Invalid shape after padding"
-    assert torch.equal(padded_sequence, sequence), "Sequence has been modified"
+    initial_sequence, seq_len = get_initial_next_sequence(sequence, max_seq_len, PADDING_VALUE, CODEBOOKS, device, pad_left=True)
+    expected_sequence = pad_sequence(apply_interleaving(sequence, PADDING_VALUE), max_seq_len, PADDING_VALUE, pad_left=True)
+
+    assert initial_sequence.shape == expected_sequence.shape
+    assert torch.equal(initial_sequence, expected_sequence), "Sequence different from expected"
+    assert seq_len == T + CODEBOOKS - 1, "Returned sequence length is not correct"
 
 
 if __name__ == "__main__":

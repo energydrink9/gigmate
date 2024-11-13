@@ -2,18 +2,18 @@ import math
 from typing import List, Optional, Tuple, cast
 from pydub import AudioSegment
 import torchaudio
-from gigmate.dataset.dataset import SequenceLengths
-from gigmate.domain.sampling import sample_from_logits
-from gigmate.model.codec import decode, encode
 from encodec.utils import save_audio
 import torch
 from tqdm import tqdm
 import os
 
+from gigmate.dataset.dataset import SequenceLengths
+from gigmate.domain.sampling import sample_from_logits
+from gigmate.model.codec import decode, encode
 from gigmate.utils.audio_utils import generate_random_filename
-from gigmate.utils.constants import get_pad_token_id, get_params, get_special_tokens
+from gigmate.utils.constants import get_pad_token_id, get_params
 from gigmate.utils.device import Device
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, remove_special_tokens, revert_interleaving, shift_sequence
+from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
 
 DEFAULT_TEMPERATURE = 0
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
@@ -57,7 +57,7 @@ def predict_next_token(
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 
 
-def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: torch.Tensor, max_seq_len: int, current_token_index: int):
+def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: torch.Tensor, max_seq_len: int, index: int):
     """
     Updates the next sequence with the current token, taking into account interleaving and maximum sequence length.
 
@@ -65,15 +65,37 @@ def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: to
         torch.Tensor: the updated next sequence ready for the next inference iteration
     """
     current_token = current_token.to(previous_next_sequence.device)
-    token_sequence_index = current_token_index + 1
-    if token_sequence_index >= max_seq_len:
+
+    assert index <= max_seq_len, "index must not be larger than max_seq_len"
+
+    if index == max_seq_len:
         next_sequence = shift_sequence(previous_next_sequence)
+        index = max_seq_len - 1  # Update index after shifting
     else:
         next_sequence = previous_next_sequence
 
-    next_sequence[:, :, token_sequence_index] = current_token.reshape((1, 4))
+    next_sequence[:, :, index] = current_token.reshape((1, 4))
     
     return next_sequence
+
+
+def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
+    start_of_sequence_token = get_start_of_sequence_token(codebooks).to(device)
+    if sequence is None:
+        sequence = start_of_sequence_token
+    else:
+        sequence = sequence.to(device)
+        if prepend_sos_token is True:
+            sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
+    
+    interleaved_sequence = apply_interleaving(sequence, padding_value)
+    sequence_length = interleaved_sequence.shape[-1]
+    padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value, pad_left)
+
+    if sequence_length > max_seq_len:
+        return cut_sequence(padded_sequence, max_seq_len, cut_left=True), max_seq_len
+
+    return padded_sequence, sequence_length
 
 
 def complete_sequence(
@@ -121,27 +143,9 @@ def complete_sequence(
             next_sequence,
             next_token,
             max_decoder_seq_len,
-            current_token_index,
+            current_token_index + 1,
         ) if use_cache is False else next_token.to(next_sequence.device)
         return next_sequence, output_sequence, updated_cache, encoder_cache
-
-    def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
-        start_of_sequence_token = get_start_of_sequence_token(codebooks).to(device)
-        if sequence is None:
-            sequence = start_of_sequence_token
-        else:
-            sequence = sequence.to(device)
-            if prepend_sos_token is True:
-                sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
-        
-        interleaved_sequence = apply_interleaving(sequence, padding_value)
-        sequence_length = sequence.shape[-1]
-        padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value, pad_left)
-
-        if sequence_length > max_seq_len:
-            return cut_sequence(padded_sequence, max_seq_len, cut_left=True), max_seq_len
-
-        return padded_sequence, sequence_length
     
     model.eval()
     sliding_window_size = get_params()['sliding_window_size']
