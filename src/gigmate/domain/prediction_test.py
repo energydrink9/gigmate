@@ -3,7 +3,6 @@ import torch
 from typing import Tuple
 from gigmate.domain.prediction import apply_interleaving, get_initial_next_sequence, update_next_sequence
 from gigmate.utils.constants import get_pad_token_id
-from gigmate.utils.device import get_device
 from gigmate.utils.sequence_utils import get_start_of_sequence_token, pad_sequence
 
 

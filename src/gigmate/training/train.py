@@ -4,7 +4,7 @@ import torch
 from gigmate.dataset.dataset import get_data_loaders
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.training.training_model import get_training_model
-from gigmate.utils.constants import get_clearml_project_name, get_params, get_random_seed
+from gigmate.utils.constants import get_clearml_project_name, get_params
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -15,8 +15,6 @@ OUTPUT_DIRECTORY = 'output'
 UPLOAD_CHECKPOINT = True
 UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 1
 MIXED_PRECISION = True
-
-L.seed_everything(get_random_seed())
 
 
 def upload_weights(task, epoch, filepath):

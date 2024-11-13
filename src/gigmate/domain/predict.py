@@ -8,9 +8,9 @@ from gigmate.model.codec import decode, get_codec
 from gigmate.model.model import TransformerModel, get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.domain.prediction import complete_sequence
-from gigmate.utils.constants import get_pad_token_id, get_special_tokens
+from gigmate.utils.constants import get_pad_token_id
 from gigmate.utils.device import get_device, Device
-from gigmate.utils.sequence_utils import cut_sequence, remove_special_tokens, revert_interleaving
+from gigmate.utils.sequence_utils import cut_sequence, revert_interleaving
 
 NUM_OUTPUT_FILES = 5
 SUBSET_OF_TEST_DATASET_NUMBER = 0
@@ -71,8 +71,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
 if __name__ == '__main__':
     device = get_device()
     model = get_model(device=device, checkpoint_path=get_latest_model_checkpoint_path(), compile=False)
-    data_loader = get_data_loader('train')
-    #data_loader = get_data_loader('validation')
+    data_loader = get_data_loader('validation')
     codec = get_codec(device)
     frame_rate = codec.config.frame_rate
 

@@ -51,6 +51,7 @@ def predict_next_token(
         complete_outputs = sample_from_logits(outputs, temperature, no_special_tokens=False)
         print(f'outputs: {complete_outputs.shape} {complete_outputs}')
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
+        print(outputs.shape, outputs)
         predicted_tokens = sample_from_logits(outputs, temperature, no_special_tokens=False).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
         print(f"Predicted token is {predicted_tokens}")
         

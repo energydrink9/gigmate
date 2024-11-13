@@ -1,4 +1,4 @@
-import sounddevice as sd  # Changed from pyaudio to sounddevice
+import sounddevice as sd
 import numpy as np
 from scipy import signal
 
@@ -6,7 +6,7 @@ from scipy import signal
 class AudioSyncTester:
     def __init__(self):
         self.CHUNK = 1024
-        self.FORMAT = 'float32'  # Updated format for sounddevice
+        self.FORMAT = 'float32'
         self.CHANNELS = 1
         self.RATE = 44100
         self.RECORD_SECONDS = 2
