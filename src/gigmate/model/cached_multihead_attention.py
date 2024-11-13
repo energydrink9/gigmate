@@ -4,8 +4,6 @@ from typing import Callable, List, Optional, Tuple, cast
 import torch
 from torch import Tensor
 from torch.nn.modules.linear import Linear
-from torch.nn.init import xavier_uniform_
-from torch.nn.parameter import Parameter
 import torch.overrides
 import torch.utils.backend_registration
 import torch.utils._python_dispatch
@@ -106,7 +104,7 @@ class CachedMultiheadAttention(torch.nn.Module):
 
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
 
-        self.in_proj_weight = Parameter(torch.empty((3 * embed_dim, embed_dim)))
+        self.in_proj = Linear(embed_dim, 3 * embed_dim, bias=False)
         self.out_proj = Linear(embed_dim, embed_dim, bias=False)
 
     def forward(
@@ -130,7 +128,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             value,
             self.embed_dim,
             self.num_heads,
-            in_proj_weight=self.in_proj_weight,
+            in_proj_weight=self.in_proj.weight,
             out_proj_weight=self.out_proj.weight,
             sliding_window_size=self.sliding_window_size,
             use_cache=use_cache,
@@ -153,7 +151,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         value: Tensor,
         embed_dim_to_check: int,
         num_heads: int,
-        in_proj_weight: Optional[Tensor],
+        in_proj_weight: Tensor,
         out_proj_weight: Tensor,
         sliding_window_size: int,
         use_cache: bool = False,
@@ -187,8 +185,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         #
         # compute in-projection
         #
-        assert in_proj_weight is not None, "use_separate_proj_weight is False but in_proj_weight is None"
-        q, k, v = _in_projection_packed(query, key, value, in_proj_weight, None)
+        q, k, v = _in_projection_packed(query, key, value, in_proj_weight)
 
         updated_cache: Optional[Tensor] = None
 
@@ -317,12 +314,11 @@ def _in_projection_packed(
     k: Tensor,
     v: Tensor,
     w: Tensor,
-    b: Optional[Tensor] = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
     E = q.size(-1)
     if q is k:
         # self-attention
-        proj = linear(q, w, b)
+        proj = linear(q, w, None)
         # reshape to 3, E and not E, 3 is deliberate for better memory coalescing and keeping same order as chunk()
         proj = proj.unflatten(-1, (3, E)).unsqueeze(0).transpose(0, -2).squeeze(-2).contiguous()
         return proj[0], proj[1], proj[2]
@@ -330,12 +326,8 @@ def _in_projection_packed(
     else:
         # cross attention
         w_q, w_kv = w.split([E, E * 2])
-        if b is None:
-            b_q = b_kv = None
-        else:
-            b_q, b_kv = b.split([E, E * 2])
-        q_proj = linear(q, w_q, b_q)
-        kv_proj = linear(k, w_kv, b_kv)
+        q_proj = linear(q, w_q, None)
+        kv_proj = linear(k, w_kv, None)
         # reshape to 2, E and not E, 2 is deliberate for better memory coalescing and keeping same order as chunk()
         kv_proj = (
             kv_proj.unflatten(-1, (2, E))

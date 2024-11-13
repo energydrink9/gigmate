@@ -238,7 +238,7 @@ class TrainingModel(L.LightningModule):
 
     def training_step(self, batch: DatasetBatch, batch_idx: int):
         curriculum_learning_step = self.get_curriculum_learning_step()
-        self.log_metric(None, None, 'curriculum-learning-step', curriculum_learning_step, interval='step')
+        self.log_metric(None, None, 'curriculum-learning', curriculum_learning_step, interval='step')
         
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
         logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
