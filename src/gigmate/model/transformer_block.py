@@ -15,7 +15,7 @@ class TransformerBlock(nn.Module):
         self.self_attention = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size)
         
         if self.has_cross_attention is True:
-            self.cross_attention = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size)
+            self.cross_attention = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size, is_cross_attention=True)
             self.layernorm2 = nn.LayerNorm(d_model)
             self.dropout2 = nn.Dropout(dropout)
         else:

@@ -365,7 +365,8 @@ def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
 
 def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Task, steps_per_epoch: int) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
     model = get_model(params, checkpoint_path, device)
-    if device == 'cuda' and ENABLE_QUANTIZATION is True:
+
+    if ENABLE_QUANTIZATION is True and False:
         quantizer = get_quantizer()
         model = quantizer.prepare(model)
     else:
@@ -382,7 +383,8 @@ def get_training_model(params, checkpoint_path: Optional[str], device: str, task
     )
 
     # TODO: fix torch compile full graph
-    backend = 'aot_eager' if device == 'mps' or device == 'cuda' else 'inductor'
+    backend = 'inductor' if device == 'cuda' else 'aot_eager'
+    backend = 'aot_eager'  # TODO: fix inductor compilation with flex attention
     training_model = cast(TrainingModel, torch.compile(training_model, fullgraph=False, backend=backend))
     
     return training_model, quantizer

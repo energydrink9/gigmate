@@ -3,16 +3,14 @@ import functools
 from typing import Callable, List, Optional, Tuple, cast
 import torch
 from torch import Tensor
-from torch.nn.modules.linear import Linear
+from torch.nn.modules import Linear, Identity
 import torch.overrides
 import torch.utils.backend_registration
 import torch.utils._python_dispatch
 import torch._C
 import torch.fx.experimental.proxy_tensor
-from torch.nn.attention.flex_attention import flex_attention, create_block_mask, _mask_mod_signature, _score_mod_signature, BlockMask
-
-pad = torch._C._nn.pad,
-linear = torch._C._nn.linear
+from torch.nn.attention.flex_attention import flex_attention, _mask_mod_signature, _score_mod_signature, BlockMask, create_block_mask, _ModificationType
+import torch.nn.attention.flex_attention
 
 
 def generate_alibi_bias(H: int) -> _score_mod_signature:
@@ -42,6 +40,7 @@ def get_alibi_mask(shape: Tuple[int, int, int, int], fn: Callable[[Tensor, Tenso
     return result.to(device)
 
 
+@functools.lru_cache(maxsize=None)
 def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int], device_type: str) -> _mask_mod_signature:
     """Generates a sliding window attention mask with a given window size.
     Args:
@@ -69,15 +68,25 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
 
 @functools.lru_cache(maxsize=2)
 def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
-    return create_block_mask(
-        mask_mod=generate_sliding_window_mask_mod(sliding_window_size, cache_index, device),
+
+    mask_mod = generate_sliding_window_mask_mod(sliding_window_size, cache_index, device)
+
+    # Workaround to address error in the flex attention code while inspecting the mask_mod function. The error only occurs when using full graph compilation.
+    tmp = torch.nn.attention.flex_attention._get_mod_type
+    torch.nn.attention.flex_attention._get_mod_type = lambda fn: _ModificationType.MASK_MOD
+
+    mask = create_block_mask(
+        mask_mod=mask_mod,
         B=None,
         H=None,
         Q_LEN=q_len,
         KV_LEN=kv_len,
         device=device,
-        _compile=device != 'mps',
     )
+
+    torch.nn.attention.flex_attention._get_mod_type = tmp
+
+    return mask
 
 
 class CachedMultiheadAttention(torch.nn.Module):
@@ -87,8 +96,10 @@ class CachedMultiheadAttention(torch.nn.Module):
     embed_dim: int
     num_heads: int
     head_dim: int
+    in_proj_q: torch.nn.Module
+    in_proj_kv: torch.nn.Module
 
-    def __init__(self, embed_dim: int, num_heads: int, sliding_window_size: int) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, sliding_window_size: int, is_cross_attention=False) -> None:
         if embed_dim <= 0 or num_heads <= 0:
             raise ValueError(
                 f"embed_dim and num_heads must be greater than 0,"
@@ -101,10 +112,17 @@ class CachedMultiheadAttention(torch.nn.Module):
         self.head_dim = embed_dim // num_heads
         self.sliding_window_size = sliding_window_size
         self.alibi_score_mod = generate_alibi_bias(num_heads)
+        self.is_cross_attention = is_cross_attention
 
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
 
-        self.in_proj = Linear(embed_dim, 3 * embed_dim, bias=False)
+        if is_cross_attention is True:
+            self.in_proj_q = Linear(embed_dim, embed_dim, bias=False)
+            self.in_proj_kv = Linear(embed_dim, 2 * embed_dim, bias=False)
+        else:
+            self.in_proj_q = Linear(embed_dim, 3 * embed_dim, bias=False)
+            self.in_proj_kv = Identity()
+        
         self.out_proj = Linear(embed_dim, embed_dim, bias=False)
 
     def forward(
@@ -121,6 +139,9 @@ class CachedMultiheadAttention(torch.nn.Module):
             inverted_key_values: bool = False,
             causal: bool = True,
     ) -> Tuple[Tensor, Optional[Tensor]]:
+        
+        if self.is_cross_attention is False and not (query is key and query is value):
+            raise Exception('Self attention must have same query, key and value') 
 
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
             query,
@@ -128,8 +149,10 @@ class CachedMultiheadAttention(torch.nn.Module):
             value,
             self.embed_dim,
             self.num_heads,
-            in_proj_weight=self.in_proj.weight,
-            out_proj_weight=self.out_proj.weight,
+            in_proj_layer_q=self.in_proj_q,
+            in_proj_layer_kv=self.in_proj_kv,
+            is_cross_attention=self.is_cross_attention,
+            out_proj_layer=self.out_proj,
             sliding_window_size=self.sliding_window_size,
             use_cache=use_cache,
             cache=None if self.training or not use_cache else cache,
@@ -151,8 +174,10 @@ class CachedMultiheadAttention(torch.nn.Module):
         value: Tensor,
         embed_dim_to_check: int,
         num_heads: int,
-        in_proj_weight: Tensor,
-        out_proj_weight: Tensor,
+        in_proj_layer_q: torch.nn.Module,
+        in_proj_layer_kv: torch.nn.Module,
+        is_cross_attention: bool,
+        out_proj_layer: Linear,
         sliding_window_size: int,
         use_cache: bool = False,
         cache: Optional[Tensor] = None,
@@ -185,7 +210,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         #
         # compute in-projection
         #
-        q, k, v = _in_projection_packed(query, key, value, in_proj_weight)
+        q, k, v = _in_projection_packed(query, key, value, in_proj_layer_q, in_proj_layer_kv, is_cross_attention)
 
         updated_cache: Optional[Tensor] = None
 
@@ -262,7 +287,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
 
-        attn_output = linear(attn_output, out_proj_weight, None)
+        attn_output = out_proj_layer(attn_output)
         attn_output = attn_output.view(tgt_len, bsz, attn_output.size(1))
 
         return attn_output, updated_cache
@@ -313,21 +338,28 @@ def _in_projection_packed(
     q: Tensor,
     k: Tensor,
     v: Tensor,
-    w: Tensor,
+    in_proj_layer_q: torch.nn.Module,
+    in_proj_layer_kv: torch.nn.Module,
+    is_cross_attention: bool,
 ) -> tuple[Tensor, Tensor, Tensor]:
+    
     E = q.size(-1)
-    if q is k:
+
+    if is_cross_attention is False:
+
         # self-attention
-        proj = linear(q, w, None)
+        proj = in_proj_layer_q(q)
+
         # reshape to 3, E and not E, 3 is deliberate for better memory coalescing and keeping same order as chunk()
         proj = proj.unflatten(-1, (3, E)).unsqueeze(0).transpose(0, -2).squeeze(-2).contiguous()
         return proj[0], proj[1], proj[2]
 
     else:
+        
         # cross attention
-        w_q, w_kv = w.split([E, E * 2])
-        q_proj = linear(q, w_q, None)
-        kv_proj = linear(k, w_kv, None)
+        q_proj = in_proj_layer_q(q)
+        kv_proj = in_proj_layer_kv(k)
+        
         # reshape to 2, E and not E, 2 is deliberate for better memory coalescing and keeping same order as chunk()
         kv_proj = (
             kv_proj.unflatten(-1, (2, E))

@@ -139,15 +139,15 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
         load_ckpt(model, checkpoint_path, device)
 
     if compile is True:
+        # inductor does not support mps just yet
+        backend = 'inductor' if device == 'cuda' else 'aot_eager'
+        backend = 'aot_eager'  # TODO: fix inductor compilation with flex attention
         # TODO: fix torch compile full graph
-        backend = 'aot_eager' if device == 'mps' or device == 'cuda' else 'inductor'
         model = cast(TransformerModel, torch.compile(model, fullgraph=False, backend=backend))
 
-    # TODO: enable quantization if on CUDA
     if device == 'cuda':
-        # Probably the next line is not needed when quantization is enabled as it would be taken care of by torchao
-        torch.set_float32_matmul_precision('high')
-        
+        # Maybe the next line is not needed when quantization is enabled as it would be taken care of by torchao?
+        torch.set_float32_matmul_precision('high')        
         if ENABLE_QUANTIZATION is True:
             model = torchao.autoquant(model)
 
