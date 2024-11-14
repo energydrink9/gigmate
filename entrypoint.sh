@@ -22,4 +22,5 @@ poetry run pip install --upgrade --force-reinstall --pre torch torchaudio torchv
 poetry run pip install "numpy==1.26.4"
 
 echo "Running script"
+export ENV='prod'
 poetry run --no-interaction --no-ansi python -m gigmate.training.train

@@ -106,7 +106,7 @@ def get_pred_and_target_audio(logit: Tensor, target: Tensor, sequence_length: in
 
 
 class TrainingModel(L.LightningModule):
-    def __init__(self, model, learning_rate: float, max_learning_rate: float, vocab_size: int, codebooks: int, steps_per_epoch: int, logger: Logger):
+    def __init__(self, model, learning_rate: float, max_learning_rate: float, vocab_size: int, codebooks: int, steps_per_epoch: int, logger: Optional[Logger]):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
@@ -147,7 +147,7 @@ class TrainingModel(L.LightningModule):
         greedy_lr_scheduler = GreedyLR(
             optimizer,
             initial_lr=self.learning_rate,
-            total_steps=self.steps_per_epoch // 16,
+            total_steps=self.steps_per_epoch // 32,
             max_lr=self.max_learning_rate,
             patience=2,
             window=6,
@@ -337,22 +337,23 @@ class TrainingModel(L.LightningModule):
             target_audio_path = os.path.join(TEMP_DIR, 'target_audio.wav')
             save_audio(path=pred_audio_path, wav=pred_audio.to(dtype=torch.float32), sample_rate=pred_audio_sr)
             save_audio(path=target_audio_path, wav=target_audio.to(dtype=torch.float32), sample_rate=target_audio_sr)
-            self.task_logger.report_media(
-                title='Predicted audio',
-                series=f'{index}',
-                iteration=self.current_epoch,
-                local_path=pred_audio_path,
-                file_extension='.wav',
-                max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
-            )
-            self.task_logger.report_media(
-                title='Target audio',
-                series=f'{index}',
-                iteration=self.current_epoch,
-                local_path=target_audio_path,
-                file_extension='.wav',
-                max_history=1,
-            )
+            if self.task_logger is not None:
+                self.task_logger.report_media(
+                    title='Predicted audio',
+                    series=f'{index}',
+                    iteration=self.current_epoch,
+                    local_path=pred_audio_path,
+                    file_extension='.wav',
+                    max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
+                )
+                self.task_logger.report_media(
+                    title='Target audio',
+                    series=f'{index}',
+                    iteration=self.current_epoch,
+                    local_path=target_audio_path,
+                    file_extension='.wav',
+                    max_history=1,
+                )
         except Exception as e:
             print('Error while generating predicted / target audio samples')
             print(e)
@@ -363,7 +364,7 @@ def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
     return Int8DynActInt4WeightQATQuantizer()
 
 
-def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Task, steps_per_epoch: int) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
+def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
     model = get_model(params, checkpoint_path, device)
 
     if ENABLE_QUANTIZATION is True and False:
@@ -379,7 +380,7 @@ def get_training_model(params, checkpoint_path: Optional[str], device: str, task
         vocab_size=params['vocab_size'],
         codebooks=params['codebooks'],
         steps_per_epoch=steps_per_epoch,
-        logger=task.get_logger()
+        logger=task.get_logger() if task is not None else None
     )
 
     # TODO: fix torch compile full graph

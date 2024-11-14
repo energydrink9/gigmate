@@ -72,8 +72,8 @@ def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, 
     mask_mod = generate_sliding_window_mask_mod(sliding_window_size, cache_index, device)
 
     # Workaround to address error in the flex attention code while inspecting the mask_mod function. The error only occurs when using full graph compilation.
-    tmp = torch.nn.attention.flex_attention._get_mod_type
-    torch.nn.attention.flex_attention._get_mod_type = lambda fn: _ModificationType.MASK_MOD
+    # tmp = torch.nn.attention.flex_attention._get_mod_type
+    # torch.nn.attention.flex_attention._get_mod_type = lambda fn: _ModificationType.MASK_MOD
 
     mask = create_block_mask(
         mask_mod=mask_mod,
@@ -84,7 +84,7 @@ def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, 
         device=device,
     )
 
-    torch.nn.attention.flex_attention._get_mod_type = tmp
+    # torch.nn.attention.flex_attention._get_mod_type = tmp
 
     return mask
 

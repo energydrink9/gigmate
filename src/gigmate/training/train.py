@@ -1,20 +1,26 @@
 import os
+from typing import Optional
 from clearml import Task
 import torch
+import lightning as L
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.loggers import TensorBoardLogger
+from torch.utils.data import DataLoader
+
 from gigmate.dataset.dataset import get_data_loaders
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.training.training_model import get_training_model
 from gigmate.utils.constants import get_clearml_project_name, get_params
-import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
-from lightning.pytorch.loggers import TensorBoardLogger
 from gigmate.utils.device import get_device
+from gigmate.utils.env import get_environment
 
+ENVIRONMENT = get_environment()
 DEBUG = False
 OUTPUT_DIRECTORY = 'output'
 UPLOAD_CHECKPOINT = True
 UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 1
 MIXED_PRECISION = True
+USE_CLEARML = ENVIRONMENT != 'dev'
 
 
 def upload_weights(task, epoch, filepath):
@@ -40,7 +46,7 @@ def init_clearml_task(params):
 
     # Workaround to prevent pytorch.compile errors due to builtins patching performed by clearml
     import builtins
-    builtins.__import__ = builtins.__org_import__
+    builtins.__import__ = builtins.__org_import__  # type: ignore
 
     return task
 
@@ -55,7 +61,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
         upload_weights(self.task, trainer.current_epoch, filepath)
 
 
-def train_model(task, params, device, output_dir, train_loader, validation_loader, ckpt_path=None):
+def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, ckpt_path: Optional[str] = None):
     accumulate_grad_batches = params['accumulate_grad_batches']
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
     training_model, quantizer = get_training_model(params, ckpt_path, device, task, steps_per_epoch)
@@ -91,7 +97,7 @@ def train_model(task, params, device, output_dir, train_loader, validation_loade
         detect_anomaly=DEBUG,
         deterministic='warn',
         check_val_every_n_epoch=1,
-        val_check_interval=0.5,  # Check validation set twice per epoch
+        val_check_interval=0.25,  # Check validation set multiple times per epoch
     )
     
     trainer.fit(training_model, train_loader, validation_loader)
@@ -108,7 +114,10 @@ if __name__ == '__main__':
     params = get_params()
     print(f'Running with parameters: {params}')
 
-    task = init_clearml_task(params)
+    task = None
+
+    if USE_CLEARML is True:
+        task = init_clearml_task(params)
 
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
