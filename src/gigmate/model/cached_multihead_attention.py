@@ -1,5 +1,4 @@
 
-import functools
 from typing import Callable, List, Optional, Tuple, cast
 import torch
 from torch import Tensor
@@ -9,11 +8,11 @@ import torch.utils.backend_registration
 import torch.utils._python_dispatch
 import torch._C
 import torch.fx.experimental.proxy_tensor
-from torch.nn.attention.flex_attention import flex_attention, _mask_mod_signature, _score_mod_signature, BlockMask, create_block_mask, _ModificationType
+from torch.nn.attention.flex_attention import flex_attention, _mask_mod_signature, _score_mod_signature, BlockMask, create_block_mask, _ModificationType, _DEFAULT_SPARSE_BLOCK_SIZE
 import torch.nn.attention.flex_attention
 
 
-def generate_alibi_bias(H: int) -> _score_mod_signature:
+def generate_alibi_bias(H: int, max_kv_idx: int, invert: bool = False) -> _score_mod_signature:
     """Returns an alibi bias score_mod given the number of heads H
 
     Args:
@@ -25,22 +24,13 @@ def generate_alibi_bias(H: int) -> _score_mod_signature:
 
     def alibi_mod(score, b, h, q_idx, kv_idx):
         scale = torch.exp2(-((h + 1) * 8.0 / H))
-        bias = (q_idx - kv_idx) * scale
+        bias_val = q_idx + (max_kv_idx - kv_idx) if invert else (q_idx - kv_idx)
+        bias = bias_val * scale
         return score + bias
 
     return alibi_mod
 
 
-def get_alibi_mask(shape: Tuple[int, int, int, int], fn: Callable[[Tensor, Tensor, Tensor, Tensor], Tensor], device: str) -> Tensor:
-
-    indices = [torch.arange(dim, device=device) for dim in shape]    
-    grid = torch.meshgrid(*indices, indexing='ij')
-    result = fn(*grid)
-    
-    return result.to(device)
-
-
-@functools.lru_cache(maxsize=None)
 def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int], device_type: str) -> _mask_mod_signature:
     """Generates a sliding window attention mask with a given window size.
     Args:
@@ -54,7 +44,7 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
     def causal_sliding_padded_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
         return (q_idx >= kv_idx) & (q_idx - kv_idx <= window_size)
 
-    # Converting the cache index to a tensor, because PyTorch raises an error it's not
+    # Converting the cache index to a tensor, because PyTorch raises an error if it's not
     cache_index_tensor = torch.tensor(cache_index, device=device_type) if cache_index is not None else None
     
     def incremental_causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
@@ -66,14 +56,12 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
         return causal_sliding_padded_mask
 
 
-@functools.lru_cache(maxsize=2)
-def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str) -> BlockMask:
+def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str, block_size: Optional[int] = None) -> BlockMask:
 
     mask_mod = generate_sliding_window_mask_mod(sliding_window_size, cache_index, device)
-
     # Workaround to address error in the flex attention code while inspecting the mask_mod function. The error only occurs when using full graph compilation.
-    # tmp = torch.nn.attention.flex_attention._get_mod_type
-    # torch.nn.attention.flex_attention._get_mod_type = lambda fn: _ModificationType.MASK_MOD
+    tmp = torch.nn.attention.flex_attention._get_mod_type
+    torch.nn.attention.flex_attention._get_mod_type = lambda fn: _ModificationType.MASK_MOD
 
     mask = create_block_mask(
         mask_mod=mask_mod,
@@ -82,12 +70,86 @@ def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, 
         Q_LEN=q_len,
         KV_LEN=kv_len,
         device=device,
+        BLOCK_SIZE=block_size if block_size is not None else _DEFAULT_SPARSE_BLOCK_SIZE,
     )
 
-    # torch.nn.attention.flex_attention._get_mod_type = tmp
+    torch.nn.attention.flex_attention._get_mod_type = tmp
 
     return mask
 
+
+def get_score_mod(
+        causal: bool,
+        sliding_window_size: int,
+        cache_index: Optional[int],
+        use_cache: bool,
+        alibi_score_mod,
+        sequence_lengths: Optional[List[int]],
+        kv_sequence_lengths: Optional[List[int]],
+        inverted_query: bool,
+        inverted_key_values: bool,
+        tgt_len: int,
+        src_len: int,
+        device_type: str,
+):
+
+    tgt_len_tensor = torch.tensor(tgt_len, device=device_type)
+    src_len_tensor = torch.tensor(src_len, device=device_type)
+
+    if sequence_lengths is not None:
+        sequence_lengths_tensor = torch.tensor(sequence_lengths, device=device_type)
+    else:
+        sequence_lengths_tensor = None
+
+    if kv_sequence_lengths is not None:
+        kv_sequence_lengths_tensor = torch.tensor(kv_sequence_lengths, device=device_type)
+    else:
+        kv_sequence_lengths_tensor = None
+
+    if kv_sequence_lengths is not None:
+        for length in kv_sequence_lengths:
+            if length <= 0:
+                print('Warning: the length of kv sequence length is less or equal to 0')
+
+    def sliding_window_causal(score, b, h, q_idx, kv_idx):
+        causal_score = torch.where(q_idx >= kv_idx, 0., float('-inf'))
+        window_score = torch.where(q_idx - kv_idx <= sliding_window_size, 0., float('-inf'))
+
+        return score + causal_score + window_score
+
+    def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
+        q_idx_override = torch.tensor(cache_index, device=q_idx.device.type) if use_cache and cache_index is not None else q_idx
+        alibi_score = alibi_score_mod(score, b, h, q_idx_override, kv_idx)
+        if causal is True:
+            alibi_score = sliding_window_causal(alibi_score, b, h, q_idx_override, kv_idx)
+        
+        padding_score_q = None
+        padding_score_kv = None
+
+        if sequence_lengths_tensor is not None:
+            sequence_length = sequence_lengths_tensor[b]
+            if inverted_query is True:
+                padding_score_q = torch.where(q_idx >= tgt_len_tensor - sequence_length, 0., float('-inf'))
+            else:
+                padding_score_q = torch.where(q_idx < sequence_length, 0., float('-inf'))
+
+        if kv_sequence_lengths_tensor is not None:
+            kv_sequence_length = kv_sequence_lengths_tensor[b]
+            if inverted_key_values is True:
+                padding_score_kv = torch.where(kv_idx >= src_len_tensor - kv_sequence_length, 0., float('-inf'))
+            else:
+                padding_score_kv = torch.where(kv_idx < kv_sequence_length, 0., float('-inf'))
+
+        if padding_score_q is not None and padding_score_kv is not None:
+            return alibi_score + padding_score_q + padding_score_kv
+        elif padding_score_q is not None:
+            return alibi_score + padding_score_q
+        elif padding_score_kv is not None:
+            return alibi_score + padding_score_kv
+        else:
+            return alibi_score
+
+    return score_mod
 
 class CachedMultiheadAttention(torch.nn.Module):
 
@@ -111,7 +173,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
         self.sliding_window_size = sliding_window_size
-        self.alibi_score_mod = generate_alibi_bias(num_heads)
+        self.alibi_score_mod = generate_alibi_bias(num_heads, sliding_window_size, invert=is_cross_attention)
         self.is_cross_attention = is_cross_attention
 
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
@@ -230,59 +292,26 @@ class CachedMultiheadAttention(torch.nn.Module):
         q = q.view(bsz, num_heads, tgt_len, head_dim)
         k = k.view(bsz, num_heads, src_len, head_dim)
         v = v.view(bsz, num_heads, src_len, head_dim)
-
+        
         if causal:
-            block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=q.device.type)
+            block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=cast(str, q.device), block_size=32)
         else:
             block_mask = None
 
-        if sequence_lengths is not None:
-            sequence_lengths_tensor = torch.tensor(sequence_lengths, device=q.device.type)
-        else:
-            sequence_lengths_tensor = None
-
-        if kv_sequence_lengths is not None:
-            kv_sequence_lengths_tensor = torch.tensor(kv_sequence_lengths, device=q.device.type)
-        else:
-            kv_sequence_lengths_tensor = None
-
-        tgt_len_tensor = torch.tensor(tgt_len, device=q.device.type)
-        src_len_tensor = torch.tensor(src_len, device=q.device.type)
-
-        if kv_sequence_lengths is not None:
-            for length in kv_sequence_lengths:
-                if length <= 0:
-                    print('Warning: the length of kv sequence length is less or equal to 0')
-
-        def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
-            q_idx_override = torch.tensor(cache_index, device=q_idx.device) if use_cache and cache_index is not None else q_idx
-            alibi_score = self.alibi_score_mod(score, b, h, q_idx_override, kv_idx)
-            
-            padding_score_q = None
-            padding_score_kv = None
-
-            if sequence_lengths_tensor is not None:
-                sequence_length = sequence_lengths_tensor[b]
-                if inverted_query is True:
-                    padding_score_q = torch.where(q_idx >= tgt_len_tensor - sequence_length, 0., float('-inf'))
-                else:
-                    padding_score_q = torch.where(q_idx < sequence_length, 0., float('-inf'))
-
-            if kv_sequence_lengths_tensor is not None:
-                kv_sequence_length = kv_sequence_lengths_tensor[b]
-                if inverted_key_values is True:
-                    padding_score_kv = torch.where(kv_idx >= src_len_tensor - kv_sequence_length, 0., float('-inf'))
-                else:
-                    padding_score_kv = torch.where(kv_idx < kv_sequence_length, 0., float('-inf'))
-
-            if padding_score_q is not None and padding_score_kv is not None:
-                return alibi_score + padding_score_q + padding_score_kv
-            elif padding_score_q is not None:
-                return alibi_score + padding_score_q
-            elif padding_score_kv is not None:
-                return alibi_score + padding_score_kv
-            else:
-                return alibi_score
+        score_mod = get_score_mod(
+            causal,
+            sliding_window_size,
+            cache_index,
+            use_cache,
+            self.alibi_score_mod,
+            sequence_lengths,
+            kv_sequence_lengths,
+            inverted_query,
+            inverted_key_values,
+            tgt_len,
+            src_len,
+            q.device.type,
+        )
 
         attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)

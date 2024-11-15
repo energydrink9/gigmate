@@ -1,13 +1,20 @@
-from typing import Optional
+from typing import Optional, cast
 from clearml import Task
 from gigmate.utils.constants import get_clearml_project_name
 
-LATEST_TASK_CHECKPOINT_ID = None  # 'ebb70c69b90e460e95a874b1c36cf9c0'
-ARTIFACT_NAME = 'weights-epoch-13'
+LATEST_TASK_CHECKPOINT_ID = None  # '5af742b55f8f4786a5356a99c3f4943e'
+ARTIFACT_NAME = 'weights-epoch-7'
+
+
+def get_task(task_id: Optional[str] = LATEST_TASK_CHECKPOINT_ID) -> Optional[Task]:
+    if task_id is None:
+        return None
+
+    return Task.get_task(task_id=task_id, project_name=get_clearml_project_name())
 
 
 def get_task_artifact(task_id: str, artifact_name: str):
-    task = Task.get_task(task_id=task_id, project_name=get_clearml_project_name())
+    task = cast(Task, get_task(task_id))
     return task.artifacts[artifact_name].get_local_copy()
 
 

@@ -6,34 +6,14 @@ from torch import Tensor
 from gigmate.dataset.dataset import SequenceLengths
 from gigmate.model.decoder import Decoder
 from gigmate.model.encoder import Encoder
+from gigmate.model.utils import compile_model
 from gigmate.utils.constants import get_pad_token_id, get_params
 from gigmate.utils.device import Device
 
 ENABLE_QUANTIZATION = False
 
-# [1]. Use alibi positional embeddings
-# [2]. Use causal local attention
-# [3]. Fix torch compile optimization
-# [4]. Apply delay interleaving pattern
-# [5]. Use Meta Encodec 32khz for encoding to tokens and decoding back to audio
-# [6]. Apply quantization aware training: https://github.com/pytorch/ao
-# [7]. Add support for stems
-# [8]. Handle padding using appropriate attention mask or builting pytorch nested tensors
-# [9]. Create music dataset
-# # [1]. Find platform
-# # [2]. Download songs on online storage
-# # [3]. Create metadata consisting in song (multiple versions), (guitar stem)
-# # [4]. Create pipeline step to add noise to the song and save separately
-# # [5]. Encode everything with EnCodec 32khz
-# # [6]. Publish
-# # [7]. Write code for the dataset (splitting and loading of song tracks for training, validation and test)
-# [10]. Define evaluation metrics (Frechet Audio Distance)
-# [11]. Finish flex attention implementation
 # 12. check out grouped query attention
-# 13. Perform training
-# 14. Evaluate model
 # 15. Implement inference
-# [16]. Implement encoder-decoder version
 
 
 # Helper function for initializing weights. Ref: https://www.yadavsaurabh.com/good-initialisation-of/
@@ -78,7 +58,7 @@ class TransformerModel(nn.Module):
             encoder_cache: Optional[Tensor] = None
     ) -> Tuple[Tensor, List[Tensor], Tensor]:
 
-        x = sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)])
+        x = cast(torch.Tensor, sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)]))
 
         # TODO: Implement kv cache for the encoder
         if encoder_cache is None:
@@ -87,6 +67,7 @@ class TransformerModel(nn.Module):
                 full_track_x,
                 sequence_lengths.full_track if sequence_lengths is not None else None,
             )
+            
             # Only the last sliding window is used for cross attention
             cross_attention_src = cross_attention_src[:, -self.sliding_window_size:, :]
 
@@ -120,6 +101,7 @@ def load_ckpt(model, checkpoint_path: str, device: Device) -> None:
 
 
 def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu', compile=True) -> TransformerModel:
+
     model = TransformerModel(
         encoder_layers=params['encoder_layers'],
         decoder_layers=params['decoder_layers'],
@@ -138,17 +120,15 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
     if checkpoint_path is not None:
         load_ckpt(model, checkpoint_path, device)
 
-    if compile is True:
-        # inductor does not support mps just yet
-        backend = 'inductor' if device == 'cuda' else 'aot_eager'
-        backend = 'aot_eager'  # TODO: fix inductor compilation with flex attention
-        # TODO: fix torch compile full graph
-        model = cast(TransformerModel, torch.compile(model, fullgraph=False, backend=backend))
+    # Compiled flex attention does not work on mps device
+    if compile is True and device != 'mps':
+        model = cast(TransformerModel, compile_model(model, device_type=device))
 
     if device == 'cuda':
         # Maybe the next line is not needed when quantization is enabled as it would be taken care of by torchao?
         torch.set_float32_matmul_precision('high')        
-        if ENABLE_QUANTIZATION is True:
-            model = torchao.autoquant(model)
+
+    if ENABLE_QUANTIZATION is True:
+        model = torchao.autoquant(model)
 
     return model

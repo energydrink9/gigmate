@@ -1,8 +1,10 @@
 import random
+from typing import cast
 import pytest
 import torch
-from gigmate.model.cached_multihead_attention import CachedMultiheadAttention
+from gigmate.model.cached_multihead_attention import CachedMultiheadAttention, create_block_mask_cached, generate_alibi_bias, generate_sliding_window_mask_mod, get_score_mod
 from gigmate.utils.constants import get_random_seed
+from gigmate.utils.device import get_device
 
 BATCH_SIZE = 2
 SEQ_LEN = 10
@@ -208,3 +210,191 @@ def skip_test_multihead_attention_with_cache_full_forward_pass():
     attn_output_one_shot, _ = multihead_attention_one_shot(last_part_seq)
     
     assert torch.allclose(attn_output_incremental_2, attn_output_one_shot[:, -1:, :], atol=1e-4), "Forward pass output does not match expected value"
+
+
+@pytest.mark.skip(reason="Flex attention does not support cpu")
+def test_compilation():
+    class Mod(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.attn = CachedMultiheadAttention(256, 4, 64, is_cross_attention=True)
+        
+        def forward(self, x, cross_attention_input, sequence_lengths, cross_attention_sequence_lengths):
+            return self.attn(
+                x,
+                cross_attention_input,
+                cross_attention_input,
+                use_cache=False,
+                sequence_lengths=sequence_lengths,
+                kv_sequence_lengths=cross_attention_sequence_lengths,
+                inverted_key_values=False,
+                causal=True,
+            )
+
+    device = get_device()
+
+    if device == 'cuda':
+        x = torch.randn((2, 128, 256)).to(device)
+        cross_attention_input = torch.randn((2, 128, 256)).to(device)
+        sequence_lengths = [80, 48]
+        cross_attention_sequence_lengths = [90, 30]
+
+        model = Mod().eval()
+
+        with torch.no_grad():
+            for param in model.parameters():
+                torch.nn.init.normal_(param, mean=0.0, std=0.3)
+
+        model = torch.compile(model, backend='aot_eager', fullgraph=True)
+        model = cast(Mod, model).to(device)
+        model(x, cross_attention_input, sequence_lengths, cross_attention_sequence_lengths)
+
+    else:
+        print(f"Skipping test because flex attention does not support {device}")
+
+
+def test_generate_alibi_bias():
+
+    size = 4
+    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    tensor = torch.empty((size, size))
+
+    for i in range(0, size):
+        for j in range(0, size):
+            tensor[i, j] = bias_fn(torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(i), torch.tensor(j))
+
+    assert torch.allclose(tensor, torch.tensor([
+        [0.0000, -0.0625, -0.1250, -0.1875],
+        [0.0625, 0.0000, -0.0625, -0.1250],
+        [0.1250, 0.0625, 0.0000, -0.0625],
+        [0.1875, 0.1250, 0.0625, 0.0000]
+    ]), atol=1e-04)
+
+
+def test_generate_alibi_bias_heads():
+
+    size = 4
+    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    tensor = torch.empty((size, size))
+    head_num = 2
+
+    for i in range(0, size):
+        for j in range(0, size):
+            tensor[i, j] = bias_fn(torch.tensor(0), torch.tensor(0), torch.tensor(head_num), torch.tensor(i), torch.tensor(j))
+    print(tensor)
+    assert torch.allclose(tensor, torch.tensor([
+        [0.0000, -0.0002, -0.0005, -0.0007],
+        [0.0002, 0.0000, -0.0002, -0.0005],
+        [0.0005, 0.0002, 0.0000, -0.0002],
+        [0.0007, 0.0005, 0.0002, 0.0000]
+    ]), atol=1e-04)
+
+
+def test_generate_alibi_bias_inverted():
+
+    size = 4
+    bias_fn = generate_alibi_bias(NUM_HEADS, size, invert=True)
+    tensor = torch.empty((size, size))
+
+    for i in range(0, size):
+        for j in range(0, size):
+            tensor[i, j] = bias_fn(torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(i), torch.tensor(j))
+    
+    assert torch.allclose(tensor, torch.tensor([
+        [0.2500, 0.1875, 0.1250, 0.0625],
+        [0.3125, 0.2500, 0.1875, 0.1250],
+        [0.3750, 0.3125, 0.2500, 0.1875],
+        [0.4375, 0.3750, 0.3125, 0.2500]
+    ]), atol=1e-04)
+
+
+def test_causal_sliding_window_mask():
+    size = 5
+    window_size = 2
+
+    mask = create_block_mask_cached(
+        sliding_window_size=window_size,
+        q_len=size,
+        kv_len=size,
+        cache_index=None,
+        device='cpu',
+        block_size=1,
+    )
+
+    assert torch.equal(mask.to_dense(), torch.tensor([[[
+        [1, 0, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [1, 1, 1, 0, 0],
+        [0, 1, 1, 1, 0],
+        [0, 0, 1, 1, 1]
+    ]]]))
+
+
+def test_generate_bias():
+
+    size = 5
+    sliding_window_size = 2
+    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    score_mod = get_score_mod(
+        causal=True,
+        sliding_window_size=sliding_window_size,
+        cache_index=None,
+        use_cache=False,
+        alibi_score_mod=bias_fn,
+        sequence_lengths=[size],
+        kv_sequence_lengths=[size],
+        inverted_query=False,
+        inverted_key_values=False,
+        tgt_len=size,
+        src_len=size,
+        device_type='cpu',
+    )
+    tensor = torch.empty((size, size))
+
+    for i in range(0, size):
+        for j in range(0, size):
+            tensor[i, j] = score_mod(torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(i), torch.tensor(j))
+
+    print(tensor)
+
+    assert torch.allclose(tensor, torch.tensor([
+        [0.0000, float('-inf'), float('-inf'), float('-inf'), float('-inf')],
+        [0.0625, 0.0000, float('-inf'), float('-inf'), float('-inf')],
+        [0.1250, 0.0625, 0.0000, float('-inf'), float('-inf')],
+        [float('-inf'), 0.1250, 0.0625, 0.0000, float('-inf')],
+        [float('-inf'), float('-inf'), 0.1250, 0.0625, 0.0000]
+    ]), atol=1e-04)
+
+
+def test_generate_bias_with_sequence_lengths():
+
+    size = 5
+    sliding_window_size = 2
+    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    score_mod = get_score_mod(
+        causal=True,
+        sliding_window_size=sliding_window_size,
+        cache_index=None,
+        use_cache=False,
+        alibi_score_mod=bias_fn,
+        sequence_lengths=[2],
+        kv_sequence_lengths=[2],
+        inverted_query=False,
+        inverted_key_values=False,
+        tgt_len=size,
+        src_len=size,
+        device_type='cpu',
+    )
+    tensor = torch.empty((size, size))
+
+    for i in range(0, size):
+        for j in range(0, size):
+            tensor[i, j] = score_mod(torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(i), torch.tensor(j))
+
+    assert torch.allclose(tensor, torch.tensor([
+        [0.0000, float('-inf'), float('-inf'), float('-inf'), float('-inf')],
+        [0.0625, 0.0000, float('-inf'), float('-inf'), float('-inf')],
+        [float('-inf'), float('-inf'), float('-inf'), float('-inf'), float('-inf')],
+        [float('-inf'), float('-inf'), float('-inf'), float('-inf'), float('-inf')],
+        [float('-inf'), float('-inf'), float('-inf'), float('-inf'), float('-inf')],
+    ]), atol=1e-04)

@@ -1,8 +1,10 @@
 import random
 import pytest
 import torch
+from gigmate.dataset.dataset import SequenceLengths
 from gigmate.model.model import TransformerModel
 from gigmate.utils.constants import get_random_seed
+from gigmate.utils.device import get_device
 
 NUM_LAYERS = 2
 BATCH_SIZE = 2
@@ -33,14 +35,14 @@ def generate_query_vector(batch_size: int, seq_len: int, codebooks: int):
 def get_model(*args, **kwargs):
     torch.manual_seed(SEED)
     params = {
-        "num_layers": NUM_LAYERS,
+        "encoder_layers": NUM_LAYERS,
+        "decoder_layers": NUM_LAYERS,
         "d_model": EMBEDDING_DIM,
         "codebooks": CODEBOOKS,
         "num_heads": NUM_HEADS,
         "dff": EMBEDDING_DIM * 4,
         "vocab_size": VOCAB_SIZE,
         "sliding_window_size": SLIDING_WINDOW_SIZE,
-        "batch_size": BATCH_SIZE,
     }
     params.update(kwargs)
 
@@ -129,26 +131,27 @@ def skip_test_model_forward_pass():
     assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
 
 
-@pytest.mark.skip(reason="Flex attention does not support TorchScript yet")
 def test_compiled_model():
 
-    emb__dim = 2
-    seq_len = 3
-    num_heads = 1
-    batch_size = 1
-    query = generate_query_vector(batch_size, seq_len, CODEBOOKS)
-    model = get_model(compile=True, d_model=emb__dim, num_heads=num_heads)
-    model = torch.jit.script(model)
-    
-    output = get_token(model(query))
+    device = get_device()
 
-    expected_output = torch.tensor([[
-        [0],
-        [1],
-        [1]
-    ]])
+    if device == 'cuda':
+
+        emb__dim = 2
+        seq_len = 3
+        conditioning_seq_len = 2
+        num_heads = 1
+        batch_size = 2
+        query = generate_query_vector(batch_size, seq_len, CODEBOOKS).to(device)
+        conditioning_query = generate_query_vector(batch_size, conditioning_seq_len, CODEBOOKS).to(device)
+        sequence_lengths = SequenceLengths(full_track=[2, 2], stem=[2, 1])
+        model = get_model(d_model=emb__dim, num_heads=num_heads).to(device)
+        model = torch.compile(model, backend='aot_eager', fullgraph=True)
+        
+        model(query, conditioning_query, sequence_lengths=sequence_lengths)
     
-    assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
+    else:
+        print(f"Skipping test because flex attention does not support {device}")
 
 
 # TODO: fix and re-enable

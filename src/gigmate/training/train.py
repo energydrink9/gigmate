@@ -64,7 +64,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
 def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, ckpt_path: Optional[str] = None):
     accumulate_grad_batches = params['accumulate_grad_batches']
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
-    training_model, quantizer = get_training_model(params, ckpt_path, device, task, steps_per_epoch)
+    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch)
 
     # summary(model, input_size=(params['batch_size'], max_seq_len, vocab_size))
     print('Loaded model:')
@@ -97,13 +97,13 @@ def train_model(task: Optional[Task], params, device, output_dir: str, train_loa
         detect_anomaly=DEBUG,
         deterministic='warn',
         check_val_every_n_epoch=1,
-        val_check_interval=0.25,  # Check validation set multiple times per epoch
+        val_check_interval=0.5,  # Check validation set multiple times per epoch
     )
     
     trainer.fit(training_model, train_loader, validation_loader)
 
     model = trainer.lightning_module
-    return quantizer.convert(model) if quantizer is not None else model
+    return model
 
 
 if __name__ == '__main__':
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     print(f'Running on device: {device}')
 
     params = get_params()
-    print(f'Running with parameters: {params}')
+    print(f'Running with hyper-parameters: {params}')
 
     task = None
 

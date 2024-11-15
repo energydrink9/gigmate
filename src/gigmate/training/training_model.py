@@ -12,14 +12,14 @@ import torch.optim
 from typing import Literal
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
-from torchao.quantization.prototype.qat.api import Int8DynActInt4WeightQATQuantizer
 from torcheval.metrics import FrechetAudioDistance
 from encodec.utils import save_audio
 
 from gigmate.dataset.dataset import get_inputs_and_targets, restore_initial_sequence, DatasetBatch
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
-from gigmate.model.model import ENABLE_QUANTIZATION, get_model
+from gigmate.model.model import get_model
+from gigmate.model.utils import compile_model
 from gigmate.training.greedy_lr import GreedyLR
 from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id
 
@@ -36,6 +36,8 @@ CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
     3: 1,
 }
 CURRICULUM_LEARNING = False
+# TODO: Enable compilation of training model
+COMPILE_TRAINING_MODEL = False
 
 
 # Define the weighted cross-entropy loss function
@@ -147,7 +149,7 @@ class TrainingModel(L.LightningModule):
         greedy_lr_scheduler = GreedyLR(
             optimizer,
             initial_lr=self.learning_rate,
-            total_steps=self.steps_per_epoch // 32,
+            total_steps=self.steps_per_epoch // 16,
             max_lr=self.max_learning_rate,
             patience=2,
             window=6,
@@ -360,18 +362,8 @@ class TrainingModel(L.LightningModule):
             traceback.print_exc()
 
 
-def get_quantizer() -> Int8DynActInt4WeightQATQuantizer:
-    return Int8DynActInt4WeightQATQuantizer()
-
-
-def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int) -> Tuple[TrainingModel, Optional[Int8DynActInt4WeightQATQuantizer]]:
+def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int, compile=True) -> TrainingModel:
     model = get_model(params, checkpoint_path, device)
-
-    if ENABLE_QUANTIZATION is True and False:
-        quantizer = get_quantizer()
-        model = quantizer.prepare(model)
-    else:
-        quantizer = None
 
     training_model = TrainingModel(
         model,
@@ -383,10 +375,8 @@ def get_training_model(params, checkpoint_path: Optional[str], device: str, task
         logger=task.get_logger() if task is not None else None
     )
 
-    # TODO: fix torch compile full graph
-    backend = 'inductor' if device == 'cuda' else 'aot_eager'
-    backend = 'aot_eager'  # TODO: fix inductor compilation with flex attention
-    training_model = cast(TrainingModel, torch.compile(training_model, fullgraph=False, backend=backend))
-    
-    return training_model, quantizer
+    if compile is True and COMPILE_TRAINING_MODEL:
+        training_model = cast(TrainingModel, compile_model(training_model, device_type=device))
+
+    return training_model
 
