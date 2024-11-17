@@ -24,7 +24,8 @@ class TransformerBlock(nn.Module):
         
         self.ffn = nn.Sequential(
             nn.Linear(d_model, dff),
-            nn.ReLU(),
+            nn.GELU(approximate='tanh'),
+            nn.Dropout(dropout),
             nn.Linear(dff, d_model)
         )
         self.layernorm1 = nn.LayerNorm(d_model)
@@ -44,12 +45,12 @@ class TransformerBlock(nn.Module):
             encoder: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
 
-        norm1 = self.layernorm1(x)
+        norm_1 = self.layernorm1(x)
 
-        tgt2, cache = self.self_attention(
-            norm1,
-            norm1,
-            norm1,
+        attn_1, cache = self.self_attention(
+            norm_1,
+            norm_1,
+            norm_1,
             use_cache=use_cache,
             cache=cache,
             cache_index=cache_index,
@@ -59,25 +60,24 @@ class TransformerBlock(nn.Module):
             inverted_key_values=encoder,
         )
 
-        x = x + self.dropout1(tgt2)
+        x = x + self.dropout1(attn_1)
 
         if self.has_cross_attention is True:
-            tgt2 = self.layernorm2(x)
-            tgt2, cross_attention_cache = self.cross_attention(
-                tgt2,
+            norm_2 = self.layernorm2(x)
+            attn_2, cross_attention_cache = self.cross_attention(
+                norm_2,
                 cross_attention_src,
                 cross_attention_src,
                 use_cache=False,
                 sequence_lengths=sequence_lengths,
                 kv_sequence_lengths=cross_attention_sequence_lengths,
                 inverted_key_values=True,
-                causal=False,
             )
             
-            x = x + self.dropout2(tgt2)
+            x = x + self.dropout2(attn_2)
 
-        tgt2 = self.layernorm3(x)
-        tgt2 = self.ffn(tgt2)
-        x = x + self.dropout3(tgt2)
+        norm_3 = self.layernorm3(x)
+        ffn_output = self.ffn(norm_3)
+        x = x + self.dropout3(ffn_output)
 
         return x, cache

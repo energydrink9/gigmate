@@ -1,5 +1,5 @@
 
-from typing import Callable, List, Optional, Tuple, cast
+from typing import List, Optional, Tuple, cast
 import torch
 from torch import Tensor
 from torch.nn.modules import Linear, Identity
@@ -8,8 +8,10 @@ import torch.utils.backend_registration
 import torch.utils._python_dispatch
 import torch._C
 import torch.fx.experimental.proxy_tensor
-from torch.nn.attention.flex_attention import flex_attention, _mask_mod_signature, _score_mod_signature, BlockMask, create_block_mask, _ModificationType, _DEFAULT_SPARSE_BLOCK_SIZE
+from torch.nn.attention.flex_attention import flex_attention, _mask_mod_signature, _score_mod_signature, BlockMask, create_block_mask, _DEFAULT_SPARSE_BLOCK_SIZE
 import torch.nn.attention.flex_attention
+
+from gigmate.utils.constants import get_params
 
 
 def generate_alibi_bias(H: int, max_kv_idx: int, invert: bool = False) -> _score_mod_signature:
@@ -42,13 +44,13 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
     """
     
     def causal_sliding_padded_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
-        return (q_idx >= kv_idx) & (q_idx - kv_idx <= window_size)
+        return (q_idx >= kv_idx) & (q_idx - kv_idx < window_size)
 
     # Converting the cache index to a tensor, because PyTorch raises an error if it's not
     cache_index_tensor = torch.tensor(cache_index, device=device_type) if cache_index is not None else None
     
     def incremental_causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
-        return (kv_idx >= cast(Tensor, cache_index_tensor) - window_size) & (kv_idx <= cast(Tensor, cache_index_tensor))
+        return (kv_idx > cast(Tensor, cache_index_tensor) - window_size) & (kv_idx <= cast(Tensor, cache_index_tensor))
 
     if cache_index is not None:
         return incremental_causal_sliding_mask
@@ -56,15 +58,20 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
         return causal_sliding_padded_mask
 
 
+SLIDING_WINDOWS_SIZE = get_params()['sliding_window_size']
+
+
+def causal_sliding_padded_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
+    return (q_idx >= kv_idx) & (q_idx - kv_idx < SLIDING_WINDOWS_SIZE)
+
+
 def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str, block_size: Optional[int] = None) -> BlockMask:
 
-    mask_mod = generate_sliding_window_mask_mod(sliding_window_size, cache_index, device)
-    # Workaround to address error in the flex attention code while inspecting the mask_mod function. The error only occurs when using full graph compilation.
-    tmp = torch.nn.attention.flex_attention._get_mod_type
-    torch.nn.attention.flex_attention._get_mod_type = lambda fn: _ModificationType.MASK_MOD
+    # TODO: use mask mod computed here once the issue with Flex Attention failing is fixed
+    # mask_mod = generate_sliding_window_mask_mod(sliding_window_size, cache_index, device)
 
     mask = create_block_mask(
-        mask_mod=mask_mod,
+        mask_mod=causal_sliding_padded_mask,
         B=None,
         H=None,
         Q_LEN=q_len,
@@ -73,12 +80,10 @@ def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, 
         BLOCK_SIZE=block_size if block_size is not None else _DEFAULT_SPARSE_BLOCK_SIZE,
     )
 
-    torch.nn.attention.flex_attention._get_mod_type = tmp
-
     return mask
 
 
-def get_score_mod(
+def get_score_mod(  # noqa: C901
         causal: bool,
         sliding_window_size: int,
         cache_index: Optional[int],
@@ -92,9 +97,6 @@ def get_score_mod(
         src_len: int,
         device_type: str,
 ):
-
-    tgt_len_tensor = torch.tensor(tgt_len, device=device_type)
-    src_len_tensor = torch.tensor(src_len, device=device_type)
 
     if sequence_lengths is not None:
         sequence_lengths_tensor = torch.tensor(sequence_lengths, device=device_type)
@@ -113,7 +115,7 @@ def get_score_mod(
 
     def sliding_window_causal(score, b, h, q_idx, kv_idx):
         causal_score = torch.where(q_idx >= kv_idx, 0., float('-inf'))
-        window_score = torch.where(q_idx - kv_idx <= sliding_window_size, 0., float('-inf'))
+        window_score = torch.where(q_idx - kv_idx < sliding_window_size, 0., float('-inf'))
 
         return score + causal_score + window_score
 
@@ -129,14 +131,14 @@ def get_score_mod(
         if sequence_lengths_tensor is not None:
             sequence_length = sequence_lengths_tensor[b]
             if inverted_query is True:
-                padding_score_q = torch.where(q_idx >= tgt_len_tensor - sequence_length, 0., float('-inf'))
+                padding_score_q = torch.where(q_idx >= tgt_len - sequence_length, 0., float('-inf'))
             else:
                 padding_score_q = torch.where(q_idx < sequence_length, 0., float('-inf'))
 
         if kv_sequence_lengths_tensor is not None:
             kv_sequence_length = kv_sequence_lengths_tensor[b]
             if inverted_key_values is True:
-                padding_score_kv = torch.where(kv_idx >= src_len_tensor - kv_sequence_length, 0., float('-inf'))
+                padding_score_kv = torch.where(kv_idx >= src_len - kv_sequence_length, 0., float('-inf'))
             else:
                 padding_score_kv = torch.where(kv_idx < kv_sequence_length, 0., float('-inf'))
 
@@ -150,6 +152,7 @@ def get_score_mod(
             return alibi_score
 
     return score_mod
+
 
 class CachedMultiheadAttention(torch.nn.Module):
 
@@ -199,12 +202,11 @@ class CachedMultiheadAttention(torch.nn.Module):
             kv_sequence_lengths: Optional[List[int]] = None,
             inverted_query: bool = False,
             inverted_key_values: bool = False,
-            causal: bool = True,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         
         if self.is_cross_attention is False and not (query is key and query is value):
             raise Exception('Self attention must have same query, key and value') 
-
+        
         attn_output, updated_kv_cache = self.multi_head_attention_forward(
             query,
             key,
@@ -223,7 +225,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             kv_sequence_lengths=kv_sequence_lengths,
             inverted_query=inverted_query,
             inverted_key_values=inverted_key_values,
-            causal=causal,
+            causal=not self.is_cross_attention,
         )
 
         return attn_output.transpose(1, 0), updated_kv_cache
@@ -281,7 +283,8 @@ class CachedMultiheadAttention(torch.nn.Module):
             if cache is not None:
                 k = updated_cache[0]
                 v = updated_cache[1]
-            
+                print('s', q.shape)
+
         q = q.view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
         k = k.view(k.shape[0], bsz * num_heads, head_dim).transpose(0, 1)
         v = v.view(v.shape[0], bsz * num_heads, head_dim).transpose(0, 1)
@@ -292,7 +295,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         q = q.view(bsz, num_heads, tgt_len, head_dim)
         k = k.view(bsz, num_heads, src_len, head_dim)
         v = v.view(bsz, num_heads, src_len, head_dim)
-        
+    
         if causal:
             block_mask = create_block_mask_cached(sliding_window_size, tgt_len, src_len, cache_index, device=cast(str, q.device), block_size=32)
         else:
@@ -314,6 +317,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         )
 
         attn_output = cast(Tensor, flex_attention(q, k, v, block_mask=block_mask, score_mod=score_mod))
+    
         attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
 
         attn_output = out_proj_layer(attn_output)

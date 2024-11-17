@@ -149,11 +149,11 @@ class TrainingModel(L.LightningModule):
         greedy_lr_scheduler = GreedyLR(
             optimizer,
             initial_lr=self.learning_rate,
-            total_steps=self.steps_per_epoch // 16,
+            total_steps=self.steps_per_epoch // 24,
             max_lr=self.max_learning_rate,
-            patience=2,
-            window=6,
-            warmup=8,
+            patience=4,
+            window=5,
+            warmup=10,
         )
         return {
             "optimizer": optimizer,

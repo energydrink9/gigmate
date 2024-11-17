@@ -121,7 +121,7 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
         load_ckpt(model, checkpoint_path, device)
 
     # Compiled flex attention does not work on mps device
-    if compile is True and device != 'mps':
+    if compile is True:
         model = cast(TransformerModel, compile_model(model, device_type=device))
 
     if device == 'cuda':

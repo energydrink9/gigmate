@@ -5,6 +5,7 @@ from gigmate.dataset.dataset import SequenceLengths
 from gigmate.model.model import TransformerModel
 from gigmate.utils.constants import get_random_seed
 from gigmate.utils.device import get_device
+from typing import cast
 
 NUM_LAYERS = 2
 BATCH_SIZE = 2
@@ -19,6 +20,7 @@ SLIDING_WINDOW_SIZE = 32
 SEED = get_random_seed()
 random.seed(SEED)
 torch.manual_seed(SEED)
+DEVICE = get_device()
 
 
 def get_token(logits: torch.Tensor):
@@ -47,7 +49,6 @@ def get_model(*args, **kwargs):
     params.update(kwargs)
 
     model = TransformerModel(*args, **params)
-    model.eval()
 
     with torch.no_grad():
         for param in model.parameters():
@@ -93,49 +94,108 @@ def skip_test_model_dtype_mismatch():
         model(query)
 
 
-# TODO: fix and re-enable
-def skip_test_model_eval():
-    query = generate_query_vector(BATCH_SIZE, SEQ_LEN, CODEBOOKS)
-    model = get_model()
-    model.eval()
-    with torch.no_grad():
-        model(query)
+def test_model_eval():
+    if DEVICE == 'cuda' or DEVICE == 'mps':
+
+        seq_len = 3
+        conditioning_seq_len = 2
+        query = generate_query_vector(BATCH_SIZE, seq_len, CODEBOOKS).to(DEVICE)
+        conditioning_query = generate_query_vector(BATCH_SIZE, conditioning_seq_len, CODEBOOKS).to(DEVICE)
+        sequence_lengths = SequenceLengths(full_track=[2, 2], stem=[2, 1])
+        model = get_model(d_model=EMBEDDING_DIM, num_heads=NUM_HEADS).to(DEVICE)
+        model.eval()
+        model = torch.compile(model, backend='aot_eager', fullgraph=True)
+        
+        model(query, conditioning_query, sequence_lengths=sequence_lengths)
 
 
-# TODO: fix and re-enable
-def skip_test_model_forward_pass():
+def test_model_forward_pass():
+    if DEVICE == 'cuda' or DEVICE == 'mps':
 
-    emb__dim = 2
-    seq_len = 3
-    num_heads = 1
-    batch_size = 1
-    query = generate_query_vector(batch_size, seq_len, CODEBOOKS)
-    model = get_model(d_model=emb__dim, num_heads=num_heads)
-    
-    output = get_token(model(query))
+        seq_len = 3
+        conditioning_seq_len = 3
+        query = generate_query_vector(BATCH_SIZE, seq_len, CODEBOOKS).to(DEVICE)
+        conditioning_query = generate_query_vector(BATCH_SIZE, conditioning_seq_len, CODEBOOKS).to(DEVICE)
+        sequence_lengths = SequenceLengths(full_track=[2, 2], stem=[2, 1])
+        model = get_model(d_model=EMBEDDING_DIM, num_heads=NUM_HEADS).to(DEVICE)
+        model.eval()
 
-    # Precomputed expected output (this should be determined ahead of time)
-    expected_output = torch.tensor([[
-        [
-            [2],
-            [2],
-            [2]
-        ],
-        [
-            [0],
-            [0],
-            [0]
-        ],
-    ]])
-    
-    assert torch.equal(output, expected_output), "Forward pass output does not match expected value"
+        output = get_token(model(query, conditioning_query, sequence_lengths=sequence_lengths)[0])
 
+        # Precomputed expected output (this should be determined ahead of time)
+        expected_output = torch.tensor([
+            [
+                [
+                    [2],
+                    [2],
+                    [2]
+                ],
+                [
+                    [2],
+                    [2],
+                    [0],
+                ],
+            ],
+            [
+                [
+                    [2],
+                    [2],
+                    [2]
+                ],
+                [
+                    [0],
+                    [2],
+                    [0],
+                ],
+            ],
+        ], device=DEVICE)
+
+        assert torch.allclose(output, expected_output), "Forward pass output does not match expected value"
+
+
+def test_model_batches_are_independent():
+
+    if DEVICE == 'cuda' or DEVICE == 'mps':
+
+        max_seq_len = 5
+        conditioning_seq_len = 5
+        seq_lengths = [2, 2, 4, 1, 4, 2, 3, 3], [3, 1, 2, 4, 2, 1, 4, 4]
+        query = generate_query_vector(8, max_seq_len, CODEBOOKS).to(DEVICE)
+        conditioning_query = generate_query_vector(8, conditioning_seq_len, CODEBOOKS).to(DEVICE)
+        
+        sequence_lengths = SequenceLengths(full_track=seq_lengths[0], stem=seq_lengths[1])
+        model = get_model(d_model=EMBEDDING_DIM, num_heads=NUM_HEADS).to(DEVICE)
+        model.eval()
+        
+        model(query, conditioning_query, sequence_lengths=sequence_lengths)
+        output = model(query, conditioning_query, sequence_lengths=sequence_lengths)[0]
+        print(output.shape)
+        loss = cast(torch.Tensor, output[0].sum())
+        loss.backward()
+
+        print(query.grad)
+
+        print(model.embeddings[0])
+        embedding_weights = model.embeddings[0].weight
+
+        print(embedding_weights.shape)
+        print(embedding_weights)
+
+        # # Check gradients corresponding to the first item
+        # for token_id in first_item_tokens:
+        #     id = token_id.item()
+        #     print(id)
+        #     grad = embedding_weights.grad[id]
+        #     print(f"Token ID {id} -> Gradient {grad}")
+
+        assert False
+        
 
 def test_compiled_model():
 
     device = get_device()
 
-    if device == 'cuda':
+    if device == 'cuda' or device == 'mps':
 
         emb__dim = 2
         seq_len = 3
@@ -148,7 +208,9 @@ def test_compiled_model():
         model = get_model(d_model=emb__dim, num_heads=num_heads).to(device)
         model = torch.compile(model, backend='aot_eager', fullgraph=True)
         
-        model(query, conditioning_query, sequence_lengths=sequence_lengths)
+        result = model(query, conditioning_query, sequence_lengths=sequence_lengths)
+
+        result[0].sum().backward()
     
     else:
         print(f"Skipping test because flex attention does not support {device}")

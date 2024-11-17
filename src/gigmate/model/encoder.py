@@ -19,6 +19,8 @@ class Encoder(nn.Module):
         transformers = [self.get_transformer_block() for _ in range(num_layers)]
         self.transformer_layers = nn.ModuleList(transformers)
 
+        self.final_layer_norm = nn.LayerNorm(d_model)
+
     def get_transformer_block(self) -> TransformerBlock:
         return TransformerBlock(
             self.d_model,
@@ -36,4 +38,6 @@ class Encoder(nn.Module):
             x, updated_layer_cache = layer(x, sequence_lengths=sequence_lengths, use_cache=use_cache, cache=layer_cache, cache_index=cache_index, encoder=True)
             updated_cache.append(updated_layer_cache)
         
+        x = self.final_layer_norm(x)
+
         return x, updated_cache

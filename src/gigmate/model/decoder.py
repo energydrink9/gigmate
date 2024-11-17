@@ -19,6 +19,8 @@ class Decoder(nn.Module):
         transformers = [self.get_transformer_block() for _ in range(num_layers)]
         self.transformer_layers = nn.ModuleList(transformers)
 
+        self.final_layer_norm = nn.LayerNorm(d_model)
+
     def get_transformer_block(self) -> TransformerBlock:
         return TransformerBlock(
             self.d_model,
@@ -26,7 +28,7 @@ class Decoder(nn.Module):
             self.dff,
             sliding_window_size=self.sliding_window_size,
             dropout=self.dropout,
-            has_cross_attention=True,
+            #has_cross_attention=True,
         )
 
     def forward(
@@ -55,4 +57,6 @@ class Decoder(nn.Module):
             )
             updated_cache.append(updated_layer_cache)
         
+        x = self.final_layer_norm(x)
+
         return x, updated_cache

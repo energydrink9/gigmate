@@ -219,9 +219,9 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
             continue
 
         else:
-            # Use a partial input sequence 10% of the time
-            random_number = random.randint(0, 9)
-            use_partial_input_sequence = random_number == 0
+            # Use a partial input sequence 25% of the time
+            random_number = random.randint(1, 100)
+            use_partial_input_sequence = random_number <= 25
 
             full_track_input, full_track_sequence_length, stem_input, stem_sequence_length, target = get_model_input(
                 full_track,
