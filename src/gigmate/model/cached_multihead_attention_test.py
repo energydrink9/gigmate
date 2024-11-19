@@ -333,7 +333,7 @@ def test_compilation():
 def test_generate_alibi_bias():
 
     size = 4
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     tensor = torch.empty((size, size))
 
     for i in range(0, size):
@@ -351,7 +351,7 @@ def test_generate_alibi_bias():
 def test_generate_alibi_bias_heads():
 
     size = 4
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     tensor = torch.empty((size, size))
     head_num = 2
 
@@ -367,10 +367,10 @@ def test_generate_alibi_bias_heads():
     ]), atol=1e-04)
 
 
-def test_generate_alibi_bias_inverted():
+def test_generate_alibi_bias_cross_attention():
 
     size = 4
-    bias_fn = generate_alibi_bias(NUM_HEADS, size, invert=True)
+    bias_fn = generate_alibi_bias(NUM_HEADS, size)
     tensor = torch.empty((size, size))
 
     for i in range(0, size):
@@ -413,7 +413,7 @@ def test_generate_bias():
 
     size = 5
     sliding_window_size = 2
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     score_mod = get_score_mod(
         causal=True,
         sliding_window_size=sliding_window_size,
@@ -447,7 +447,7 @@ def test_generate_bias_with_sequence_lengths():
 
     size = 5
     sliding_window_size = 2
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     score_mod = get_score_mod(
         causal=True,
         sliding_window_size=sliding_window_size,
@@ -481,7 +481,7 @@ def test_generate_bias_with_different_sequence_lengths():
 
     size = 5
     sliding_window_size = 2
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     score_mod = get_score_mod(
         causal=False,
         sliding_window_size=sliding_window_size,
@@ -515,7 +515,7 @@ def test_generate_bias_with_sequence_lengths_and_multiple_batches():
 
     size = 5
     sliding_window_size = 2
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     score_mod = get_score_mod(
         causal=False,
         sliding_window_size=sliding_window_size,
@@ -563,7 +563,7 @@ def test_generate_bias_non_causal():
 
     size = 5
     sliding_window_size = 2
-    bias_fn = generate_alibi_bias(NUM_HEADS, size)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     score_mod = get_score_mod(
         causal=False,
         sliding_window_size=sliding_window_size,
@@ -597,7 +597,7 @@ def test_generate_bias_cross_attention():
 
     size = 5
     sliding_window_size = 2
-    bias_fn = generate_alibi_bias(NUM_HEADS, size, invert=True)
+    bias_fn = generate_alibi_bias(NUM_HEADS, size)
     score_mod = get_score_mod(
         causal=False,
         sliding_window_size=sliding_window_size,
@@ -632,7 +632,7 @@ def test_generate_bias_encoder_self_attention():
 
     size = 5
     sliding_window_size = 3
-    bias_fn = generate_alibi_bias(NUM_HEADS, size, invert=False)
+    bias_fn = generate_alibi_bias(NUM_HEADS, 0)
     score_mod = get_score_mod(
         causal=True,
         sliding_window_size=sliding_window_size,
