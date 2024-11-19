@@ -26,6 +26,7 @@ TRAINING_SET_SIZE = 1.0
 VALIDATION_SET_SIZE = 1.0
 
 RANDOM_SEED = 42
+USE_ALIBI = False
 
 # Constants
 PAD_TOKEN_ID = VOCAB_SIZE - 3  # 2045
@@ -98,3 +99,7 @@ def get_clearml_dataset_tags() -> List[str]:
 
 def get_clearml_dataset_version() -> str:
     return CLEARML_DATASET_VERSION
+
+
+def get_use_alibi() -> bool:
+    return USE_ALIBI

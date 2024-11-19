@@ -8,14 +8,14 @@ class TransformerBlock(nn.Module):
     layernorm2: Union[nn.LayerNorm, nn.Identity]
     dropout2: Union[nn.Dropout, nn.Identity]
     
-    def __init__(self, d_model: int, num_heads: int, dff: int, sliding_window_size: int, dropout: float = 0.1, has_cross_attention: bool = False):
+    def __init__(self, d_model: int, num_heads: int, dff: int, sliding_window_size: int, dropout: float = 0.1, has_cross_attention: bool = False, start_token: int = 0):
         super(TransformerBlock, self).__init__()
 
         self.has_cross_attention = has_cross_attention
         self.self_attention = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size)
         
         if self.has_cross_attention is True:
-            self.cross_attention = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size, is_cross_attention=True)
+            self.cross_attention = CachedMultiheadAttention(d_model, num_heads, sliding_window_size=sliding_window_size, start_token=start_token, is_cross_attention=True)
             self.layernorm2 = nn.LayerNorm(d_model)
             self.dropout2 = nn.Dropout(dropout)
         else:

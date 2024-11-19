@@ -2,10 +2,9 @@ import random
 import pytest
 import torch
 from gigmate.dataset.dataset import SequenceLengths
-from gigmate.model.model import TransformerModel
+from gigmate.model.model import TransformerModel, positional_encoding
 from gigmate.utils.constants import get_random_seed
 from gigmate.utils.device import get_device
-from typing import cast
 
 NUM_LAYERS = 2
 BATCH_SIZE = 2
@@ -153,42 +152,23 @@ def test_model_forward_pass():
         assert torch.allclose(output, expected_output), "Forward pass output does not match expected value"
 
 
-def test_model_batches_are_independent():
+def test_model_pos_encodings():
 
     if DEVICE == 'cuda' or DEVICE == 'mps':
 
-        max_seq_len = 5
-        conditioning_seq_len = 5
-        seq_lengths = [2, 2, 4, 1, 4, 2, 3, 3], [3, 1, 2, 4, 2, 1, 4, 4]
-        query = generate_query_vector(8, max_seq_len, CODEBOOKS).to(DEVICE)
-        conditioning_query = generate_query_vector(8, conditioning_seq_len, CODEBOOKS).to(DEVICE)
+        pos_enc = positional_encoding(5, 4)
         
-        sequence_lengths = SequenceLengths(full_track=seq_lengths[0], stem=seq_lengths[1])
-        model = get_model(d_model=EMBEDDING_DIM, num_heads=NUM_HEADS).to(DEVICE)
-        model.eval()
-        
-        model(query, conditioning_query, sequence_lengths=sequence_lengths)
-        output = model(query, conditioning_query, sequence_lengths=sequence_lengths)[0]
-        print(output.shape)
-        loss = cast(torch.Tensor, output[0].sum())
-        loss.backward()
+        expected = torch.tensor([[
+            [0.0000, 1.0000, 0.0000, 1.0000],
+            [0.8415, 0.5403, 0.0100, 0.9999],
+            [0.9093, -0.4161, 0.0200, 0.9998],
+            [0.1411, -0.9900, 0.0300, 0.9996],
+            [-0.7568, -0.6536, 0.0400, 0.9992]
+        ]])
 
-        print(query.grad)
+        print(pos_enc)
 
-        print(model.embeddings[0])
-        embedding_weights = model.embeddings[0].weight
-
-        print(embedding_weights.shape)
-        print(embedding_weights)
-
-        # # Check gradients corresponding to the first item
-        # for token_id in first_item_tokens:
-        #     id = token_id.item()
-        #     print(id)
-        #     grad = embedding_weights.grad[id]
-        #     print(f"Token ID {id} -> Gradient {grad}")
-
-        assert False
+        assert torch.allclose(pos_enc, expected, atol=1e-4)
         
 
 def test_compiled_model():

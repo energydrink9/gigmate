@@ -1,5 +1,5 @@
 
-from typing import List, Optional, Tuple, cast
+from typing import Callable, List, Optional, Tuple, cast
 import torch
 from torch import Tensor
 from torch.nn.modules import Linear, Identity
@@ -11,10 +11,13 @@ import torch.fx.experimental.proxy_tensor
 from torch.nn.attention.flex_attention import flex_attention, _mask_mod_signature, _score_mod_signature, BlockMask, create_block_mask, _DEFAULT_SPARSE_BLOCK_SIZE
 import torch.nn.attention.flex_attention
 
-from gigmate.utils.constants import get_params
+from gigmate.utils.constants import get_params, get_use_alibi
 
 
-def generate_alibi_bias(H: int, max_kv_idx: int, invert: bool = False) -> _score_mod_signature:
+USE_ALIBI = get_use_alibi()
+
+
+def generate_alibi_bias(H: int, start_index: int) -> _score_mod_signature:
     """Returns an alibi bias score_mod given the number of heads H
 
     Args:
@@ -26,7 +29,7 @@ def generate_alibi_bias(H: int, max_kv_idx: int, invert: bool = False) -> _score
 
     def alibi_mod(score, b, h, q_idx, kv_idx):
         scale = torch.exp2(-((h + 1) * 8.0 / H))
-        bias_val = q_idx + (max_kv_idx - kv_idx) if invert else (q_idx - kv_idx)
+        bias_val = (q_idx + start_index) - kv_idx
         bias = bias_val * scale
         return score + bias
 
@@ -88,7 +91,7 @@ def get_score_mod(  # noqa: C901
         sliding_window_size: int,
         cache_index: Optional[int],
         use_cache: bool,
-        alibi_score_mod,
+        alibi_score_mod: Optional[Callable],
         sequence_lengths: Optional[List[int]],
         kv_sequence_lengths: Optional[List[int]],
         inverted_query: bool,
@@ -121,9 +124,10 @@ def get_score_mod(  # noqa: C901
 
     def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
         q_idx_override = torch.tensor(cache_index, device=q_idx.device.type) if use_cache and cache_index is not None else q_idx
-        alibi_score = alibi_score_mod(score, b, h, q_idx_override, kv_idx)
+        if alibi_score_mod is not None:
+            score = alibi_score_mod(score, b, h, q_idx_override, kv_idx)
         if causal is True:
-            alibi_score = sliding_window_causal(alibi_score, b, h, q_idx_override, kv_idx)
+            score = sliding_window_causal(score, b, h, q_idx_override, kv_idx)
         
         padding_score_q = None
         padding_score_kv = None
@@ -143,13 +147,13 @@ def get_score_mod(  # noqa: C901
                 padding_score_kv = torch.where(kv_idx < kv_sequence_length, 0., float('-inf'))
 
         if padding_score_q is not None and padding_score_kv is not None:
-            return alibi_score + padding_score_q + padding_score_kv
+            return score + padding_score_q + padding_score_kv
         elif padding_score_q is not None:
-            return alibi_score + padding_score_q
+            return score + padding_score_q
         elif padding_score_kv is not None:
-            return alibi_score + padding_score_kv
+            return score + padding_score_kv
         else:
-            return alibi_score
+            return score
 
     return score_mod
 
@@ -163,8 +167,9 @@ class CachedMultiheadAttention(torch.nn.Module):
     head_dim: int
     in_proj_q: torch.nn.Module
     in_proj_kv: torch.nn.Module
+    start_token: int
 
-    def __init__(self, embed_dim: int, num_heads: int, sliding_window_size: int, is_cross_attention=False) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, sliding_window_size: int, start_token: int = 0, is_cross_attention=False) -> None:
         if embed_dim <= 0 or num_heads <= 0:
             raise ValueError(
                 f"embed_dim and num_heads must be greater than 0,"
@@ -176,7 +181,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
         self.sliding_window_size = sliding_window_size
-        self.alibi_score_mod = generate_alibi_bias(num_heads, sliding_window_size, invert=is_cross_attention)
+        self.alibi_score_mod = generate_alibi_bias(num_heads, start_token)
         self.is_cross_attention = is_cross_attention
 
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
@@ -306,7 +311,7 @@ class CachedMultiheadAttention(torch.nn.Module):
             sliding_window_size,
             cache_index,
             use_cache,
-            self.alibi_score_mod,
+            self.alibi_score_mod if USE_ALIBI else None,
             sequence_lengths,
             kv_sequence_lengths,
             inverted_query,

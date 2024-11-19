@@ -28,7 +28,8 @@ class Decoder(nn.Module):
             self.dff,
             sliding_window_size=self.sliding_window_size,
             dropout=self.dropout,
-            #has_cross_attention=True,
+            start_token=self.sliding_window_size,
+            has_cross_attention=True,
         )
 
     def forward(

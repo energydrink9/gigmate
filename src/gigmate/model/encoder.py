@@ -28,6 +28,7 @@ class Encoder(nn.Module):
             self.dff,
             sliding_window_size=self.sliding_window_size,
             dropout=self.dropout,
+            start_token=0,
         )
 
     def forward(self, x: Tensor, sequence_lengths: Optional[Tensor], use_cache: bool = False, cache: Optional[List[Tensor]] = None, cache_index: Optional[int] = None) -> Tuple[Tensor, Optional[List[Tensor]]]:
