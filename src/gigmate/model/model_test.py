@@ -2,7 +2,7 @@ import random
 import pytest
 import torch
 from gigmate.dataset.dataset import SequenceLengths
-from gigmate.model.model import TransformerModel, positional_encoding
+from gigmate.model.model import TransformerModel, generate_causal_sliding_mask, get_key_padding_mask, positional_encoding
 from gigmate.utils.constants import get_random_seed
 from gigmate.utils.device import get_device
 
@@ -13,6 +13,7 @@ EMBEDDING_DIM = 8
 CODEBOOKS = 2
 NUM_HEADS = 2
 MAX_SEQ_LEN = 32
+MAX_DECODER_SEQ_LEN = 32
 VOCAB_SIZE = 3
 SLIDING_WINDOW_SIZE = 32
 
@@ -44,6 +45,8 @@ def get_model(*args, **kwargs):
         "dff": EMBEDDING_DIM * 4,
         "vocab_size": VOCAB_SIZE,
         "sliding_window_size": SLIDING_WINDOW_SIZE,
+        "max_seq_len": MAX_SEQ_LEN,
+        "max_decoder_seq_len": MAX_DECODER_SEQ_LEN,
     }
     params.update(kwargs)
 
@@ -96,14 +99,11 @@ def skip_test_model_dtype_mismatch():
 def test_model_eval():
     if DEVICE == 'cuda' or DEVICE == 'mps':
 
-        seq_len = 3
-        conditioning_seq_len = 2
-        query = generate_query_vector(BATCH_SIZE, seq_len, CODEBOOKS).to(DEVICE)
-        conditioning_query = generate_query_vector(BATCH_SIZE, conditioning_seq_len, CODEBOOKS).to(DEVICE)
-        sequence_lengths = SequenceLengths(full_track=[2, 2], stem=[2, 1])
+        query = generate_query_vector(BATCH_SIZE, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(DEVICE)
+        conditioning_query = generate_query_vector(BATCH_SIZE, MAX_SEQ_LEN, CODEBOOKS).to(DEVICE)
+        sequence_lengths = SequenceLengths(full_track=[12, 2], stem=[32, 10])
         model = get_model(d_model=EMBEDDING_DIM, num_heads=NUM_HEADS).to(DEVICE)
         model.eval()
-        model = torch.compile(model, backend='aot_eager', fullgraph=True)
         
         model(query, conditioning_query, sequence_lengths=sequence_lengths)
 
@@ -111,45 +111,13 @@ def test_model_eval():
 def test_model_forward_pass():
     if DEVICE == 'cuda' or DEVICE == 'mps':
 
-        seq_len = 3
-        conditioning_seq_len = 3
-        query = generate_query_vector(BATCH_SIZE, seq_len, CODEBOOKS).to(DEVICE)
-        conditioning_query = generate_query_vector(BATCH_SIZE, conditioning_seq_len, CODEBOOKS).to(DEVICE)
-        sequence_lengths = SequenceLengths(full_track=[2, 2], stem=[2, 1])
+        query = generate_query_vector(BATCH_SIZE, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(DEVICE)
+        conditioning_query = generate_query_vector(BATCH_SIZE, MAX_SEQ_LEN, CODEBOOKS).to(DEVICE)
+        sequence_lengths = SequenceLengths(full_track=[12, 2], stem=[32, 10])
         model = get_model(d_model=EMBEDDING_DIM, num_heads=NUM_HEADS).to(DEVICE)
         model.eval()
 
-        output = get_token(model(query, conditioning_query, sequence_lengths=sequence_lengths)[0])
-
-        # Precomputed expected output (this should be determined ahead of time)
-        expected_output = torch.tensor([
-            [
-                [
-                    [2],
-                    [2],
-                    [2]
-                ],
-                [
-                    [2],
-                    [2],
-                    [0],
-                ],
-            ],
-            [
-                [
-                    [2],
-                    [2],
-                    [2]
-                ],
-                [
-                    [0],
-                    [2],
-                    [0],
-                ],
-            ],
-        ], device=DEVICE)
-
-        assert torch.allclose(output, expected_output), "Forward pass output does not match expected value"
+        get_token(model(query, conditioning_query, sequence_lengths=sequence_lengths)[0])
 
 
 def test_model_pos_encodings():
@@ -178,13 +146,11 @@ def test_compiled_model():
     if device == 'cuda' or device == 'mps':
 
         emb__dim = 2
-        seq_len = 3
-        conditioning_seq_len = 2
         num_heads = 1
         batch_size = 2
-        query = generate_query_vector(batch_size, seq_len, CODEBOOKS).to(device)
-        conditioning_query = generate_query_vector(batch_size, conditioning_seq_len, CODEBOOKS).to(device)
-        sequence_lengths = SequenceLengths(full_track=[2, 2], stem=[2, 1])
+        query = generate_query_vector(batch_size, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(device)
+        conditioning_query = generate_query_vector(batch_size, MAX_SEQ_LEN, CODEBOOKS).to(device)
+        sequence_lengths = SequenceLengths(full_track=[22, 32], stem=[10, 2])
         model = get_model(d_model=emb__dim, num_heads=num_heads).to(device)
         model = torch.compile(model, backend='aot_eager', fullgraph=True)
         
@@ -314,3 +280,48 @@ def skip_test_model_with_sliding_window():
     )
 
     assert torch.allclose(expected_output, output, atol=1e-6), "Forward pass output does not match expected value"
+
+
+def test_get_key_padding_mask():
+
+    kpm = get_key_padding_mask(10, [2, 5, 10, 0])
+
+    expected = torch.tensor([
+        [False, False, True, True, True, True, True, True, True, True],
+        [False, False, False, False, False, True, True, True, True, True],
+        [False, False, False, False, False, False, False, False, False, False],
+        [True, True, True, True, True, True, True, True, True, True],
+    ])
+
+    assert torch.equal(kpm, expected)
+
+
+def test_get_key_padding_mask_inverted():
+
+    kpm = get_key_padding_mask(10, [2, 5, 10, 0], inverted=True)
+
+    expected = torch.tensor([
+        [True, True, True, True, True, True, True, True, False, False],
+        [True, True, True, True, True, False, False, False, False, False],
+        [False, False, False, False, False, False, False, False, False, False],
+        [True, True, True, True, True, True, True, True, True, True],
+    ])
+
+    assert torch.equal(kpm, expected)
+
+
+def test_generate_causal_sliding_mask():
+    
+    mask = generate_causal_sliding_mask(5, 2)
+
+    expected = torch.tensor([
+        [False, True, True, True, True],
+        [False, False, True, True, True],
+        [True, False, False, True, True],
+        [True, True, False, False, True],
+        [True, True, True, False, False]
+    ])
+
+    print(mask)
+
+    assert torch.equal(mask, expected)

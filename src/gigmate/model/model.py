@@ -8,12 +8,13 @@ from gigmate.dataset.dataset import SequenceLengths
 from gigmate.model.decoder import Decoder
 from gigmate.model.encoder import Encoder
 from gigmate.model.utils import compile_model
-from gigmate.utils.constants import get_pad_token_id, get_params, get_use_alibi
+from gigmate.utils.constants import get_pad_token_id, get_params, get_use_alibi, get_use_custom_model
 from gigmate.utils.device import Device
 
 
 ENABLE_QUANTIZATION = False
 USE_ALIBI = get_use_alibi()
+USE_CUSTOM_MODEL = get_use_custom_model()
 
 # 12. check out grouped query attention
 # 15. Implement inference
@@ -41,8 +42,67 @@ def init_weights(m):
             nn.init.constant_(m.weight, 0)
 
 
+def get_key_padding_mask(max_seq_len: int, sequence_lengths: List[int], device=None, inverted: bool = False) -> Tensor:
+    batch_size = len(sequence_lengths)
+    kpm = torch.full((batch_size, max_seq_len), False, device=device)
+
+    if inverted is True:
+        for i in range(batch_size):
+            sequence_length = sequence_lengths[i]
+            kpm[i, :max_seq_len - sequence_length] = True
+    else:
+        for i in range(batch_size):
+            sequence_length = sequence_lengths[i]
+            kpm[i, sequence_length:] = True
+
+    return kpm
+
+
+def generate_causal_sliding_mask(
+    sz: int,
+    sliding_window_size: int,
+    device=None,
+    dtype: Optional[torch.dtype] = None,
+) -> Tensor:
+    if sz < 1:
+        raise ValueError("Size must be positive")
+    if sliding_window_size < 1:
+        raise ValueError("Sliding window size must be positive")
+
+    mask = torch.triu(
+        torch.ones((sz, sz), dtype=torch.bool, device=device),
+        diagonal=1,
+    )
+    
+    # If sliding window is smaller than sequence length,
+    # also mask out tokens too far in the past
+    if sliding_window_size < sz:
+        window_mask = torch.tril(
+            torch.ones((sz, sz), dtype=torch.bool, device=device),
+            diagonal=-sliding_window_size
+        )
+        mask = mask | window_mask
+    
+    return mask
+
+
 class TransformerModel(nn.Module):
-    def __init__(self, encoder_layers: int, decoder_layers: int, d_model: int, codebooks: int, num_heads: int, dff: int, vocab_size: int, max_decoder_seq_len: int, max_seq_len: int, sliding_window_size: int, dropout: float = 0.1, padding_value=0):
+    def __init__(
+        self,
+        encoder_layers: int,
+        decoder_layers: int,
+        d_model: int,
+        codebooks: int,
+        num_heads: int,
+        dff: int,
+        vocab_size: int,
+        max_decoder_seq_len: int,
+        max_seq_len: int,
+        sliding_window_size: int,
+        dropout: float = 0.1,
+        padding_value=0,
+    ):
+        
         super(TransformerModel, self).__init__()
 
         self.num_heads = num_heads
@@ -53,8 +113,21 @@ class TransformerModel(nn.Module):
         embeddings = [nn.Embedding(vocab_size, d_model, padding_idx=padding_value) for _ in range(codebooks)]
         self.embeddings = nn.ModuleList(embeddings)
 
-        self.encoder = Encoder(encoder_layers, d_model, num_heads, dff, sliding_window_size, dropout)
-        self.decoder = Decoder(decoder_layers, d_model, num_heads, dff, sliding_window_size, dropout)
+        if USE_CUSTOM_MODEL:
+            self.encoder = Encoder(encoder_layers, d_model, num_heads, dff, sliding_window_size, dropout)
+            self.decoder = Decoder(decoder_layers, d_model, num_heads, dff, sliding_window_size, dropout)
+        else:
+            self.transformer = torch.nn.Transformer(
+                d_model,
+                num_heads,
+                encoder_layers,
+                decoder_layers,
+                dff,
+                dropout,
+                activation='gelu',
+                norm_first=True,
+                batch_first=True,
+            )
         
         linears = [nn.Linear(d_model, vocab_size) for _ in range(codebooks)]
         self.linears = nn.ModuleList(linears)
@@ -74,7 +147,7 @@ class TransformerModel(nn.Module):
             cache: Optional[List[Tensor]] = None,
             cache_index: Optional[int] = None,
             encoder_cache: Optional[Tensor] = None
-    ) -> Tuple[Tensor, List[Tensor], Tensor]:
+    ) -> Tuple[Tensor, Optional[List[Tensor]], Optional[Tensor]]:
 
         x = cast(torch.Tensor, sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)]))
         full_track_x = cast(torch.Tensor, sum([self.embeddings[k](conditioning_input[:, k]) for k in range(self.codebooks)]))
@@ -82,31 +155,46 @@ class TransformerModel(nn.Module):
         if not USE_ALIBI:
             # Add positional encoding
             x = x + self.pos_encoding[:, self.max_seq_len:self.max_seq_len + self.max_decoder_seq_len, :].to(x.device)
+            full_track_x = full_track_x + self.pos_encoding[:, :self.max_seq_len, :].to(full_track_x.device)
 
-        # TODO: Implement kv cache for the encoder
-        if encoder_cache is None:
-            if not USE_ALIBI:
-                full_track_x = full_track_x + self.pos_encoding[:, :self.max_seq_len, :].to(full_track_x.device)
-            cross_attention_src, _ = self.encoder(
-                full_track_x,
-                sequence_lengths.full_track if sequence_lengths is not None else None,
+        if USE_CUSTOM_MODEL:
+            # TODO: Implement kv cache for the encoder
+            if encoder_cache is None:
+                cross_attention_src, _ = self.encoder(
+                    full_track_x,
+                    sequence_lengths.full_track if sequence_lengths is not None else None,
+                )
+                
+                # Only the last sliding window is used for cross attention
+                cross_attention_src = cross_attention_src[:, -self.sliding_window_size:, :]
+
+            else:
+                cross_attention_src = encoder_cache
+
+            x, updated_cache = self.decoder(
+                x,
+                sequence_lengths=sequence_lengths.stem if sequence_lengths is not None else None,
+                cross_attention_sequence_lengths=sequence_lengths.full_track if sequence_lengths is not None else None,
+                cross_attention_src=cross_attention_src,
+                use_cache=use_cache,
+                cache=cache,
+                cache_index=cache_index,
             )
-            
-            # Only the last sliding window is used for cross attention
-            cross_attention_src = cross_attention_src[:, -self.sliding_window_size:, :]
 
         else:
-            cross_attention_src = encoder_cache
-
-        x, updated_cache = self.decoder(
-            x,
-            sequence_lengths=sequence_lengths.stem if sequence_lengths is not None else None,
-            cross_attention_sequence_lengths=sequence_lengths.full_track if sequence_lengths is not None else None,
-            cross_attention_src=cross_attention_src,
-            use_cache=use_cache,
-            cache=cache,
-            cache_index=cache_index,
-        )
+            
+            tgt_mask = generate_causal_sliding_mask(self.max_decoder_seq_len, self.sliding_window_size, device=x.device)
+            x = self.transformer(
+                full_track_x,
+                x,
+                tgt_mask=tgt_mask,
+                src_key_padding_mask=get_key_padding_mask(self.max_seq_len, sequence_lengths.full_track, device=full_track_x.device, inverted=True) if sequence_lengths is not None else None,
+                tgt_key_padding_mask=get_key_padding_mask(self.max_decoder_seq_len, sequence_lengths.stem, device=x.device) if sequence_lengths is not None else None,
+                src_is_causal=False,
+                tgt_is_causal=True,
+            )
+            updated_cache = None
+            cross_attention_src = None
 
         logits = torch.stack([self.linears[k](x) for k in range(self.codebooks)], dim=1)  # [B, K, S, vocab_size]
 
