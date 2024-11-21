@@ -1,5 +1,0 @@
-DATASET_TAGS = ['medium', 'soundstripe']
-
-CLEARML_DATASET_TRAINING_NAME = 'SoundStripe-500'
-CLEARML_DATASET_TRAINING_VERSION = '1.0.0'
-STEM_NAME = 'guitar'

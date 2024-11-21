@@ -2,7 +2,7 @@
 name = "gigmate"
 description = "Generation of realtime music using transformers"
 readme = "README.md"
-version = "0.1.0"  # Set a static version or use versioning tool later
+version = "0.1.0"
 authors = ["Michele Lugano <michele.lugano9@gmail.com>"]
 license = "MIT"
 keywords = []
@@ -45,6 +45,7 @@ torcheval = "^0.0.7"
 coiled = "1.58.0"
 numpy = "^1.26.4"
 accelerate = "^1.1.1"
+librosa = "^0.10.2.post1"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^7.1.1"
@@ -70,18 +71,6 @@ websockets = "12.0"
 litserve = "0.2.2"
 onnx = "*"
 "python-multipart" = "0.0.9"
-
-[tool.poetry.group.dataset]
-optional=true
-
-[tool.poetry.group.dataset.dependencies]
-audiomentations = "^0.37.0"
-pyroomacoustics = "^0.7.7"
-coiled = "^1.58.0"
-s3fs = "^2024.10.0"
-dask = {extras = ["distributed"], version = "^2024.10.0"}
-bokeh = "^3.6.0"
-ffmpeg = "^1.4"
 
 [build-system]
 requires = ["poetry-core"]
@@ -114,7 +103,6 @@ train = "gigmate.training.train:main"
 
 [[tool.mypy.overrides]]
 module = [
-    "audiomentations.*",
     "soundfile.*",
     "s3fs.*",
     "clearml.*",
@@ -125,7 +113,5 @@ module = [
     "scipy.*",
     "torchao.*",
     "litserve.*",
-    "coiled.*",
-    "fsspec.*",
 ]
 ignore_missing_imports = true
