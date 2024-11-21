@@ -21,7 +21,6 @@ AUGMENTED_FILES_DIR = os.path.join(BASE_DIR, 'augmented')
 DISTORTED_FILES_DIR = os.path.join(BASE_DIR, 'distorted')
 ENCODED_FILES_DIR = os.path.join(BASE_DIR, 'encoded')
 SPLIT_FILES_DIR = os.path.join(BASE_DIR, 'split')
-RANDOM_ASSORTMENTS_PER_SONG = 1
 
 
 @PipelineDecorator.component(return_values=['uncompressed_dir'], cache=False)
@@ -37,10 +36,10 @@ def convert_to_ogg_step(source_dir):
 
 
 @PipelineDecorator.component(return_values=['merged_dir'], cache=False)
-def assort_and_merge_step(merged_dir, stem_name, random_assortments_per_song, tags: List[str]):
+def assort_and_merge_step(merged_dir, stem_name, tags: List[str]):
     print('Creating assortment and merging')
     source_dir = get_remote_dataset_by_tag('original')
-    output_dir = assort_and_merge_all(source_dir, merged_dir, stem_name, random_assortments_per_song)
+    output_dir = assort_and_merge_all(source_dir, merged_dir, stem_name)
     upload_dataset(path=output_dir, version=CLEARML_DATASET_TRAINING_VERSION, tags=tags + ['merged'], dataset_set=set)
     return output_dir
 
@@ -110,11 +109,11 @@ def dataset_preparation_pipeline(source_dir: str):
     project=get_clearml_project_name(),
     version=CLEARML_DATASET_TRAINING_VERSION,
 )
-def dataset_creation_pipeline(stem_name: str, random_assortments_per_song: int, merged_dir: str, augmented_dir: str, distorted_dir: str, encoded_dir: str, split_dir: str):
+def dataset_creation_pipeline(stem_name: str, merged_dir: str, augmented_dir: str, distorted_dir: str, encoded_dir: str, split_dir: str):
     
     tags = DATASET_TAGS + [f'stem-{stem_name}']
 
-    assort_and_merge_step(merged_dir, stem_name, random_assortments_per_song, tags)
+    assort_and_merge_step(merged_dir, stem_name, tags)
     augment_step(augmented_dir, tags)
     distort_step(distorted_dir, tags)
     encode_step(encoded_dir, tags)

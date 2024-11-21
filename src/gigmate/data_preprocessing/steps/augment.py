@@ -49,9 +49,9 @@ def augment_files(file_paths: List[Tuple[str, str]], transform: Compose) -> None
 def augment_pitch_and_tempo(file_paths: List[Tuple[str, str]]) -> None:
     transform = Compose(
         transforms=[
-            PitchShift(p=1),
+            PitchShift(p=1, min_semitones=-2, max_semitones=2),
             TimeStretch(p=1, leave_length_unchanged=False),
-            Gain(p=1, min_gain_db=-6, max_gain_db=6)
+            Gain(p=1, min_gain_db=-6, max_gain_db=-5)
         ],
         p=1,
     )
