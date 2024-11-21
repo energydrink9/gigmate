@@ -1,6 +1,7 @@
 from functools import lru_cache
 import math
 from os import PathLike
+import librosa.util
 from transformers import EncodecModel, AutoProcessor
 from encodec.utils import convert_audio
 import torchaudio
@@ -30,7 +31,7 @@ def get_processor(device: Device):
 
 def encode_file(audio_path: Union[BinaryIO, str, PathLike], device: Device, add_start_and_end_tokens: bool = False, format: Optional[str] = None) -> Tuple[List[Tensor], float]:
     # Load and pre-process the audio waveform
-    wav, sr = torchaudio.load(audio_path, format=format)
+    wav, sr = torchaudio.load(audio_path, format=format, normalize=False)  # Normalization is later performed using librosa as it seems to work better
     return encode(wav, sr, device, add_start_and_end_tokens=add_start_and_end_tokens)
 
 
@@ -84,6 +85,10 @@ def bundle_chunks_and_add_special_tokens(chunks: List[Tensor], encoded_tokens_pe
     return final_chunks
 
 
+def normalize_audio(audio: Tensor) -> Tensor:
+    return torch.tensor(librosa.util.normalize(audio.numpy()))
+
+
 def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:
 
     device = device if not device.startswith('mps') else 'cpu'  # Encoding is not supported on MPS
@@ -91,6 +96,8 @@ def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: boo
     codec = get_codec(device)
 
     wav = convert_audio(audio, sr, processor.sampling_rate, codec.config.audio_channels)
+    wav = normalize_audio(wav)
+
     # split wav in chunks which length will give encoded chunks of max_seq_len length:
     num_samples = wav.shape[1]
     encoded_tokens_per_chunk = 512  # large values requires a large amount of memory and can cause OOM errors

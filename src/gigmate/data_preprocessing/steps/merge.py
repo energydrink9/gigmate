@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 import io
-import itertools
 import os
 import random
-from typing import List, Optional, Set, Tuple, cast
+from typing import FrozenSet, List, Optional, Tuple, cast, Set
 import librosa
 from pydub import AudioSegment
 from dask.distributed import progress, Client
@@ -16,8 +15,9 @@ from gigmate.utils.constants import get_random_seed
 SOURCE_FILES_PATH = 's3://soundstripe-dataset-original/original'
 OUTPUT_FILES_DIR = 's3://soundstripe-dataset-original/merged'
 STEM_NAMES = ['guitar', 'drums', 'bass', 'perc', 'fx', 'vocals', 'piano', 'synth', 'winds', 'strings']
-BASIC_STEM_NAMES = ['guitar', 'drums', 'bass', 'perc']
-RANDOM_ASSORTMENTS_PER_SONG = 3
+BASIC_STEM_NAMES = ['guitar', 'drums', 'bass', 'perc', 'gtr', 'drm']
+MAX_RANDOM_FULL_ASSORTMENTS_PER_SONG = 3
+MAX_BASIC_STEM_RANDOM_ASSORTMENTS_PER_SONG = 4
 MIN_PERCENTAGE_OF_AUDIO_IN_NON_SILENT_FILES = 0.5
 
 # Set this flag to True to run locally (i.e. not on Coiled)
@@ -41,9 +41,9 @@ def get_ogg_file_paths(fs: S3FileSystem, dir: str) -> List[str]:
     return ['s3://' + path for path in cast(List[str], fs.glob(os.path.join(dir, '*.ogg')))]
 
 
-def get_directories_containing_ogg_files(fs: S3FileSystem, dir: str) -> Set[str]:
+def get_directories_containing_ogg_files(fs: S3FileSystem, dir: str) -> FrozenSet[str]:
     ogg_files = cast(List, fs.glob(os.path.join(dir, '**/*.ogg')))
-    directories = {'s3://' + os.path.dirname(ogg_file) for ogg_file in ogg_files}
+    directories = frozenset({'s3://' + os.path.dirname(ogg_file) for ogg_file in ogg_files})
     return directories
 
 
@@ -64,69 +64,71 @@ def get_current_stem_files(stems: List[StemFile], stem_name: str) -> List[str]:
     return current_stem_files
 
 
-def get_permutation_subset(permutation: list[str]) -> list[str]:
-    permutation_length = len(permutation)
-
-    # get a random number between 2 (included) and permutation_length - 1 (included)
-    subset_length = random.randint(2, permutation_length - 1)
-
-    return permutation[:subset_length]
+def get_basic_stems(stems: FrozenSet[str], basic_stem_names: List[str]) -> FrozenSet[str]:
+    return frozenset({stem for stem in stems if any([stem_name.lower() in os.path.basename(stem).lower() for stem_name in basic_stem_names])})
 
 
-def get_random_basic_stem(stems: List[StemFile], basic_stem_names: List[str]) -> Optional[str]:
+def get_random_stem(stems: FrozenSet[str], exclude: FrozenSet[str] = frozenset({})) -> Optional[str]:
 
-    basic_stems = [stem.file_path for stem in stems if not stem.is_mostly_silent and any([stem_name.lower() in os.path.basename(stem.file_path).lower() for stem_name in basic_stem_names])]
-
-    if len(basic_stems) == 0:
+    if len(stems) == 0:
         return None
     
-    return random.choice(basic_stems)
+    return random.choice(list(stems.difference(exclude)))
 
 
-def get_assortment(other_stems: List[str], current_stem_file: str) -> Tuple[str, List[str]]:
+def get_assortment(other_stems: FrozenSet[str], current_stem_file: str) -> Tuple[str, FrozenSet[str]]:
     return current_stem_file, other_stems
 
 
-def get_random_elements(lst: List[str]) -> List[str]:
-    if len(lst) == 0:
-        return []
-    
-    # get a random number between 0 (included) and len(lst) - 1 (included)
-    n = random.randint(0, len(lst) - 1)
-    return random.sample(lst, n)
+def get_stem_files_paths(stems: List[StemFile]) -> FrozenSet[str]:
+    return frozenset({stem.file_path for stem in stems})
 
 
-def get_random_assortments(non_silent_stems: List[str], mostly_silent_stems: List[str], stem_file: str, random_assortments_per_song: int) -> List[Tuple[str, List[str]]]:
-    permutations = [list(permutation) for permutation in itertools.permutations(non_silent_stems, len(non_silent_stems))]
-    permutations_indices = random.sample(range(len(permutations)), min(random_assortments_per_song, len(permutations)))
-    return [get_assortment(get_permutation_subset(permutation) + get_random_elements(mostly_silent_stems), stem_file) for i, permutation in enumerate(permutations) if i in permutations_indices]
+def create_stems_assortments(other_stems: List[StemFile], current_stem_file: str) -> List[Tuple[str, FrozenSet[str]]]:
+    other_stems_paths = get_stem_files_paths(other_stems)
+    non_silent_stems_paths = get_stem_files_paths([stem for stem in other_stems if not stem.is_mostly_silent])
+    non_silent_basic_stems_paths = get_basic_stems(non_silent_stems_paths, BASIC_STEM_NAMES)
+    non_basic_stem_paths = other_stems_paths.difference(non_silent_basic_stems_paths)
 
-
-def create_stems_assortments(other_stems: List[StemFile], current_stem_file: str, random_assortments_per_song: int) -> List[Tuple[str, List[str]]]:
-    non_mostly_silent_stems_count = len([stem for stem in other_stems if not stem.is_mostly_silent])
-    assortments = []
+    assortments: Set[FrozenSet[str]] = set()
 
     # 1. all stems assortment
-    if non_mostly_silent_stems_count >= 1:
-        other_stems_files = [stem.file_path for stem in other_stems]
-        all_stems_assortment = get_assortment(other_stems_files, current_stem_file)
-        assortments.append(all_stems_assortment)
+    other_stems_files = get_stem_files_paths(other_stems)
+    all_stems_assortment = other_stems_files
+    assortments.add(all_stems_assortment)
 
-    # 2. random basic stem assortment
-    if non_mostly_silent_stems_count >= 2:
-        random_basic_stem = get_random_basic_stem(other_stems, BASIC_STEM_NAMES)
-        if random_basic_stem is not None:
-            basic_stem_assortment = get_assortment([random_basic_stem], current_stem_file)
-            assortments.append(basic_stem_assortment)
-    
-    # 3. random assortments
-    if non_mostly_silent_stems_count >= 3:
-        non_silent_other_stems_files = [stem.file_path for stem in other_stems if not stem.is_mostly_silent]
-        silent_other_stems_files = [stem.file_path for stem in other_stems if stem.is_mostly_silent]
-        random_assortments = get_random_assortments(non_silent_other_stems_files, silent_other_stems_files, current_stem_file, random_assortments_per_song)
-        assortments += random_assortments
+    if len(non_silent_basic_stems_paths) > 0:
 
-    return assortments
+        exclude: FrozenSet[str] = frozenset()  # Keep track of already seen stems in order to exclude them from sampling
+
+        # 2. random basic stem assortments
+        for _ in range(MAX_BASIC_STEM_RANDOM_ASSORTMENTS_PER_SONG):
+            random_basic_stem = get_random_stem(non_silent_basic_stems_paths, exclude)
+            if random_basic_stem is not None:
+                assortments.add(frozenset({random_basic_stem}))
+                exclude = exclude.union(random_basic_stem)
+        
+        # 3. random full assortments
+        if len(non_basic_stem_paths) > 0:
+
+            for _ in range(MAX_RANDOM_FULL_ASSORTMENTS_PER_SONG):
+                number_of_basic_stems = random.randint(1, len(non_silent_basic_stems_paths))
+                number_of_non_basic_stems = random.randint(1, len(non_basic_stem_paths))
+
+                full_assortment_paths: Set[str] = set()
+                for _ in range(number_of_basic_stems):
+                    random_basic_stem = get_random_stem(non_silent_basic_stems_paths)
+                    if random_basic_stem is not None:
+                        full_assortment_paths.add(random_basic_stem)
+
+                for _ in range(number_of_non_basic_stems):
+                    random_non_basic_stem = get_random_stem(non_basic_stem_paths)
+                    if random_non_basic_stem is not None:
+                        full_assortment_paths.add(random_non_basic_stem)
+
+                assortments.add(frozenset(full_assortment_paths))
+
+    return [(current_stem_file, assortment) for assortment in assortments]
 
 
 def is_mostly_silent(fs: S3FileSystem, file_path: str) -> bool:
@@ -139,11 +141,15 @@ def is_mostly_silent(fs: S3FileSystem, file_path: str) -> bool:
         return non_silent_samples / no_of_samples < MIN_PERCENTAGE_OF_AUDIO_IN_NON_SILENT_FILES
 
 
+def get_stem(file_path: str, silent: bool) -> StemFile:
+    return StemFile(file_path=file_path, is_mostly_silent=silent)
+
+
 def get_stems(fs: S3FileSystem, paths: List[str]) -> List[StemFile]:
-    return [StemFile(file_path=path, is_mostly_silent=is_mostly_silent(fs, path)) for path in paths]
+    return [get_stem(path, is_mostly_silent(fs, path)) for path in paths]
 
 
-def assort(fs: S3FileSystem, directory: str, stem_name: str, random_assortments_per_song: int) -> List[List[Tuple[str, List[str]]]]:
+def assort(fs: S3FileSystem, directory: str, stem_name: str) -> List[List[Tuple[str, FrozenSet[str]]]]:
     stems = get_stems(fs, get_ogg_file_paths(fs, directory))
     current_stem_files = get_current_stem_files(stems, stem_name)
 
@@ -151,7 +157,7 @@ def assort(fs: S3FileSystem, directory: str, stem_name: str, random_assortments_
 
     for stem_file in current_stem_files:
         other_stems = [stem for stem in stems if stem.file_path != stem_file]
-        assortments.append(create_stems_assortments(other_stems, stem_file, random_assortments_per_song))
+        assortments.append(create_stems_assortments(other_stems, stem_file))
     
     return assortments
 
@@ -176,10 +182,10 @@ def merge_stems(fs: S3FileSystem, ogg_files: List[str], output_file: str):
         file.write(bytes_io.getvalue())  # type: ignore
 
 
-def assort_directory(params: Tuple[S3FileSystem, str, str, str, str, int]) -> None:
+def assort_directory(params: Tuple[S3FileSystem, str, str, str, str]) -> None:
 
-    fs, source_directory, output_directory, directory, stem_name, random_assortments_per_song = params
-    assortments = assort(fs, directory, stem_name, random_assortments_per_song)
+    fs, source_directory, output_directory, directory, stem_name = params
+    assortments = assort(fs, directory, stem_name)
 
     # It is possible to have multiple stems for a stem name (e.g. "vocals" and "vocals_2")
     for i, stem_assortments in enumerate(assortments):
@@ -193,21 +199,21 @@ def assort_directory(params: Tuple[S3FileSystem, str, str, str, str, int]) -> No
 
             output_path = os.path.join(song_directory, "all.ogg")
             if not fs.exists(output_path):
-                merge_stems(fs, stems_to_merge + [stem], output_file=output_path)
+                merge_stems(fs, list(stems_to_merge) + [stem], output_file=output_path)
 
             stem_output_file_path = os.path.join(song_directory, "stem.ogg")
             if not fs.exists(stem_output_file_path):
                 fs.copy(stem, stem_output_file_path)
 
 
-def assort_and_merge_all(source_directory: str, output_directory: str, stem_name: str, random_assortments_per_song: int):
+def assort_and_merge_all(source_directory: str, output_directory: str, stem_name: str):
 
     client = cast(Client, get_client(RUN_LOCALLY))
     fs = S3FileSystem()
 
     dirs = get_directories_containing_ogg_files(fs, source_directory)
     
-    params_list: List[Tuple[S3FileSystem, str, str, str, str, int]] = [(fs, source_directory, output_directory, directory, stem_name, random_assortments_per_song) for directory in dirs]
+    params_list: List[Tuple[S3FileSystem, str, str, str, str]] = [(fs, source_directory, output_directory, directory, stem_name) for directory in dirs]
     
     print('Assorting and merging audio tracks')
     futures = progress(client.map(assort_directory, params_list))
@@ -218,4 +224,4 @@ def assort_and_merge_all(source_directory: str, output_directory: str, stem_name
 
 if __name__ == '__main__':
     random.seed(get_random_seed())
-    assort_and_merge_all(SOURCE_FILES_PATH, OUTPUT_FILES_DIR, STEM_NAME, RANDOM_ASSORTMENTS_PER_SONG)
+    assort_and_merge_all(SOURCE_FILES_PATH, OUTPUT_FILES_DIR, STEM_NAME)

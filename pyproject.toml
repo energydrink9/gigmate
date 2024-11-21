@@ -126,5 +126,6 @@ module = [
     "torchao.*",
     "litserve.*",
     "coiled.*",
+    "fsspec.*",
 ]
 ignore_missing_imports = true

@@ -2,9 +2,10 @@ import io
 import os
 import traceback
 from typing import List, Tuple, cast
+from fsspec import AbstractFileSystem
 import numpy as np
 from pydub import AudioSegment
-from audiomentations import Compose, AddGaussianSNR, BandStopFilter, RoomSimulator, SevenBandParametricEQ
+from audiomentations import Compose, AddGaussianSNR, BandStopFilter, RoomSimulator, SevenBandParametricEQ, SomeOf
 from s3fs.core import S3FileSystem
 from dask.distributed import Client
 from distributed import progress
@@ -42,21 +43,39 @@ def distort_audio(original_audio: AudioSegment) -> AudioSegment:
     audio = convert_audio_to_float_32(np.array(original_audio.get_array_of_samples()))
     transform = Compose(
         transforms=[
-            AddGaussianSNR(min_snr_db=10., max_snr_db=50., p=0.2),
             # ApplyImpulseResponse(),
-            # BitCrush(min_bit_depth=3, max_bit_depth=7, p=0.2),
+            # BitCrush(p=1, min_bit_depth=5, max_bit_depth=10),
             # BandPassFilter(min_center_freq=200., max_center_freq=4000., p=1.0),
-            BandStopFilter(min_center_freq=200., max_center_freq=4000., p=0.2),
-            RoomSimulator(p=0.6, leave_length_unchanged=True),
-            SevenBandParametricEQ(p=0.5, min_gain_db=-3.5, max_gain_db=3.5),
+            SomeOf(
+                1,
+                [
+                    BandStopFilter(p=1, min_center_freq=500., max_center_freq=4000.),
+                    RoomSimulator(p=1, leave_length_unchanged=True),
+                    SevenBandParametricEQ(p=1, min_gain_db=-3.5, max_gain_db=3.5),
+                ],
+            ),
+            AddGaussianSNR(min_snr_db=20., max_snr_db=35., p=0.8),
         ],
-        p=0.4,
-        shuffle=True
+        p=0.5,
+        shuffle=False,
     )
     augmented_audio = transform(audio, sample_rate=sample_rate)
     data = convert_audio_to_int_16(clamp_audio_data(augmented_audio))
     data = data.reshape((-1, 2))
     return AudioSegment(data=data, sample_width=2, frame_rate=sample_rate, channels=channels)  # type: ignore
+
+
+def distort_file(fs: AbstractFileSystem, file_path: str, output_file_path: str):
+    with fs.open(file_path, 'rb') as audio_file:
+        data = io.BytesIO(audio_file.read())  # type: ignore
+        audio = AudioSegment.from_ogg(data)  # type: ignore
+        augmented = distort_audio(audio)
+
+        # Export the final merged track to a single .ogg file
+        with fs.open(output_file_path, 'wb') as file:
+            bytes_io = io.BytesIO()
+            augmented.export(bytes_io, format='ogg', codec='libopus')  # type: ignore
+            file.write(bytes_io.getvalue())  # type: ignore
 
 
 def distort(params: Tuple[S3FileSystem, Tuple[str, str], str, str]) -> None:
@@ -71,16 +90,7 @@ def distort(params: Tuple[S3FileSystem, Tuple[str, str], str, str]) -> None:
         full_track_output_file_path = os.path.join(actual_output_dir, os.path.basename(full_track_file_path))
 
         if not fs.exists(full_track_output_file_path):
-            with fs.open(full_track_file_path, 'rb') as audio_file:
-                data = io.BytesIO(audio_file.read())  # type: ignore
-                audio = AudioSegment.from_ogg(data)  # type: ignore
-                augmented = distort_audio(audio)
-
-                # Export the final merged track to a single .ogg file
-                with fs.open(full_track_output_file_path, 'wb') as file:
-                    bytes_io = io.BytesIO()
-                    augmented.export(bytes_io, format='ogg', codec='libopus')  # type: ignore
-                    file.write(bytes_io.getvalue())  # type: ignore
+            distort_file(fs, full_track_file_path, full_track_output_file_path)
 
         stem_relative_path = os.path.relpath(stem_file_path, source_directory)
         stem_output_file_path = os.path.join(output_directory, stem_relative_path)
