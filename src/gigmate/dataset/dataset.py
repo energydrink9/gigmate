@@ -290,7 +290,7 @@ def get_data_loaders() -> Tuple[DataLoader, DataLoader, DataLoader]:
     return get_data_loader('train'), get_data_loader('validation'), get_data_loader('test')
 
 
-def get_inputs_and_targets(batch, device) -> Tuple[Tensor, Tensor, Tensor, SequenceLengths]:
+def get_inputs_and_targets(batch: DatasetBatch, device) -> Tuple[Tensor, Tensor, Tensor, SequenceLengths]:
     return batch.inputs.full_track.to(device), batch.inputs.stem.to(device), batch.labels.to(device), batch.sequence_lengths
 
 

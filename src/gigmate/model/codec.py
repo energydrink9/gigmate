@@ -86,7 +86,8 @@ def bundle_chunks_and_add_special_tokens(chunks: List[Tensor], encoded_tokens_pe
 
 
 def normalize_audio(audio: Tensor) -> Tensor:
-    return torch.tensor(librosa.util.normalize(audio.numpy()))
+    
+    return torch.tensor(librosa.util.normalize(audio.numpy(), axis=1))
 
 
 def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: bool = False) -> Tuple[List[Tensor], float]:

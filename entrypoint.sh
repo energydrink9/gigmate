@@ -24,6 +24,6 @@ poetry run pip install "numpy==1.26.4"
 
 echo "Running script"
 export ENV='prod'
-# export TORCH_LOGS="+dynamo"
-# export TORCHDYNAMO_VERBOSE=1
+export TORCH_LOGS="+dynamo"
+export TORCHDYNAMO_VERBOSE=1
 poetry run --no-interaction --no-ansi python -m gigmate.training.train
