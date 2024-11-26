@@ -10,15 +10,13 @@ from torch.utils.data import DataLoader, Dataset
 import os
 import random
 
-from gigmate.utils.constants import CODEBOOKS, get_clearml_dataset_name, get_clearml_dataset_project_name, get_clearml_dataset_version, get_params, get_pad_token_id, get_start_of_sequence_token_id
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_end_of_sequence_token, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
+from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_project_name, get_clearml_dataset_version, get_params, get_pad_token_id, get_start_of_sequence_token_id
+from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, shift_sequence, add_start_and_end_tokens
 
 params = get_params()
 
 MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK = 64
 MIN_TOKENS_TO_KEEP_FROM_STEM = params['max_decoder_seq_len']
-START_TOKEN = get_start_of_sequence_token(CODEBOOKS)
-END_TOKEN = get_end_of_sequence_token(CODEBOOKS)
 
 
 def get_stem_file_path(file_path: str) -> str:
@@ -61,6 +59,10 @@ class AudioDataset(Dataset):
         with open(stem_file_path, 'rb') as stem_file:
             stem = pickle.load(stem_file).to('cpu')
 
+        # add start and end tokens
+        full_track = add_start_and_end_tokens(full_track.unsqueeze(0)).squeeze(0)
+        stem = add_start_and_end_tokens(stem.unsqueeze(0)).squeeze(0)
+
         # if lengths do not match, cut the sequences to the shortest length
         full_track_length = full_track.shape[-1]
         stem_length = stem.shape[-1]
@@ -69,10 +71,6 @@ class AudioDataset(Dataset):
             length_to_keep = min(full_track_length, stem_length)
             full_track = cut_sequence(full_track, length_to_keep)
             stem = cut_sequence(stem, length_to_keep)
-
-        # add start and end tokens
-        full_track = torch.cat([START_TOKEN, full_track, END_TOKEN], dim=-1)
-        stem = torch.cat([START_TOKEN, stem, END_TOKEN], dim=-1)
 
         return full_track, stem
     

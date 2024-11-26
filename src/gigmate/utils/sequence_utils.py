@@ -24,12 +24,12 @@ def get_padding_token(codebooks: int) -> Tensor:
     return torch.full((1, codebooks, 1), get_pad_token_id())
 
 
-def get_start_of_sequence_token(codebooks: int) -> torch.Tensor:
-    return torch.full((1, codebooks, 1), get_start_of_sequence_token_id())
+def get_start_of_sequence_token(codebooks: int, batch_size: int = 1) -> torch.Tensor:
+    return torch.full((batch_size, codebooks, 1), get_start_of_sequence_token_id())
 
 
-def get_end_of_sequence_token(codebooks: int) -> torch.Tensor:
-    return torch.full((1, codebooks, 1), get_end_of_sequence_token_id())
+def get_end_of_sequence_token(codebooks: int, batch_size: int = 1) -> torch.Tensor:
+    return torch.full((batch_size, codebooks, 1), get_end_of_sequence_token_id())
 
 
 def apply_interleaving(sequence: torch.Tensor, padding_value: int) -> torch.Tensor:
@@ -192,3 +192,12 @@ def remove_special_tokens(sequence: Tensor, special_tokens: List[int]) -> Tensor
     mask = ~torch.isin(sequence[0, 0, :], torch.tensor(special_tokens, device=sequence.device))
 
     return sequence[:, :, mask]
+
+
+def add_start_and_end_tokens(sequence: Tensor):
+    
+    batch_size, codebooks, _ = sequence.shape
+    start_token = get_start_of_sequence_token(codebooks, batch_size=batch_size)
+    end_token = get_end_of_sequence_token(codebooks, batch_size=batch_size)
+
+    return torch.cat([start_token, sequence, end_token], dim=-1)
