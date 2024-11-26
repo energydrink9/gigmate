@@ -60,8 +60,8 @@ class AudioDataset(Dataset):
             stem = pickle.load(stem_file).to('cpu')
 
         # add start and end tokens
-        full_track = add_start_and_end_tokens(full_track.unsqueeze(0)).squeeze(0)
-        stem = add_start_and_end_tokens(stem.unsqueeze(0)).squeeze(0)
+        full_track = add_start_and_end_tokens(full_track.unsqueeze(0))
+        stem = add_start_and_end_tokens(stem.unsqueeze(0))
 
         # if lengths do not match, cut the sequences to the shortest length
         full_track_length = full_track.shape[-1]

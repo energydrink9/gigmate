@@ -36,7 +36,7 @@ EOS_TOKEN_ID = VOCAB_SIZE - 1  # 2047
 
 CLEARML_PROJECT_NAME = 'GigMate'
 CLEARML_DATASET_PROJECT_NAME = 'stem_continuation_dataset_generator'
-CLEARML_DATASET_NAME = 'stem-continuation-dataset'
+CLEARML_DATASET_NAME = 'stem_continuation_dataset'
 CLEARML_DATASET_TAGS = ['stem-drum']
 CLEARML_DATASET_VERSION = '1.0.0'
 
