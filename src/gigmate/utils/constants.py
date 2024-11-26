@@ -6,20 +6,20 @@ MAX_SEQ_LEN = 2048
 MAX_DECODER_SEQ_LEN = 512
 SLIDING_WINDOW_SIZE = 256
 VOCAB_SIZE = 2048
-D_MODEL = 1024
+D_MODEL = 768
 CODEBOOKS = 4
 
-ENCODER_LAYERS = 24
-DECODER_LAYERS = 24
-NUM_HEADS = 16
+ENCODER_LAYERS = 12
+DECODER_LAYERS = 12
+NUM_HEADS = 12
 DROPOUT_RATE = 0.1
 
 EPOCHS = 80
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.001
 MAX_LEARNING_RATE = 10
 GRADIENT_CLIP = 0.87
 
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 ACCUMULATE_GRAD_BATCHES = 1
 
 TRAINING_SET_SIZE = 1.0
@@ -35,8 +35,9 @@ SOS_TOKEN_ID = VOCAB_SIZE - 2  # 2046
 EOS_TOKEN_ID = VOCAB_SIZE - 1  # 2047
 
 CLEARML_PROJECT_NAME = 'GigMate'
-CLEARML_DATASET_NAME = 'SoundStripe-500'
-CLEARML_DATASET_TAGS = ['500', 'stem-guitar']
+CLEARML_DATASET_PROJECT_NAME = 'stem_continuation_dataset_generator'
+CLEARML_DATASET_NAME = 'stem-continuation-dataset'
+CLEARML_DATASET_TAGS = ['stem-drum']
 CLEARML_DATASET_VERSION = '1.0.0'
 
 PARAMS = {
@@ -88,6 +89,10 @@ def get_params():
 
 def get_clearml_project_name() -> str:
     return CLEARML_PROJECT_NAME
+
+
+def get_clearml_dataset_project_name() -> str:
+    return CLEARML_DATASET_PROJECT_NAME
 
 
 def get_clearml_dataset_name() -> str:

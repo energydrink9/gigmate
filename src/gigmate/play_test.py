@@ -1,3 +1,4 @@
+import pytest
 from gigmate.utils.constants import get_pad_token_id
 from gigmate.model.model import get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
@@ -15,7 +16,7 @@ TEST_TIMING_FILE = 'resources/test_timing_2.wav'
 MIDI_PROGRAM = None
 
 
-# TODO: fix and re-enable
+@pytest.mark.skip(reason="Not working on CI")
 def skip_test_generation_of_audio():
     conditioning_file = TEST_GENERATION_FILE
     output_filename = 'output/completed_audio.ogg'
@@ -28,7 +29,7 @@ def skip_test_generation_of_audio():
     print(f'Generated completed audio file at: {output_filename}')
 
 
-# TODO: fix and re-enable
+@pytest.mark.skip(reason="Not working on CI")
 def skip_test_timing_of_generated_audio_with_processing_time():
     conditioning_file = TEST_GENERATION_FILE
     output_filename = 'output/completed_audio.ogg'

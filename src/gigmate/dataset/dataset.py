@@ -8,34 +8,25 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 import os
-import re
 import random
 
-from gigmate.utils.constants import get_clearml_dataset_name, get_clearml_dataset_version, get_params, get_clearml_project_name, get_pad_token_id, get_start_of_sequence_token_id
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, shift_sequence
+from gigmate.utils.constants import CODEBOOKS, get_clearml_dataset_name, get_clearml_dataset_project_name, get_clearml_dataset_version, get_params, get_pad_token_id, get_start_of_sequence_token_id
+from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_end_of_sequence_token, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
 
 params = get_params()
 
 MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK = 64
 MIN_TOKENS_TO_KEEP_FROM_STEM = params['max_decoder_seq_len']
-
-
-def get_chunk_number(file_path):
-    pattern = r'all-c(\d+)\.pkl$'
-    match = re.search(pattern, file_path)
-    if match:
-        return int(match.group(1))
-    return None
+START_TOKEN = get_start_of_sequence_token(CODEBOOKS)
+END_TOKEN = get_end_of_sequence_token(CODEBOOKS)
 
 
 def get_stem_file_path(file_path: str) -> str:
-    chunk_number = get_chunk_number(file_path)
-    assert chunk_number is not None, f'Could not extract chunk number from file path: {file_path}'
-    return os.path.join(os.path.dirname(file_path), f'stem-c{chunk_number}.pkl')
+    return os.path.join(os.path.dirname(file_path), 'stem.pkl')
 
 
 def get_entries(dir: str) -> List[Tuple[str, str]]:
-    full_tracks_file_paths = glob.glob(os.path.join(dir, '**/all-*.pkl'), recursive=True)
+    full_tracks_file_paths = glob.glob(os.path.join(dir, '**/all.pkl'), recursive=True)
 
     entries = []
 
@@ -79,6 +70,10 @@ class AudioDataset(Dataset):
             full_track = cut_sequence(full_track, length_to_keep)
             stem = cut_sequence(stem, length_to_keep)
 
+        # add start and end tokens
+        full_track = torch.cat([START_TOKEN, full_track, END_TOKEN], dim=-1)
+        stem = torch.cat([START_TOKEN, stem, END_TOKEN], dim=-1)
+
         return full_track, stem
     
 
@@ -91,7 +86,7 @@ def get_remote_dataset(dataset_set: str) -> str:
     tags = [f"{dataset_set}-set"]
     dataset = ClearmlDataset.get(
         alias=f'{get_clearml_dataset_name()}-{dataset_set}',
-        dataset_project=get_clearml_project_name(),
+        dataset_project=get_clearml_dataset_project_name(),
         dataset_name=get_clearml_dataset_name(),
         dataset_version=get_clearml_dataset_version(),
         dataset_tags=tags,
