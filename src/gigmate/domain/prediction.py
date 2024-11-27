@@ -11,7 +11,7 @@ from gigmate.dataset.dataset import SequenceLengths
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode, encode
 from gigmate.utils.audio_utils import generate_random_filename
-from gigmate.utils.constants import get_pad_token_id, get_params
+from gigmate.utils.constants import CODEBOOKS, get_pad_token_id, get_params
 from gigmate.utils.device import Device
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
 
@@ -47,9 +47,9 @@ def predict_next_token(
             encoder_cache=encoder_cache,
         )
         outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
-        print('Result from model:')
-        complete_outputs = sample_from_logits(outputs, temperature, no_special_tokens=False)
-        print(f'outputs: {complete_outputs.shape} {complete_outputs}')
+        # print('Result from model:')
+        # complete_outputs = sample_from_logits(outputs, temperature, no_special_tokens=False)
+        # print(f'outputs: {complete_outputs.shape} {complete_outputs}')
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
         print(outputs.shape, outputs)
         predicted_tokens = sample_from_logits(outputs, temperature, no_special_tokens=False).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
@@ -80,15 +80,13 @@ def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: to
     return next_sequence
 
 
-def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
+def get_initial_next_sequence(sequence: torch.Tensor, max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
     start_of_sequence_token = get_start_of_sequence_token(codebooks).to(device)
-    if sequence is None:
-        sequence = start_of_sequence_token
-    else:
-        sequence = sequence.to(device)
-        if prepend_sos_token is True:
-            sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
-    
+
+    sequence = sequence.to(device)
+    if prepend_sos_token is True:
+        sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
+
     interleaved_sequence = apply_interleaving(sequence, padding_value)
     sequence_length = interleaved_sequence.shape[-1]
     padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value, pad_left)
@@ -102,13 +100,14 @@ def get_initial_next_sequence(sequence: Optional[torch.Tensor], max_seq_len: int
 def complete_sequence(
     model: torch.nn.Module,
     device: Device,
-    input_sequence: torch.Tensor,
+    full_track_sequence: torch.Tensor,
     frame_rate: float,
     padding_value: int,
     max_output_length_in_seconds: float = DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS,
     temperature: float = DEFAULT_TEMPERATURE,
     show_progress: bool = False,
     use_cache: bool = True,
+    input_sequence: torch.Tensor = torch.empty((1, CODEBOOKS, 0))
 ) -> torch.Tensor:
 
     def process_next_note_sequence(
@@ -155,20 +154,18 @@ def complete_sequence(
     max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
     output_sequence = None
-    # TODO: Allow prediction to start from a pre-existing full track sequence
-    # initial_token_index = initial_sequence.shape[-1] - 1
-    initial_token_index = 0
 
-    print('--- Input ---')
-    print(input_sequence.shape)
-    print(input_sequence)
-    full_track_sequence, full_track_sequence_length = get_initial_next_sequence(input_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True)
-    stem_sequence_length = max_decoder_seq_len
-    print('--- Conditioning ---')
+    print('--- Full track ---')
     print(full_track_sequence.shape)
     print(full_track_sequence)
-    next_sequence, _ = get_initial_next_sequence(None, max_decoder_seq_len, padding_value, codebooks, device)
-    sequence_lengths = SequenceLengths(full_track=[full_track_sequence_length], stem=[stem_sequence_length])
+    full_track_initial_sequence, full_track_initial_sequence_length = get_initial_next_sequence(full_track_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True)
+    stem_sequence_length = max_decoder_seq_len
+    print('--- Conditioning ---')
+    print(full_track_initial_sequence.shape)
+    print(full_track_initial_sequence)
+    next_sequence, _ = get_initial_next_sequence(input_sequence, max_decoder_seq_len, padding_value, codebooks, device, prepend_sos_token=True)
+    initial_token_index = input_sequence.shape[-1] - 1
+    sequence_lengths = SequenceLengths(full_track=[full_track_initial_sequence_length], stem=[stem_sequence_length])
     print('--- Next ---')
     print(next_sequence.shape)
     print(next_sequence)
@@ -184,7 +181,7 @@ def complete_sequence(
         next_sequence, new_output_sequence, cache, encoder_cache = process_next_note_sequence(
             model,
             next_sequence,
-            full_track_sequence,
+            full_track_initial_sequence,
             sequence_lengths,
             current_token_index,
             cache,

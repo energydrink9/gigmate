@@ -149,11 +149,11 @@ class TrainingModel(L.LightningModule):
         greedy_lr_scheduler = GreedyLR(
             optimizer,
             initial_lr=self.learning_rate,
-            total_steps=self.steps_per_epoch // 24,
+            total_steps=self.steps_per_epoch // 6,
             max_lr=self.max_learning_rate,
-            patience=4,
-            window=5,
-            warmup=10,
+            patience=10,
+            window=10,
+            warmup=20,
         )
         return {
             "optimizer": optimizer,
@@ -363,7 +363,7 @@ class TrainingModel(L.LightningModule):
 
 
 def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int, compile=True) -> TrainingModel:
-    model = get_model(params, checkpoint_path, device)
+    model = get_model(params, checkpoint_path, device, compile=False)
 
     training_model = TrainingModel(
         model,

@@ -6,7 +6,7 @@ from gigmate.model.transformer_block import TransformerBlock
 
 class Encoder(nn.Module):
 
-    def __init__(self, num_layers: int, d_model: int, num_heads: int, dff: int, sliding_window_size: int, dropout: float):
+    def __init__(self, num_layers: int, d_model: int, num_heads: int, dff: int, sliding_window_size: Optional[int], dropout: float):
         super(Encoder, self).__init__()
 
         self.num_layers = num_layers

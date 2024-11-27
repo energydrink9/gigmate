@@ -2,11 +2,12 @@ from typing import List, Optional, Tuple
 import torch.nn as nn
 from torch import Tensor
 from gigmate.model.transformer_block import TransformerBlock
+from gigmate.utils.constants import MAX_SEQ_LEN
 
 
 class Decoder(nn.Module):
 
-    def __init__(self, num_layers: int, d_model: int, num_heads: int, dff: int, sliding_window_size: int, dropout: float):
+    def __init__(self, num_layers: int, d_model: int, num_heads: int, dff: int, sliding_window_size: Optional[int], dropout: float):
         super(Decoder, self).__init__()
 
         self.num_layers = num_layers
@@ -28,7 +29,7 @@ class Decoder(nn.Module):
             self.dff,
             sliding_window_size=self.sliding_window_size,
             dropout=self.dropout,
-            start_token=self.sliding_window_size,
+            start_token=self.sliding_window_size if self.sliding_window_size is not None else MAX_SEQ_LEN,
             has_cross_attention=True,
         )
 

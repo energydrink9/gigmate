@@ -8,7 +8,7 @@ from gigmate.dataset.dataset import SequenceLengths
 from gigmate.model.decoder import Decoder
 from gigmate.model.encoder import Encoder
 from gigmate.model.utils import compile_model
-from gigmate.utils.constants import get_pad_token_id, get_params, get_use_alibi, get_use_custom_model
+from gigmate.utils.constants import USE_SLIDING_WINDOW, get_pad_token_id, get_params, get_use_alibi, get_use_custom_model
 from gigmate.utils.device import Device
 
 
@@ -60,28 +60,30 @@ def get_key_padding_mask(max_seq_len: int, sequence_lengths: List[int], device=N
 
 def generate_causal_sliding_mask(
     sz: int,
-    sliding_window_size: int,
+    sliding_window_size: Optional[int],
     device=None,
     dtype: Optional[torch.dtype] = None,
 ) -> Tensor:
     if sz < 1:
         raise ValueError("Size must be positive")
-    if sliding_window_size < 1:
-        raise ValueError("Sliding window size must be positive")
 
     mask = torch.triu(
         torch.ones((sz, sz), dtype=torch.bool, device=device),
         diagonal=1,
     )
     
-    # If sliding window is smaller than sequence length,
-    # also mask out tokens too far in the past
-    if sliding_window_size < sz:
-        window_mask = torch.tril(
-            torch.ones((sz, sz), dtype=torch.bool, device=device),
-            diagonal=-sliding_window_size
-        )
-        mask = mask | window_mask
+    if sliding_window_size is not None:
+        if sliding_window_size < 1:
+            raise ValueError("Sliding window size must be positive")
+
+        # If sliding window is smaller than sequence length,
+        # also mask out tokens too far in the past
+        if sliding_window_size < sz:
+            window_mask = torch.tril(
+                torch.ones((sz, sz), dtype=torch.bool, device=device),
+                diagonal=-sliding_window_size
+            )
+            mask = mask | window_mask
     
     return mask
 
@@ -98,7 +100,7 @@ class TransformerModel(nn.Module):
         vocab_size: int,
         max_decoder_seq_len: int,
         max_seq_len: int,
-        sliding_window_size: int,
+        sliding_window_size: Optional[int],
         dropout: float = 0.1,
         padding_value=0,
     ):
@@ -166,7 +168,8 @@ class TransformerModel(nn.Module):
                 )
                 
                 # Only the last sliding window is used for cross attention
-                cross_attention_src = cross_attention_src[:, -self.sliding_window_size:, :]
+                if self.sliding_window_size is not None:
+                    cross_attention_src = cross_attention_src[:, -self.sliding_window_size:, :]
 
             else:
                 cross_attention_src = encoder_cache
@@ -224,7 +227,7 @@ def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu',
         vocab_size=params['vocab_size'],
         max_decoder_seq_len=params['max_decoder_seq_len'],
         max_seq_len=params['max_seq_len'],
-        sliding_window_size=params['sliding_window_size'],
+        sliding_window_size=params['sliding_window_size'] if USE_SLIDING_WINDOW else None,
         dropout=params['dropout_rate'],
         padding_value=get_pad_token_id(),
     )

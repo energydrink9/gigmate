@@ -64,17 +64,21 @@ def generate_sliding_window_mask_mod(window_size: int, cache_index: Optional[int
 SLIDING_WINDOWS_SIZE = get_params()['sliding_window_size']
 
 
-def causal_sliding_padded_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
+def causal_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
+    return (q_idx >= kv_idx)
+
+
+def causal_sliding_mask(b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
     return (q_idx >= kv_idx) & (q_idx - kv_idx < SLIDING_WINDOWS_SIZE)
 
 
-def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, cache_index: Optional[int], device: str, block_size: Optional[int] = None) -> BlockMask:
+def create_block_mask_cached(sliding_window_size: Optional[int], q_len: int, kv_len: int, cache_index: Optional[int], device: str, block_size: Optional[int] = None) -> BlockMask:
 
     # TODO: use mask mod computed here once the issue with Flex Attention failing is fixed
     # mask_mod = generate_sliding_window_mask_mod(sliding_window_size, cache_index, device)
 
     mask = create_block_mask(
-        mask_mod=causal_sliding_padded_mask,
+        mask_mod=causal_sliding_mask if sliding_window_size is not None else causal_mask,
         B=None,
         H=None,
         Q_LEN=q_len,
@@ -88,7 +92,7 @@ def create_block_mask_cached(sliding_window_size: int, q_len: int, kv_len: int, 
 
 def get_score_mod(  # noqa: C901
         causal: bool,
-        sliding_window_size: int,
+        sliding_window_size: Optional[int],
         cache_index: Optional[int],
         use_cache: bool,
         alibi_score_mod: Optional[Callable],
@@ -118,9 +122,11 @@ def get_score_mod(  # noqa: C901
 
     def sliding_window_causal(score, b, h, q_idx, kv_idx):
         causal_score = torch.where(q_idx >= kv_idx, 0., float('-inf'))
-        window_score = torch.where(q_idx - kv_idx < sliding_window_size, 0., float('-inf'))
-
-        return score + causal_score + window_score
+        if sliding_window_size is not None:
+            window_score = torch.where(q_idx - kv_idx < sliding_window_size, 0., float('-inf'))
+            return score + causal_score + window_score
+        else:
+            return causal_score
 
     def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
         q_idx_override = torch.tensor(cache_index, device=q_idx.device.type) if use_cache and cache_index is not None else q_idx
@@ -161,7 +167,7 @@ def get_score_mod(  # noqa: C901
 class CachedMultiheadAttention(torch.nn.Module):
 
     kv_cache: Optional[Tensor]
-    sliding_window_size: int
+    sliding_window_size: Optional[int]
     embed_dim: int
     num_heads: int
     head_dim: int
@@ -169,7 +175,7 @@ class CachedMultiheadAttention(torch.nn.Module):
     in_proj_kv: torch.nn.Module
     start_token: int
 
-    def __init__(self, embed_dim: int, num_heads: int, sliding_window_size: int, start_token: int = 0, is_cross_attention=False) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, sliding_window_size: Optional[int], start_token: int = 0, is_cross_attention=False) -> None:
         if embed_dim <= 0 or num_heads <= 0:
             raise ValueError(
                 f"embed_dim and num_heads must be greater than 0,"
@@ -247,7 +253,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         in_proj_layer_kv: torch.nn.Module,
         is_cross_attention: bool,
         out_proj_layer: Linear,
-        sliding_window_size: int,
+        sliding_window_size: Optional[int],
         use_cache: bool = False,
         cache: Optional[Tensor] = None,
         cache_index: Optional[int] = None,
@@ -284,7 +290,7 @@ class CachedMultiheadAttention(torch.nn.Module):
         updated_cache: Optional[Tensor] = None
 
         if use_cache:
-            updated_cache = update_kv_cache(cache, q, k, v, cache_index, sliding_window_size, bsz, embed_dim)
+            updated_cache = update_kv_cache(cache, q, k, v, cache_index, sliding_window_size if sliding_window_size is not None else src_len, bsz, embed_dim)
             if cache is not None:
                 k = updated_cache[0]
                 v = updated_cache[1]
