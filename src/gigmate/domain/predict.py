@@ -1,4 +1,5 @@
 import itertools
+import math
 import os
 import time
 from encodec.utils import save_audio
@@ -53,7 +54,7 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
         save_audio(stem_tensor.detach().cpu(), stem_file, sample_rate=sr)
 
         # Remove start token and cut to desired length
-        end = 1 + min(frame_rate * INPUT_SEQUENCE_LENGTH_IN_SECONDS, MAX_DECODER_SEQ_LEN)
+        end = 1 + min(math.ceil(frame_rate * INPUT_SEQUENCE_LENGTH_IN_SECONDS), MAX_DECODER_SEQ_LEN)
         input_sequence = stem_sequence[:, :, 1:end]
 
         print(f'Generating {AUDIO_TO_GENERATE_LENGTH} seconds of audio')
