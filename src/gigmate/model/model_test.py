@@ -2,7 +2,7 @@ import random
 import pytest
 import torch
 from gigmate.dataset.dataset import SequenceLengths
-from gigmate.model.model import TransformerModel, generate_causal_sliding_mask, get_key_padding_mask, positional_encoding
+from gigmate.model.model import USE_CUSTOM_MODEL, TransformerModel, generate_causal_sliding_mask, get_key_padding_mask, positional_encoding
 from gigmate.utils.constants import get_random_seed
 from gigmate.utils.device import get_device
 
@@ -97,7 +97,8 @@ def skip_test_model_dtype_mismatch():
 
 
 def test_model_eval():
-    if DEVICE == 'cuda' or DEVICE == 'mps':
+
+    if USE_CUSTOM_MODEL is False or DEVICE != 'cpu':
 
         query = generate_query_vector(BATCH_SIZE, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(DEVICE)
         conditioning_query = generate_query_vector(BATCH_SIZE, MAX_SEQ_LEN, CODEBOOKS).to(DEVICE)
@@ -109,7 +110,8 @@ def test_model_eval():
 
 
 def test_model_forward_pass():
-    if DEVICE == 'cuda' or DEVICE == 'mps':
+
+    if USE_CUSTOM_MODEL is False or DEVICE != 'cpu':
 
         query = generate_query_vector(BATCH_SIZE, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(DEVICE)
         conditioning_query = generate_query_vector(BATCH_SIZE, MAX_SEQ_LEN, CODEBOOKS).to(DEVICE)
@@ -122,36 +124,30 @@ def test_model_forward_pass():
 
 def test_model_pos_encodings():
 
-    if DEVICE == 'cuda' or DEVICE == 'mps':
+    pos_enc = positional_encoding(5, 4)
+    
+    expected = torch.tensor([[
+        [0.0000, 1.0000, 0.0000, 1.0000],
+        [0.8415, 0.5403, 0.0100, 0.9999],
+        [0.9093, -0.4161, 0.0200, 0.9998],
+        [0.1411, -0.9900, 0.0300, 0.9996],
+        [-0.7568, -0.6536, 0.0400, 0.9992]
+    ]])
 
-        pos_enc = positional_encoding(5, 4)
-        
-        expected = torch.tensor([[
-            [0.0000, 1.0000, 0.0000, 1.0000],
-            [0.8415, 0.5403, 0.0100, 0.9999],
-            [0.9093, -0.4161, 0.0200, 0.9998],
-            [0.1411, -0.9900, 0.0300, 0.9996],
-            [-0.7568, -0.6536, 0.0400, 0.9992]
-        ]])
-
-        print(pos_enc)
-
-        assert torch.allclose(pos_enc, expected, atol=1e-4)
+    assert torch.allclose(pos_enc, expected, atol=1e-4)
         
 
 def test_compiled_model():
 
-    device = get_device()
-
-    if device == 'cuda' or device == 'mps':
+    if USE_CUSTOM_MODEL is False or DEVICE != 'cpu':
 
         emb__dim = 2
         num_heads = 1
         batch_size = 2
-        query = generate_query_vector(batch_size, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(device)
-        conditioning_query = generate_query_vector(batch_size, MAX_SEQ_LEN, CODEBOOKS).to(device)
+        query = generate_query_vector(batch_size, MAX_DECODER_SEQ_LEN, CODEBOOKS).to(DEVICE)
+        conditioning_query = generate_query_vector(batch_size, MAX_SEQ_LEN, CODEBOOKS).to(DEVICE)
         sequence_lengths = SequenceLengths(full_track=[22, 32], stem=[10, 2])
-        model = get_model(d_model=emb__dim, num_heads=num_heads).to(device)
+        model = get_model(d_model=emb__dim, num_heads=num_heads).to(DEVICE)
         model = torch.compile(model, backend='aot_eager', fullgraph=True)
         
         result = model(query, conditioning_query, sequence_lengths=sequence_lengths)
@@ -159,7 +155,7 @@ def test_compiled_model():
         result[0].sum().backward()
     
     else:
-        print(f"Skipping test because flex attention does not support {device}")
+        print(f"Skipping test because flex attention does not support {DEVICE}")
 
 
 # TODO: fix and re-enable
@@ -321,7 +317,5 @@ def test_generate_causal_sliding_mask():
         [True, True, False, False, True],
         [True, True, True, False, False]
     ])
-
-    print(mask)
 
     assert torch.equal(mask, expected)
