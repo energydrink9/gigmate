@@ -64,7 +64,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
 def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, ckpt_path: Optional[str] = None):
     accumulate_grad_batches = params['accumulate_grad_batches']
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
-    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch)
+    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch, compile=False)
 
     # summary(model, input_size=(params['batch_size'], max_seq_len, vocab_size))
     print('Loaded model:')

@@ -2,8 +2,8 @@ from typing import Optional, cast
 from clearml import Task
 from gigmate.utils.constants import get_clearml_project_name
 
-LATEST_TASK_CHECKPOINT_ID = None  # '513705d3461f4cfba22014a4e7afc514'
-ARTIFACT_NAME = 'weights-epoch-10'
+LATEST_TASK_CHECKPOINT_ID = 'd0ae9f86bd484634b5b1cba9e51bd482'
+ARTIFACT_NAME = 'weights-epoch-19'
 
 
 def get_task(task_id: Optional[str] = LATEST_TASK_CHECKPOINT_ID) -> Optional[Task]:

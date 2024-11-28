@@ -363,7 +363,7 @@ class TrainingModel(L.LightningModule):
 
 
 def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int, compile=True) -> TrainingModel:
-    model = get_model(params, checkpoint_path, device, compile=False)
+    model = get_model(params, checkpoint_path, device, compile=compile)
 
     training_model = TrainingModel(
         model,

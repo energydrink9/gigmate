@@ -212,7 +212,7 @@ def load_ckpt(model, checkpoint_path: str, device: Device) -> None:
     for key in list(state_dict.keys()):
         state_dict[key.replace("model.", "").replace("_orig_mod.", "")] = state_dict.pop(key)
 
-    model.load_state_dict(state_dict, strict=False)  # TODO: set strict back to True
+    model.load_state_dict(state_dict, strict=True)
 
 
 def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu', compile=True) -> TransformerModel:
