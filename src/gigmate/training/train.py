@@ -65,7 +65,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
 def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, ckpt_path: Optional[str] = None):
     accumulate_grad_batches = params['accumulate_grad_batches']
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
-    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch, compile=True)
+    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch, compile=False)
 
     # summary(model, input_size=(params['batch_size'], max_seq_len, vocab_size))
     print('Loaded model:')
@@ -96,7 +96,7 @@ def train_model(task: Optional[Task], params, device, output_dir: str, train_loa
         gradient_clip_val=params['gradient_clip'],
         precision='16-mixed' if device == 'cuda' and MIXED_PRECISION is True else '32-true',
         detect_anomaly=DEBUG,
-        deterministic='warn',
+        # deterministic='warn',
         check_val_every_n_epoch=1,
         val_check_interval=VAL_CHECK_INTERVAL,
     )

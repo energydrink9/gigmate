@@ -215,7 +215,7 @@ def load_ckpt(model, checkpoint_path: str, device: Device) -> None:
     model.load_state_dict(state_dict, strict=True)
 
 
-def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu', compile=True) -> TransformerModel:
+def get_model(params=get_params(), checkpoint_path=None, device: Device = 'cpu', compile: bool = True) -> TransformerModel:
 
     model = TransformerModel(
         encoder_layers=params['encoder_layers'],

@@ -4,22 +4,23 @@ from typing import List
 
 MAX_SEQ_LEN = 2048
 MAX_DECODER_SEQ_LEN = 512
-SLIDING_WINDOW_SIZE = 512
+SLIDING_WINDOW_SIZE = 256
 VOCAB_SIZE = 2048
-D_MODEL = 1024
+D_MODEL = 768
 CODEBOOKS = 4
 
-ENCODER_LAYERS = 24
-DECODER_LAYERS = 24
+ENCODER_LAYERS = 10
+DECODER_LAYERS = 14
 NUM_HEADS = 16
 DROPOUT_RATE = 0.1
 
 EPOCHS = 80
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-3
 MAX_LEARNING_RATE = 10
-GRADIENT_CLIP = 0.87
+MIN_LEARNING_RATE = 1e-7
+GRADIENT_CLIP = 1.0
 
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 ACCUMULATE_GRAD_BATCHES = 1
 
 TRAINING_SET_SIZE = 1.0
@@ -48,7 +49,7 @@ PARAMS = {
     'd_model': D_MODEL,
     'codebooks': CODEBOOKS,
     'num_heads': NUM_HEADS,
-    'dff': D_MODEL * 4,
+    'dff': D_MODEL * 8,
     'dropout_rate': DROPOUT_RATE,
     'epochs': EPOCHS,
     'max_seq_len': MAX_SEQ_LEN,
@@ -57,6 +58,7 @@ PARAMS = {
     'batch_size': BATCH_SIZE,
     'learning_rate': LEARNING_RATE,
     'max_learning_rate': MAX_LEARNING_RATE,
+    'min_learning_rate': MIN_LEARNING_RATE,
     'accumulate_grad_batches': ACCUMULATE_GRAD_BATCHES,
     'gradient_clip': GRADIENT_CLIP,
     'training_set_size': TRAINING_SET_SIZE,

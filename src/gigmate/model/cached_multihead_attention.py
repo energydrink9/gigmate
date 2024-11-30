@@ -103,7 +103,7 @@ def get_score_mod(  # noqa: C901
         tgt_len: int,
         src_len: int,
         device_type: str,
-):
+) -> Callable[[Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]:
 
     if sequence_lengths is not None:
         sequence_lengths_tensor = torch.tensor(sequence_lengths, device=device_type)
@@ -120,7 +120,7 @@ def get_score_mod(  # noqa: C901
             if length <= 0:
                 print('Warning: the length of kv sequence length is less or equal to 0')
 
-    def sliding_window_causal(score, b, h, q_idx, kv_idx):
+    def sliding_window_causal(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor):
         causal_score = torch.where(q_idx >= kv_idx, 0., float('-inf'))
         if sliding_window_size is not None:
             window_score = torch.where(q_idx - kv_idx < sliding_window_size, 0., float('-inf'))
@@ -128,7 +128,7 @@ def get_score_mod(  # noqa: C901
         else:
             return causal_score
 
-    def score_mod(score, b, h, q_idx, kv_idx) -> Tensor:
+    def score_mod(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor) -> Tensor:
         q_idx_override = torch.tensor(cache_index, device=q_idx.device.type) if use_cache and cache_index is not None else q_idx
         if alibi_score_mod is not None:
             score = alibi_score_mod(score, b, h, q_idx_override, kv_idx)

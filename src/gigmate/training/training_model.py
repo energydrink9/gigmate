@@ -9,6 +9,7 @@ from torch import autocast, nn, Tensor
 import lightning as L
 from torchmetrics.text import Perplexity
 import torch.optim
+from torch.optim.lr_scheduler import OneCycleLR
 from typing import Literal
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
@@ -39,7 +40,7 @@ CURRICULUM_LEARNING = False
 # TODO: Enable compilation of training model
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50
-NUMBER_OF_SAMPLES_FOR_FAD = 0
+NUMBER_OF_SAMPLES_FOR_FAD = 5
 TEMPERATURE = 0.7
 LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING = False
 
@@ -119,11 +120,12 @@ def get_target_audio(target: Tensor, sequence_length: int) -> Tuple[Tensor, int]
 
 
 class TrainingModel(L.LightningModule):
-    def __init__(self, model, learning_rate: float, max_learning_rate: float, vocab_size: int, codebooks: int, steps_per_epoch: int, logger: Optional[Logger]):
+    def __init__(self, model, learning_rate: float, max_learning_rate: float, min_learning_rate: float, vocab_size: int, codebooks: int, steps_per_epoch: int, logger: Optional[Logger]):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
         self.max_learning_rate = max_learning_rate
+        self.min_learning_rate = min_learning_rate
         self.codebooks = codebooks
         self.steps_per_epoch = steps_per_epoch
         
@@ -158,25 +160,26 @@ class TrainingModel(L.LightningModule):
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
 
-        # one_cycle_lr_scheduler = OneCycleLR(
-        #     optimizer,
-        #     max_lr=self.max_learning_rate,
-        #     epochs=self.trainer.max_epochs,
-        #     steps_per_epoch=self.steps_per_epoch,
-        # )
-        greedy_lr_scheduler = GreedyLR(
+        lr_scheduler = OneCycleLR(
+            optimizer,
+            max_lr=self.max_learning_rate,
+            epochs=20,
+            steps_per_epoch=self.steps_per_epoch,
+        )
+        lr_scheduler = GreedyLR(
             optimizer,
             initial_lr=self.learning_rate,
             total_steps=self.steps_per_epoch // 2,
             max_lr=self.max_learning_rate,
+            min_lr=self.min_learning_rate,
             patience=3,
-            window=50,
-            warmup=20,
+            window=25,
+            warmup=15,
         )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": greedy_lr_scheduler,
+                "scheduler": lr_scheduler,
                 "interval": "step",
                 "reduce_on_plateau": True,
                 "monitor": "train_loss_step",
@@ -434,13 +437,14 @@ class TrainingModel(L.LightningModule):
             traceback.print_exc()
 
 
-def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int, compile=True) -> TrainingModel:
+def get_training_model(params, checkpoint_path: Optional[str], device: str, task: Optional[Task], steps_per_epoch: int, compile: bool = True) -> TrainingModel:
     model = get_model(params, checkpoint_path, device, compile=compile)
 
     training_model = TrainingModel(
         model,
         learning_rate=params['learning_rate'],
         max_learning_rate=params['max_learning_rate'],
+        min_learning_rate=params['min_learning_rate'],
         vocab_size=params['vocab_size'],
         codebooks=params['codebooks'],
         steps_per_epoch=steps_per_epoch,
