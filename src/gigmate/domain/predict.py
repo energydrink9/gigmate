@@ -46,12 +46,16 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
         full_track_sequence = revert_interleaving(full_track_sequence)
         full_track_tensor, sr = decode(full_track_sequence, device)
         save_audio(full_track_tensor.detach().cpu(), full_track_file, sample_rate=sr)
+        upload_name = 'full_track_{file_idx}.wav'
+        fs.copy(full_track_file, os.path.join(BUCKET, id, upload_name))
 
         stem_sequence = data_items[i].inputs.stem[:1, :, :]
         stem_sequence = cut_sequence(stem_sequence, data_items[i].sequence_lengths.stem[0], cut_left=False)
         stem_sequence = revert_interleaving(stem_sequence)
         stem_tensor, sr = decode(stem_sequence, device)
         save_audio(stem_tensor.detach().cpu(), stem_file, sample_rate=sr)
+        upload_name = 'stem_{file_idx}.wav'
+        fs.copy(stem_file, os.path.join(BUCKET, id, upload_name))
 
         # Remove start token and cut to desired length
         end = 1 + min(math.ceil(frame_rate * INPUT_SEQUENCE_LENGTH_IN_SECONDS), MAX_DECODER_SEQ_LEN)
@@ -80,7 +84,8 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
         print(f'Saved predicted file at {output_file}')
         
         file_idx = SUBSET_OF_TEST_DATASET_NUMBER * NUM_OUTPUT_FILES + i
-        upload_name = f'prediction_{file_idx}'
+        upload_name = f'prediction_{file_idx}.wav'
+        print(f'copy {output_file} to {os.path.join(BUCKET, id, upload_name)}')
         fs.copy(output_file, os.path.join(BUCKET, id, upload_name))
         print(f'Uploaded file with artifact name {upload_name}')
 
