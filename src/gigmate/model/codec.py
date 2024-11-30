@@ -131,9 +131,11 @@ def encode(audio: Tensor, sr: int, device: Device, add_start_and_end_tokens: boo
     return encoded_chunks_bundles, codec.config.frame_rate
 
 
-def decode(codes: Tensor, device: Device) -> Tuple[Tensor, int]:
+def decode(codes: Tensor, device: Device, to_cpu: bool = False) -> Tuple[Tensor, int]:
     device = device if not device.startswith('mps') else 'cpu'  # Decoding is not supported on MPS
     codec = get_codec(device)
     decoded_wav = codec.decode(codes.unsqueeze(0).to(device), [None])
-    output_tensor = decoded_wav['audio_values'].squeeze(0)
+    output_tensor = decoded_wav['audio_values'].detach().squeeze(0)
+    if to_cpu is True:
+        output_tensor = output_tensor.to(device='cpu')
     return output_tensor, codec.config.sampling_rate

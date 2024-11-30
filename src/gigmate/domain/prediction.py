@@ -34,9 +34,6 @@ def predict_next_token(
 ) -> Tuple[torch.Tensor, Optional[List[torch.Tensor]], torch.Tensor]:
 
     with torch.inference_mode():
-        print(f"Predicting next token at index {current_token_index}...")
-        print(f"Current input is {input.shape} {input}")
-        print(f'sequence lengths: {sequence_lengths}')
         outputs, updated_cache, updated_encoder_cache = model(
             input,
             conditioning_input=full_track_sequence,
@@ -47,13 +44,8 @@ def predict_next_token(
             encoder_cache=encoder_cache,
         )
         outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
-        # print('Result from model:')
-        # complete_outputs = sample_from_logits(outputs, temperature, no_special_tokens=False)
-        # print(f'outputs: {complete_outputs.shape} {complete_outputs}')
         outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
-        print(outputs.shape, outputs)
         predicted_tokens = sample_from_logits(outputs, temperature, no_special_tokens=False).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
-        print(f"Predicted token is {predicted_tokens}")
         
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 
@@ -107,7 +99,7 @@ def complete_sequence(
     temperature: float = DEFAULT_TEMPERATURE,
     show_progress: bool = False,
     use_cache: bool = True,
-    input_sequence: torch.Tensor = torch.empty((1, CODEBOOKS, 0))
+    input_sequence: torch.Tensor = torch.empty((1, CODEBOOKS, 0), dtype=torch.int64)
 ) -> torch.Tensor:
 
     def process_next_note_sequence(
@@ -154,21 +146,11 @@ def complete_sequence(
     max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
     output_sequence = None
-
-    print('--- Full track ---')
-    print(full_track_sequence.shape)
-    print(full_track_sequence)
     full_track_initial_sequence, full_track_initial_sequence_length = get_initial_next_sequence(full_track_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True)
     stem_sequence_length = max_decoder_seq_len
-    print('--- Conditioning ---')
-    print(full_track_initial_sequence.shape)
-    print(full_track_initial_sequence)
     next_sequence, _ = get_initial_next_sequence(input_sequence, max_decoder_seq_len, padding_value, codebooks, device, prepend_sos_token=True)
     initial_token_index = input_sequence.shape[-1] - 1
     sequence_lengths = SequenceLengths(full_track=[full_track_initial_sequence_length], stem=[stem_sequence_length])
-    print('--- Next ---')
-    print(next_sequence.shape)
-    print(next_sequence)
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)
 
     loop = tqdm(range(max_output_tokens)).iterable if show_progress else range(max_output_tokens)
@@ -194,10 +176,6 @@ def complete_sequence(
             encoder_cache=encoder_cache,
         )
         output_sequence = new_output_sequence
-
-        print('output')
-        print(output_sequence.shape)
-        print(output_sequence)
 
     return revert_interleaving(cast(torch.Tensor, output_sequence))
 
