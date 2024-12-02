@@ -129,6 +129,7 @@ class TransformerModel(nn.Module):
                 activation='gelu',
                 norm_first=True,
                 batch_first=True,
+                bias=False,
             )
         
         linears = [nn.Linear(d_model, vocab_size) for _ in range(codebooks)]
@@ -140,6 +141,9 @@ class TransformerModel(nn.Module):
 
         self.apply(init_weights)
     
+    def compute_embeddings(self, input: Tensor) -> Tensor:
+        return cast(torch.Tensor, sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)]))
+
     def forward(
             self,
             input: Tensor,
@@ -151,8 +155,8 @@ class TransformerModel(nn.Module):
             encoder_cache: Optional[Tensor] = None
     ) -> Tuple[Tensor, Optional[List[Tensor]], Optional[Tensor]]:
 
-        x = cast(torch.Tensor, sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)]))
-        full_track_x = cast(torch.Tensor, sum([self.embeddings[k](conditioning_input[:, k]) for k in range(self.codebooks)]))
+        x = self.compute_embeddings(input)
+        full_track_x = self.compute_embeddings(conditioning_input)
         
         if not USE_ALIBI:
             # Add positional encoding
@@ -185,14 +189,15 @@ class TransformerModel(nn.Module):
             )
 
         else:
-            
+            full_sequence_key_padding_mask = get_key_padding_mask(self.max_seq_len, sequence_lengths.full_track, device=full_track_x.device, inverted=True) if sequence_lengths is not None else None
             tgt_mask = generate_causal_sliding_mask(self.max_decoder_seq_len, self.sliding_window_size, device=x.device)
             x = self.transformer(
                 full_track_x,
                 x,
                 tgt_mask=tgt_mask,
-                src_key_padding_mask=get_key_padding_mask(self.max_seq_len, sequence_lengths.full_track, device=full_track_x.device, inverted=True) if sequence_lengths is not None else None,
+                src_key_padding_mask=full_sequence_key_padding_mask,
                 tgt_key_padding_mask=get_key_padding_mask(self.max_decoder_seq_len, sequence_lengths.stem, device=x.device) if sequence_lengths is not None else None,
+                memory_key_padding_mask=full_sequence_key_padding_mask,
                 src_is_causal=False,
                 tgt_is_causal=True,
             )

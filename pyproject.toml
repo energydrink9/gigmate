@@ -48,15 +48,6 @@ accelerate = "^1.1.1"
 librosa = "^0.10.2.post1"
 s3fs = "^2024.10.0"
 
-[tool.poetry.dev-dependencies]
-flake8 = "^7.1.1"
-mypy = "^1.13.0"
-pydub-stubs = "^0.25.1.1"
-pytest = "^8.3.3"
-types-tqdm = "^4.66.0.20240417"
-types-requests = "^2.32.0.20240914"
-sounddevice = "^0.5.1"
-
 [tool.poetry.extras]
 test = ["pytest", "pytest-cov"]
 
@@ -73,9 +64,16 @@ litserve = "0.2.2"
 onnx = "*"
 "python-multipart" = "0.0.9"
 
-
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
+cleanlab = {extras = ["datalab"], version = "^2.7.0"}
+flake8 = "^7.1.1"
+mypy = "^1.13.0"
+pydub-stubs = "^0.25.1.1"
+pytest = "^8.3.3"
+types-tqdm = "^4.66.0.20240417"
+types-requests = "^2.32.0.20240914"
+sounddevice = "^0.5.1"
 
 [build-system]
 requires = ["poetry-core"]

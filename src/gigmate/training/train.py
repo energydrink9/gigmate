@@ -21,7 +21,7 @@ UPLOAD_CHECKPOINT = True
 UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 5
 MIXED_PRECISION = True
 USE_CLEARML = ENVIRONMENT != 'dev'
-VAL_CHECK_INTERVAL = 0.5
+VAL_CHECK_INTERVAL = None
 
 
 def upload_weights(task, epoch, filepath):
@@ -31,12 +31,11 @@ def upload_weights(task, epoch, filepath):
 
 def init_clearml_task(params):
     
-    task_name = f'train enc_seq_len {params["max_seq_len"]}'
-    task_name += f' dec_seq_len {params["max_decoder_seq_len"]}'
-    task_name += f' batch {params["batch_size"]}'
-    task_name += f' layers {params["encoder_layers"]}-{params["decoder_layers"]}'
-    task_name += f' heads {params["num_heads"]}'
-    task_name += f' dmodel {params["d_model"]}'
+    task_name = f'train dmodel {params["d_model"]},'
+    task_name += f' batch {params["batch_size"]},'
+    task_name += f' layers {params["encoder_layers"]}/{params["decoder_layers"]},'
+    task_name += f' heads {params["num_heads"]},'
+    task_name += f' seq_len {params["max_seq_len"]}/{params["max_decoder_seq_len"]}'
     
     task = Task.init(
         project_name=get_clearml_project_name(),

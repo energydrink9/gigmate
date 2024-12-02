@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import glob
 import multiprocessing
 import pickle
-from typing import List, Tuple
+from typing import List, Literal, Tuple
 from clearml import Dataset as ClearmlDataset
 import torch
 from torch import Tensor
@@ -38,6 +38,13 @@ def get_entries(dir: str) -> List[Tuple[str, str]]:
     return entries
 
 
+@dataclass
+class DataLoaderItem():
+    full_track: Tensor
+    stem: Tensor
+    path: str
+
+
 class AudioDataset(Dataset):
     dir: str
     entries: List[Tuple[str, str]]
@@ -59,6 +66,8 @@ class AudioDataset(Dataset):
         with open(stem_file_path, 'rb') as stem_file:
             stem = pickle.load(stem_file).to('cpu')
 
+        path = os.path.dirname(full_track_file_path)
+
         # add start and end tokens
         full_track = add_start_and_end_tokens(full_track.unsqueeze(0))
         stem = add_start_and_end_tokens(stem.unsqueeze(0))
@@ -72,10 +81,10 @@ class AudioDataset(Dataset):
             full_track = cut_sequence(full_track, length_to_keep)
             stem = cut_sequence(stem, length_to_keep)
 
-        return full_track, stem
+        return DataLoaderItem(full_track=full_track, stem=stem, path=path)
     
 
-def get_dataset(directory: str):
+def get_audio_dataset(directory: str):
     dataset = AudioDataset(directory)
     return dataset
 
@@ -94,15 +103,15 @@ def get_remote_dataset(dataset_set: str) -> str:
     return dataset.get_local_copy()
 
 
-def get_pt_dataset_from_remote_dataset(set: str):
-    dataset = get_remote_dataset(set)
-    return get_dataset(dataset)
+def get_dataset(dataset_set: Literal['train', 'validation', 'test']) -> AudioDataset:
+    dataset = get_remote_dataset(dataset_set)
+    return get_audio_dataset(dataset)
 
 
 def get_datasets():
-    train_ds = get_pt_dataset_from_remote_dataset('train')
-    validation_ds = get_pt_dataset_from_remote_dataset('validation')
-    test_ds = get_pt_dataset_from_remote_dataset('test')
+    train_ds = get_dataset('train')
+    validation_ds = get_dataset('validation')
+    test_ds = get_dataset('test')
     return train_ds, validation_ds, test_ds
 
 
@@ -130,15 +139,17 @@ class DatasetBatch():
     inputs: ModelInput
     labels: Tensor
     sequence_lengths: SequenceLengths
+    paths: List[str]
 
 
-def get_empty_item(codebooks: int, max_seq_len: int, max_decoder_seq_len: int) -> Tuple[Tensor, Tensor, Tensor, int, int]:
+def get_empty_item(codebooks: int, max_seq_len: int, max_decoder_seq_len: int) -> Tuple[Tensor, Tensor, Tensor, int, int, str]:
     return (
         torch.full((1, codebooks, max_seq_len), get_pad_token_id()),
         torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()),
         torch.full((1, codebooks, max_decoder_seq_len), get_pad_token_id()),
         0,
         0,
+        '',
     )
 
 
@@ -184,7 +195,7 @@ def get_model_input(full_track, stem, sequence_length, max_seq_len, max_decoder_
     return full_track_input, full_track_sequence_length, stem_input, stem_sequence_length, target
 
 
-def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
+def collate_fn(items: List[DataLoaderItem]) -> DatasetBatch:
     batch_size = params['batch_size']
     codebooks = params['codebooks']
 
@@ -193,21 +204,22 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
     targets: List[Tensor] = []
     full_track_sequence_lengths = []
     stem_sequence_lengths = []
+    paths: List[str] = []
 
     padding_value = get_pad_token_id()
     max_seq_len = get_params()['max_seq_len']
     max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
-    for full_track, stem in batch:
-        assert full_track.ndim == 3, 'Expected 3 dimensions for full track'
-        assert stem.ndim == 3, 'Expected 3 dimensions for stem'
-        assert full_track.shape == stem.shape, 'Full track and stem have different shapes'
+    for item in items:
+        assert item.full_track.ndim == 3, 'Expected 3 dimensions for full track'
+        assert item.stem.ndim == 3, 'Expected 3 dimensions for stem'
+        assert item.full_track.shape == item.stem.shape, 'Full track and stem have different shapes'
 
-        _, _, sequence_length = full_track.shape
+        _, _, sequence_length = item.full_track.shape
 
         # We need at least MIN_TOKENS_TO_KEEP tokens in the full track and in the stem
         if sequence_length < max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM:
-            full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
+            full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length, path = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
             print('Warning: skipping dataset item because too short')
             continue
 
@@ -217,8 +229,8 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
             use_partial_input_sequence = random_number <= 25
 
             full_track_input, full_track_sequence_length, stem_input, stem_sequence_length, target = get_model_input(
-                full_track,
-                stem,
+                item.full_track,
+                item.stem,
                 sequence_length,
                 max_seq_len,
                 max_decoder_seq_len,
@@ -226,6 +238,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
                 padding_value,
                 use_partial_input_sequence=use_partial_input_sequence,
             )
+            path = item.path
 
             assert full_track_input.shape == (1, codebooks, max_seq_len), f"Shape of full track is {full_track_input.shape}"
             assert stem_input.shape == (1, codebooks, max_decoder_seq_len), f"Shape of stem is {stem_input.shape}"
@@ -243,8 +256,9 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
         targets.append(target)
         full_track_sequence_lengths.append(full_track_sequence_length)
         stem_sequence_lengths.append(stem_sequence_length)
+        paths.append(path)
 
-    empty_items_count = len(batch) - batch_size
+    empty_items_count = len(items) - batch_size
 
     if empty_items_count > 0:
 
@@ -252,7 +266,7 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
 
         # Fill the batch with empty items to avoid recompilations when needed (last batch can be smaller)
         for _ in range(empty_items_count):
-            full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
+            full_track_input, stem_input, target, full_track_sequence_length, stem_sequence_length, path = get_empty_item(codebooks, max_seq_len, max_decoder_seq_len)
             full_tracks.append(full_track_input)
             stems.append(stem_input)
             targets.append(target)
@@ -264,12 +278,13 @@ def decoder_only_collate_fn(batch: List[Tuple[Tensor, Tensor]]) -> DatasetBatch:
         inputs=ModelInput(full_track=torch.cat(full_tracks, dim=0), stem=torch.cat(stems, dim=0)),
         labels=torch.cat(targets, dim=0),
         sequence_lengths=SequenceLengths(full_track=full_track_sequence_lengths, stem=stem_sequence_lengths),
+        paths=paths,
     )
 
 
-def get_data_loader(dataset: str) -> DataLoader:
+def get_data_loader(dataset: Literal['train', 'validation', 'test']) -> DataLoader:
 
-    ds = get_pt_dataset_from_remote_dataset(dataset)
+    ds = get_dataset(dataset)
     num_workers = multiprocessing.cpu_count()
     prefetch_factor = 4
     shuffle = dataset == 'train'
@@ -277,7 +292,7 @@ def get_data_loader(dataset: str) -> DataLoader:
     return DataLoader(
         ds,
         batch_size=params['batch_size'],
-        collate_fn=decoder_only_collate_fn,
+        collate_fn=collate_fn,
         pin_memory=True,
         num_workers=num_workers,
         persistent_workers=True,
