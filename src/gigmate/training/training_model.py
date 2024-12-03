@@ -221,7 +221,7 @@ class TrainingModel(L.LightningModule):
                 weight = CODEBOOKS_LOSS_WEIGHTS[k]
                 total_loss += codebook_loss * weight
             
-            total_loss = total_loss / self.codebooks
+            total_loss = total_loss / self.codebooks * 512 / (90 + 0.10 * (512 - 230))
             
             return total_loss, metrics
         

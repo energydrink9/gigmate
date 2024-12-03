@@ -115,6 +115,9 @@ class TransformerModel(nn.Module):
         embeddings = [nn.Embedding(vocab_size, d_model, padding_idx=padding_value) for _ in range(codebooks)]
         self.embeddings = nn.ModuleList(embeddings)
 
+        full_track_embeddings = [nn.Embedding(vocab_size, d_model, padding_idx=padding_value) for _ in range(codebooks)]
+        self.full_track_embeddings = nn.ModuleList(full_track_embeddings)
+
         if USE_CUSTOM_MODEL:
             self.encoder = Encoder(encoder_layers, d_model, num_heads, dff, sliding_window_size, dropout)
             self.decoder = Decoder(decoder_layers, d_model, num_heads, dff, sliding_window_size, dropout)
@@ -141,8 +144,8 @@ class TransformerModel(nn.Module):
 
         self.apply(init_weights)
     
-    def compute_embeddings(self, input: Tensor) -> Tensor:
-        return cast(torch.Tensor, sum([self.embeddings[k](input[:, k]) for k in range(self.codebooks)]))
+    def compute_embeddings(self, input: Tensor, embeddings: nn.ModuleList) -> Tensor:
+        return cast(torch.Tensor, sum([embeddings[k](input[:, k]) for k in range(self.codebooks)]))
 
     def forward(
             self,
@@ -155,8 +158,8 @@ class TransformerModel(nn.Module):
             encoder_cache: Optional[Tensor] = None
     ) -> Tuple[Tensor, Optional[List[Tensor]], Optional[Tensor]]:
 
-        x = self.compute_embeddings(input)
-        full_track_x = self.compute_embeddings(conditioning_input)
+        x = self.compute_embeddings(input, self.embeddings)
+        full_track_x = self.compute_embeddings(conditioning_input, self.full_track_embeddings)
         
         if not USE_ALIBI:
             # Add positional encoding
