@@ -160,8 +160,8 @@ class TransformerModel(nn.Module):
         
         if not USE_ALIBI:
             # Add positional encoding
-            x = x + self.pos_encoding[:, self.max_seq_len:self.max_seq_len + self.max_decoder_seq_len, :].to(x.device)
             full_track_x = full_track_x + self.pos_encoding[:, :self.max_seq_len, :].to(full_track_x.device)
+            x = x + self.pos_encoding[:, self.max_seq_len:self.max_seq_len + self.max_decoder_seq_len, :].to(x.device)
 
         if USE_CUSTOM_MODEL:
             # TODO: Implement kv cache for the encoder

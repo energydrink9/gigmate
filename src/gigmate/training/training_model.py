@@ -1,3 +1,4 @@
+import math
 import os
 import tempfile
 import traceback
@@ -24,6 +25,7 @@ from gigmate.model.model import get_model
 from gigmate.model.utils import compile_model
 from gigmate.training.greedy_lr import GreedyLR
 from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id
+from gigmate.utils.sequence_utils import cut_sequence, revert_interleaving
 
 PAD_TOKEN_ID = get_pad_token_id()
 TEMP_DIR = tempfile.gettempdir()
@@ -36,16 +38,15 @@ CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
     2: 1,
     3: 1,
 }
-CURRICULUM_LEARNING = False
+CURRICULUM_LEARNING = True
 # TODO: Enable compilation of training model
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50
 NUMBER_OF_SAMPLES_FOR_FAD = 5
-TEMPERATURE = 0.7
+TEMPERATURE = 0.9
 LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING = False
 
 
-# Define the weighted cross-entropy loss function
 def weighted_cross_entropy_loss(logits, targets, weights):
     """
     Custom cross-entropy loss for curriculum learning with token-based weights.
@@ -58,20 +59,12 @@ def weighted_cross_entropy_loss(logits, targets, weights):
     Returns:
         torch.Tensor: The computed weighted cross-entropy loss.
     """
+        
+    loss = torch.nn.functional.cross_entropy(logits, targets, ignore_index=PAD_TOKEN_ID, reduction='none')
+    weighted_token_loss = loss * weights  # Apply weights
     
-    # Reshape weights to apply to each token in the sequence
-    weights = weights.view(1, -1, 1)  # Shape [1, seq_length, 1]
+    return weighted_token_loss.mean()  # Average across batch and sequence
     
-    # Calculate cross-entropy loss for each token individually
-    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # Compute log probabilities
-    target_log_probs = log_probs.gather(dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)  # Gather log probabilities for target tokens
-    
-    # Compute weighted loss per token
-    weighted_token_loss = -target_log_probs * weights  # Apply weights to each token
-    loss = weighted_token_loss.mean()  # Average across batch and sequence
-    
-    return loss
-
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
     # This formats are equivalent:
@@ -105,6 +98,12 @@ def get_pred_audio(logit: Tensor, sequence_length: int, sample: bool = False) ->
     pred_audio, pred_audio_sr = decode(flat_pred, logit.device.type, to_cpu=True)
 
     return pred_audio.detach(), pred_audio_sr
+
+
+def get_full_track_prediction_input(sequence: Tensor, sequence_length: int) -> Tensor:
+    sequence = sequence[:1, :, :]
+    sequence = cut_sequence(sequence, sequence_length, cut_left=True)
+    return revert_interleaving(sequence)
 
 
 @torch.compiler.disable
@@ -180,7 +179,7 @@ class TrainingModel(L.LightningModule):
             )
         }
 
-        scheduler = schedulers['greedy']
+        scheduler = schedulers['one_cycle']
 
         return {
             "optimizer": optimizer,
@@ -204,14 +203,16 @@ class TrainingModel(L.LightningModule):
         metric_name_with_dataset = f"{dataset}_{metric_name}" if dataset is not None else metric_name
         self.log(metric_name_with_dataset, value, on_step=interval == 'step', on_epoch=True, prog_bar=prog_bar, batch_size=batch_size)
 
-    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str, step: int = 0) -> Tuple[Tensor, Dict[str, Tensor]]:
+    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tuple[Tensor, Dict[str, Tensor]]:
+
         metrics: Dict[str, Tensor] = dict()
         total_loss = torch.tensor(0., device=self.device)
 
         if CURRICULUM_LEARNING:
             # logits have shape (B, V, S) == (B, 2048, 512)
-            w = step / (torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) + 1)
-            weights = torch.clamp(w, max=1)
+            # max(e^-(x/100), 0.1)
+            w = math.e ** -(torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) / 100)
+            weights = torch.clamp(w, min=0.10, max=1)
 
             for k in range(self.codebooks):
                 codebook_loss = weighted_cross_entropy_loss(logits[k], targets[k], weights)
@@ -281,9 +282,10 @@ class TrainingModel(L.LightningModule):
                 logits_fad = logits[:1, :, :length, :]
                 targets_fad = targets[:1, :, :length]
                 pred_audio_tf, pred_audio_tf_sr = get_pred_audio(logits_fad.detach().to(self.device), length)
-                # pred_audio_encoded = self.predict_continuation(full_track[:1], length, 0)
+                full_track_prediction_input = get_full_track_prediction_input(full_track[:1, :, :], sequence_lengths.full_track[0])
+                # pred_audio_encoded = self.predict_continuation(full_track_prediction_input, length, 0)
                 # pred_audio, pred_audio_sr = decode(pred_audio_encoded, full_track.device.type, to_cpu=True)
-                pred_audio_temp_encoded = self.predict_continuation(full_track[:1], length, TEMPERATURE)
+                pred_audio_temp_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE)
                 pred_audio_temp, pred_audio_temp_sr = decode(pred_audio_temp_encoded, full_track.device.type, to_cpu=True)
                 target_audio, target_audio_sr = get_target_audio(targets_fad.detach(), length)
                 self.log_frechet_audio_distance_metric(batch.size, pred_audio_tf, target_audio, 'train', self.frechet_audio_distance_metric_tf['train'], 'tf')
@@ -303,7 +305,6 @@ class TrainingModel(L.LightningModule):
         return complete_sequence(self.model, full_track.device.type, full_track, FRAME_RATE, PAD_TOKEN_ID, length / FRAME_RATE, temperature, use_cache=False)
 
     def validation_step(self, batch: DatasetBatch, batch_idx: int):
-        # curriculum_learning_step = self.get_curriculum_learning_step()
 
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
         logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
@@ -318,9 +319,10 @@ class TrainingModel(L.LightningModule):
                 logits_fad = logits[:1, :, :length, :]
                 targets_fad = targets[:1, :, :length]
                 pred_audio_tf, pred_audio_tf_sr = get_pred_audio(logits_fad.detach(), length)
-                # pred_audio_encoded = self.predict_continuation(full_track[:1], length, 0)
+                full_track_prediction_input = get_full_track_prediction_input(full_track[:1, :, :], sequence_lengths.full_track[0])
+                # pred_audio_encoded = self.predict_continuation(full_track_prediction_input, length, 0)
                 # pred_audio, pred_audio_sr = decode(pred_audio_encoded, full_track.device.type, to_cpu=True)
-                pred_audio_temp_encoded = self.predict_continuation(full_track[:1], length, TEMPERATURE)
+                pred_audio_temp_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE)
                 pred_audio_temp, pred_audio_temp_sr = decode(pred_audio_temp_encoded, full_track.device.type, to_cpu=True)
                 target_audio, target_audio_sr = get_target_audio(targets_fad.detach(), length)
                 self.log_frechet_audio_distance_metric(batch.size, pred_audio_tf, target_audio, 'val', self.frechet_audio_distance_metric_tf['val'], 'tf')
