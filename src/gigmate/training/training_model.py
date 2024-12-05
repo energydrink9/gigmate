@@ -38,7 +38,7 @@ CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
     2: 1,
     3: 1,
 }
-CURRICULUM_LEARNING = True
+CURRICULUM_LEARNING = False
 # TODO: Enable compilation of training model
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50

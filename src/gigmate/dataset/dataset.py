@@ -17,6 +17,7 @@ params = get_params()
 
 MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK = 64
 MIN_TOKENS_TO_KEEP_FROM_STEM = params['max_decoder_seq_len']
+LEARNING_TASK: Literal['stemming', 'continuation'] = 'stemming'
 
 
 def get_stem_file_path(file_path: str) -> str:
@@ -153,7 +154,7 @@ def get_empty_item(codebooks: int, max_seq_len: int, max_decoder_seq_len: int) -
     )
 
 
-def get_model_input(full_track, stem, sequence_length, max_seq_len, max_decoder_seq_len, codebooks, padding_value, use_partial_input_sequence=False):
+def get_model_input(full_track, stem, sequence_length, max_seq_len, max_decoder_seq_len, codebooks, padding_value, use_partial_input_sequence=False, learning_task: Literal['stemming', 'continuation'] = 'continuation'):
     
     assert sequence_length >= max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM, "Invalid sequence length: must be larger than max_seq_len + MIN_TOKENS_TO_KEEP_FROM_STEM"
 
@@ -162,11 +163,17 @@ def get_model_input(full_track, stem, sequence_length, max_seq_len, max_decoder_
     max_full_track_start_position = sequence_length - MIN_TOKENS_TO_KEEP_FROM_STEM - max_seq_len
     
     full_track_start_position = random.randint(min_full_track_start_position, max_full_track_start_position - 1)
-    full_track_end_position = full_track_start_position + random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_seq_len - 1) if use_partial_input_sequence else full_track_start_position + max_seq_len
+    if learning_task == 'continuation' and use_partial_input_sequence is True:
+        full_track_end_position = full_track_start_position + random.randint(MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, max_seq_len - 1)
+    else:
+        full_track_end_position = full_track_start_position + max_seq_len
     full_track_input = full_track[:, :, full_track_start_position:full_track_end_position]
 
-    # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
-    stem_input = stem[:, :, full_track_end_position + 1:]
+    if learning_task == 'continuation':
+        # Remove 1st *length_to_keep* elements from the target and the stem that do not have to be predicted
+        stem_input = stem[:, :, full_track_end_position + 1:]
+    else:
+        stem_input = stem[:, :, full_track_end_position - max_decoder_seq_len:full_track_end_position]
     target = stem_input
 
     # Shift the stem by 1 position and set the first token to the start of sequence token
@@ -237,6 +244,7 @@ def collate_fn(items: List[DataLoaderItem]) -> DatasetBatch:
                 codebooks,
                 padding_value,
                 use_partial_input_sequence=use_partial_input_sequence,
+                learning_task=LEARNING_TASK,
             )
             path = item.path
 

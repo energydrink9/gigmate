@@ -1,14 +1,15 @@
 import os
-from typing import Optional
+from typing import Optional, cast
 from clearml import Task
 import torch
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
+from s3fs.core import S3FileSystem
 
 from gigmate.dataset.dataset import get_data_loaders
-from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
+from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path, get_remote_checkpoint_path
 from gigmate.training.training_model import get_training_model
 from gigmate.utils.constants import get_clearml_project_name, get_params
 from gigmate.utils.device import get_device
@@ -24,9 +25,10 @@ USE_CLEARML = ENVIRONMENT != 'dev'
 VAL_CHECK_INTERVAL = None
 
 
-def upload_weights(task, epoch, filepath):
+def upload_weights(fs: S3FileSystem, task_id: str, epoch: int, filepath: str):
     if UPLOAD_CHECKPOINT:
-        task.upload_artifact(name=f'weights-epoch-{epoch}', artifact_object=filepath, wait_on_upload=False)
+        remote_path = get_remote_checkpoint_path(task_id, epoch)
+        fs.upload(filepath, remote_path)
 
 
 def init_clearml_task(params):
@@ -52,16 +54,17 @@ def init_clearml_task(params):
 
 
 class ModelCheckpointUpload(ModelCheckpoint):
-    def __init__(self, task, *args, **kwargs):
+    def __init__(self, task_id: str, fs: S3FileSystem, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.task = task
+        self.task_id = task_id
+        self.fs = fs
     
     def _save_checkpoint(self, trainer, filepath) -> None:
         super()._save_checkpoint(trainer, filepath)
-        upload_weights(self.task, trainer.current_epoch, filepath)
+        upload_weights(self.fs, self.task_id, trainer.current_epoch, filepath)
 
 
-def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, ckpt_path: Optional[str] = None):
+def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, fs: Optional[S3FileSystem], ckpt_path: Optional[str] = None):
     accumulate_grad_batches = params['accumulate_grad_batches']
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
     training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch, compile=False)
@@ -73,7 +76,8 @@ def train_model(task: Optional[Task], params, device, output_dir: str, train_loa
     logger = TensorBoardLogger("tb_logs", name="GigMate")
     # early_stopping = EarlyStopping('val_loss', patience=10)
     checkpoint_callback = ModelCheckpointUpload(
-        task=task,
+        task_id=cast(str, task.id) if task is not None else 'default',
+        fs=fs,
         dirpath=os.path.join(output_dir, 'checkpoints'),
         filename='{epoch}',
         every_n_epochs=UPLOAD_CHECKPOINT_EVERY_N_EPOCHS,
@@ -81,12 +85,12 @@ def train_model(task: Optional[Task], params, device, output_dir: str, train_loa
         save_top_k=1,
         save_weights_only=True,
         save_on_train_epoch_end=True,
-    )
+    ) if fs is not None else None
     lr_monitor = LearningRateMonitor(logging_interval='step')
     
     trainer = L.Trainer(
         # callbacks=[early_stopping, checkpoint_callback, lr_monitor],
-        callbacks=[checkpoint_callback, lr_monitor],
+        callbacks=[checkpoint_callback, lr_monitor] if checkpoint_callback is not None else [lr_monitor],
         logger=logger,
         max_epochs=params['epochs'],
         limit_train_batches=params['training_set_size'],
@@ -119,9 +123,10 @@ if __name__ == '__main__':
     if USE_CLEARML is True:
         task = init_clearml_task(params)
 
+    fs = S3FileSystem(use_listings_cache=False) if UPLOAD_CHECKPOINT is True else None
+
     print('Loading dataset...')
     train_loader, validation_loader, _ = get_data_loaders()
 
-    # Set to none to start training from scratch, otherwise use `get_latest_model_checkpoint_path` to continue training from last checkpoint.
     ckpt_path = get_latest_model_checkpoint_path()
-    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, ckpt_path=ckpt_path)
+    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, fs=fs, ckpt_path=ckpt_path)

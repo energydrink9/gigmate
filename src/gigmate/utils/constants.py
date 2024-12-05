@@ -49,7 +49,7 @@ PARAMS = {
     'd_model': D_MODEL,
     'codebooks': CODEBOOKS,
     'num_heads': NUM_HEADS,
-    'dff': D_MODEL * 8,
+    'dff': D_MODEL * 6,
     'dropout_rate': DROPOUT_RATE,
     'epochs': EPOCHS,
     'max_seq_len': MAX_SEQ_LEN,

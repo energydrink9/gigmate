@@ -10,6 +10,7 @@ import pydub.utils
 SAMPLE_RATE = 22050
 OUTPUT_SAMPLE_RATE = 44100
 device = get_device()
+
 model = get_model(checkpoint_path=get_latest_model_checkpoint_path(), device=device)
 TEST_GENERATION_FILE = 'resources/test_creep_cut.ogg'
 TEST_TIMING_FILE = 'resources/test_timing_2.wav'
