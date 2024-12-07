@@ -44,6 +44,7 @@ def init_weights(m):
 
 def get_key_padding_mask(max_seq_len: int, sequence_lengths: List[int], device=None, inverted: bool = False) -> Tensor:
     batch_size = len(sequence_lengths)
+
     kpm = torch.full((batch_size, max_seq_len), False, device=device)
 
     if inverted is True:
@@ -155,7 +156,8 @@ class TransformerModel(nn.Module):
             use_cache: bool = False,
             cache: Optional[List[Tensor]] = None,
             cache_index: Optional[int] = None,
-            encoder_cache: Optional[Tensor] = None
+            encoder_cache: Optional[Tensor] = None,
+            shift: int = 0,
     ) -> Tuple[Tensor, Optional[List[Tensor]], Optional[Tensor]]:
 
         x = self.compute_embeddings(input, self.embeddings)
@@ -164,7 +166,7 @@ class TransformerModel(nn.Module):
         if not USE_ALIBI:
             # Add positional encoding
             full_track_x = full_track_x + self.pos_encoding[:, :self.max_seq_len, :].to(full_track_x.device)
-            x = x + self.pos_encoding[:, self.max_seq_len:self.max_seq_len + self.max_decoder_seq_len, :].to(x.device)
+            x = x + self.pos_encoding[:, self.max_seq_len - self.max_decoder_seq_len + shift:self.max_seq_len + shift, :].to(x.device)
 
         if USE_CUSTOM_MODEL:
             # TODO: Implement kv cache for the encoder

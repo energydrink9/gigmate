@@ -26,4 +26,4 @@ echo "Running script"
 export ENV='prod'
 #export TORCH_LOGS="+dynamo"
 #export TORCHDYNAMO_VERBOSE=1
-poetry run --no-interaction --no-ansi python -m gigmate.training.train
+CUDA_LAUNCH_BLOCKING=1 poetry run --no-interaction --no-ansi python -m gigmate.training.train

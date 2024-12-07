@@ -72,16 +72,17 @@ def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: to
     return next_sequence
 
 
-def get_initial_next_sequence(sequence: torch.Tensor, max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False):
+def get_initial_next_sequence(sequence: torch.Tensor, max_seq_len: int, padding_value: int, codebooks: int, device: Device, pad_left=False, prepend_sos_token=False, interleaving: bool = True):
     start_of_sequence_token = get_start_of_sequence_token(codebooks).to(device)
 
     sequence = sequence.to(device)
     if prepend_sos_token is True:
         sequence = torch.cat([start_of_sequence_token, sequence], dim=-1)
 
-    interleaved_sequence = apply_interleaving(sequence, padding_value)
-    sequence_length = interleaved_sequence.shape[-1]
-    padded_sequence = pad_sequence(interleaved_sequence, max_seq_len, padding_value, pad_left)
+    if interleaving is True:
+        sequence = apply_interleaving(sequence, padding_value)
+    sequence_length = sequence.shape[-1]
+    padded_sequence = pad_sequence(sequence, max_seq_len, padding_value, pad_left)
 
     if sequence_length > max_seq_len:
         return cut_sequence(padded_sequence, max_seq_len, cut_left=True), max_seq_len
@@ -146,7 +147,7 @@ def complete_sequence(
     max_decoder_seq_len = get_params()['max_decoder_seq_len']
     
     output_sequence = None
-    full_track_initial_sequence, full_track_initial_sequence_length = get_initial_next_sequence(full_track_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True)
+    full_track_initial_sequence, full_track_initial_sequence_length = get_initial_next_sequence(full_track_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True, interleaving=False)
     stem_sequence_length = max_decoder_seq_len
     next_sequence, _ = get_initial_next_sequence(input_sequence, max_decoder_seq_len, padding_value, codebooks, device, prepend_sos_token=True)
     initial_token_index = input_sequence.shape[-1] - 1

@@ -17,7 +17,7 @@ from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from torcheval.metrics import FrechetAudioDistance
 from encodec.utils import save_audio
 
-from gigmate.dataset.dataset import get_inputs_and_targets, restore_initial_sequence, DatasetBatch
+from gigmate.dataset.dataset import get_inputs_and_targets, get_shift, restore_initial_sequence, DatasetBatch
 from gigmate.domain.prediction import complete_sequence
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
@@ -25,7 +25,7 @@ from gigmate.model.model import get_model
 from gigmate.model.utils import compile_model
 from gigmate.training.greedy_lr import GreedyLR
 from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id
-from gigmate.utils.sequence_utils import cut_sequence, revert_interleaving
+from gigmate.utils.sequence_utils import cut_sequence
 
 PAD_TOKEN_ID = get_pad_token_id()
 TEMP_DIR = tempfile.gettempdir()
@@ -43,7 +43,7 @@ CURRICULUM_LEARNING = False
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50
 NUMBER_OF_SAMPLES_FOR_FAD = 5
-TEMPERATURE = 0.9
+TEMPERATURE = 0.6
 LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING = False
 
 
@@ -103,7 +103,8 @@ def get_pred_audio(logit: Tensor, sequence_length: int, sample: bool = False) ->
 def get_full_track_prediction_input(sequence: Tensor, sequence_length: int) -> Tensor:
     sequence = sequence[:1, :, :]
     sequence = cut_sequence(sequence, sequence_length, cut_left=True)
-    return revert_interleaving(sequence)
+    return sequence
+    # return revert_interleaving(sequence)
 
 
 @torch.compiler.disable
@@ -270,7 +271,7 @@ class TrainingModel(L.LightningModule):
         # self.log_metric(None, None, 'curriculum-learning', curriculum_learning_step, interval='step')
         
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
+        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
@@ -307,7 +308,7 @@ class TrainingModel(L.LightningModule):
     def validation_step(self, batch: DatasetBatch, batch_idx: int):
 
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths)
+        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
