@@ -2,7 +2,7 @@ import math
 import os
 import tempfile
 import traceback
-from typing import Any, Dict, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from clearml import Logger, Task
 from torchmetrics import Metric
 import torchmetrics.classification
@@ -25,8 +25,10 @@ from gigmate.model.model import get_model
 from gigmate.model.utils import compile_model
 from gigmate.training.greedy_lr import GreedyLR
 from gigmate.utils.constants import MAX_DECODER_SEQ_LEN, get_pad_token_id
+from gigmate.utils.env import get_environment
 from gigmate.utils.sequence_utils import cut_sequence
 
+ENVIRONMENT = get_environment()
 PAD_TOKEN_ID = get_pad_token_id()
 TEMP_DIR = tempfile.gettempdir()
 NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP = 10
@@ -42,7 +44,7 @@ CURRICULUM_LEARNING = False
 # TODO: Enable compilation of training model
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50
-NUMBER_OF_SAMPLES_FOR_FAD = 5
+NUMBER_OF_SAMPLES_FOR_FAD = 5 if ENVIRONMENT != 'dev' else 0
 TEMPERATURE = 0.6
 LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING = False
 
@@ -65,6 +67,29 @@ def weighted_cross_entropy_loss(logits, targets, weights):
     
     return weighted_token_loss.mean()  # Average across batch and sequence
     
+
+class LossByCodebookAndTokenPosition():
+    values: List[Tensor]
+
+    def __init__(self):
+        self.reset()
+
+    def update(self, value: Tensor) -> None:
+        self.values.append(value)
+
+    def compute(self, codebook: Optional[int]) -> List[float]:
+        data = torch.vstack(self.values)
+
+        if codebook is None:
+            data = data.mean(dim=0)
+        else:
+            data = data[codebook, :]
+
+        return data.detach().cpu().numpy().tolist()
+    
+    def reset(self):
+        self.values = []
+
 
 def reshape_logits_for_loss_calculation(logits: Tensor) -> Tensor:
     # This formats are equivalent:
@@ -130,6 +155,7 @@ class TrainingModel(L.LightningModule):
         self.steps_per_epoch = steps_per_epoch
         
         self.loss: Dict[str, Dict[int, nn.CrossEntropyLoss]] = dict({'train': dict(), 'val': dict()})
+        self.loss_by_codebook_and_token_position: Dict[str, LossByCodebookAndTokenPosition] = dict({'train': LossByCodebookAndTokenPosition(), 'val': LossByCodebookAndTokenPosition()})
         self.accuracy_metric: Dict[str, Dict[int, Metric]] = dict({'train': dict(), 'val': dict()})
         self.perplexity_metric: Dict[str, Dict[int, Metric]] = dict({'train': dict(), 'val': dict()})
         self.frechet_audio_distance_metric_tf: Dict[str, Any] = dict()
@@ -137,8 +163,8 @@ class TrainingModel(L.LightningModule):
         self.frechet_audio_distance_metric_temp: Dict[str, Any] = dict()
 
         for k in range(codebooks):
-            self.loss['train'][k] = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN_ID)  # Ignore padding index
-            self.loss['val'][k] = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN_ID)  # Ignore padding index
+            self.loss['train'][k] = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN_ID, reduction='none')  # Ignore padding index
+            self.loss['val'][k] = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN_ID, reduction='none')  # Ignore padding index
 
         for k in range(codebooks):
             self.accuracy_metric['train'][k] = torchmetrics.classification.Accuracy(task="multiclass", num_classes=vocab_size, ignore_index=PAD_TOKEN_ID)
@@ -204,7 +230,7 @@ class TrainingModel(L.LightningModule):
         metric_name_with_dataset = f"{dataset}_{metric_name}" if dataset is not None else metric_name
         self.log(metric_name_with_dataset, value, on_step=interval == 'step', on_epoch=True, prog_bar=prog_bar, batch_size=batch_size)
 
-    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tuple[Tensor, Dict[str, Tensor]]:
+    def compute_loss(self, logits: Dict[int, Tensor], targets: Dict[int, Tensor], set: str) -> Tuple[Tensor, Dict[str, Tensor], Tensor]:
 
         metrics: Dict[str, Tensor] = dict()
         total_loss = torch.tensor(0., device=self.device)
@@ -224,21 +250,26 @@ class TrainingModel(L.LightningModule):
             
             total_loss = total_loss / self.codebooks * 512 / (90 + 0.10 * (512 - 230))
             
-            return total_loss, metrics
+            return total_loss, metrics, torch.tensor([])
         
         else:
 
+            codebooks_loss_by_position = []
+
             for k in range(self.codebooks):
                 
-                codebook_loss = self.loss[set][k](logits[k], targets[k])
+                codebook_loss_unreduced: Tensor = self.loss[set][k](logits[k], targets[k])
+                codebook_loss = codebook_loss_unreduced.mean()
+                codebooks_loss_by_position.append(codebook_loss_unreduced.mean(dim=0))
                 metrics[f'loss-{k}'] = codebook_loss
 
                 weight = CODEBOOKS_LOSS_WEIGHTS[k]
                 total_loss += codebook_loss * weight
             
             total_loss = total_loss / self.codebooks
+            loss_by_codebooks_position = torch.vstack(codebooks_loss_by_position)
             
-            return total_loss, metrics
+            return total_loss, metrics, loss_by_codebooks_position
         
     def compute_metrics(self, logits: Dict[int, Tensor], target: Dict[int, Tensor], logits_for_loss: Dict[int, Tensor], set: str) -> Dict[str, Tensor]:
         metrics = dict()
@@ -274,7 +305,8 @@ class TrainingModel(L.LightningModule):
         logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
+        loss, loss_metrics, loss_by_codebooks_position = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
+        self.loss_by_codebook_and_token_position['train'].update(loss_by_codebooks_position)
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'train')
         
         if LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING and batch_idx < NUMBER_OF_SAMPLES_FOR_FAD:
@@ -311,7 +343,8 @@ class TrainingModel(L.LightningModule):
         logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
-        loss, loss_metrics = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
+        loss, loss_metrics, loss_by_codebooks_position = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
+        self.loss_by_codebook_and_token_position['val'].update(loss_by_codebooks_position)
         metrics = self.compute_metrics(codebook_logits, codebook_targets, codebook_logits_for_loss, 'val')
 
         if batch_idx < NUMBER_OF_SAMPLES_FOR_FAD:
@@ -362,11 +395,46 @@ class TrainingModel(L.LightningModule):
         self.log_metric(dataset_set, None, 'accuracy_real', accuracy_real, interval='epoch')
         self.log_metric(dataset_set, None, 'perplexity', perplexity, interval='epoch')
 
+    def plot_loss_by_token_position(self, dataset_set: Literal['train', 'val'], loss_by_codebook_and_token_position: LossByCodebookAndTokenPosition, codebook: Optional[int]):
+        if self.task_logger is not None:
+            if codebook is None:
+                self.task_logger.report_histogram(
+                    title=f"Loss by token position [{dataset_set}]",
+                    series="All codebooks",
+                    iteration=self.current_epoch,
+                    values=loss_by_codebook_and_token_position.compute(None),
+                    xaxis="Token position",
+                    yaxis="Loss",
+                )
+            else:
+                self.task_logger.report_histogram(
+                    title=f"Loss by token position [{dataset_set}]",
+                    series=f"Codebook {codebook}",
+                    iteration=self.current_epoch,
+                    values=loss_by_codebook_and_token_position.compute(codebook),
+                    xaxis="Token position",
+                    yaxis="Loss",
+                )
+
     def on_train_epoch_end(self):
         self.log_epoch_metrics('train')
 
+        self.plot_loss_by_token_position('train', self.loss_by_codebook_and_token_position['train'], None)
+        
+        for codebook in range(self.codebooks):
+            self.plot_loss_by_token_position('train', self.loss_by_codebook_and_token_position['train'], codebook)
+
+        self.loss_by_codebook_and_token_position['train'].reset()
+
     def on_validation_epoch_end(self):
         self.log_epoch_metrics('val')
+
+        self.plot_loss_by_token_position('val', self.loss_by_codebook_and_token_position['val'], None)
+
+        for codebook in range(self.codebooks):
+            self.plot_loss_by_token_position('val', self.loss_by_codebook_and_token_position['val'], codebook)
+
+        self.loss_by_codebook_and_token_position['val'].reset()
 
     def log_frechet_audio_distance_metric(self, batch_size: int, pred_audio: Tensor, target_audio: Tensor, dataset_set: Literal['train', 'val', 'test'], metric: FrechetAudioDistance, name: Optional[str] = None):
         try:
