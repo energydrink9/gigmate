@@ -70,7 +70,7 @@ def test_get_model_input():
         shift=max_decoder_seq_len,
     )
 
-    expected_full_track_input = cut_sequence(apply_interleaving(full_track.clone()[:, :, start: start + max_seq_len], PADDING_VALUE), max_seq_len, cut_left=True)
+    expected_full_track_input = cut_sequence(full_track.clone()[:, :, start: start + max_seq_len], max_seq_len, cut_left=True)
     expected_stem_input = shift_sequence(stem[:, :, start + max_seq_len: start + max_seq_len + max_decoder_seq_len], shifts=1)
     expected_stem_input[:, :, 0:1] = get_start_of_sequence_token(CODEBOOKS)
     expected_stem_input = cut_sequence(apply_interleaving(expected_stem_input, PADDING_VALUE), max_decoder_seq_len)
@@ -110,7 +110,7 @@ def test_get_model_input_with_zero_shift():
         shift=0,
     )
 
-    expected_full_track_input = cut_sequence(apply_interleaving(full_track.clone()[:, :, start: start + max_seq_len], PADDING_VALUE), max_seq_len, cut_left=True)
+    expected_full_track_input = cut_sequence(full_track.clone()[:, :, start: start + max_seq_len], max_seq_len, cut_left=True)
     expected_stem_input = shift_sequence(stem[:, :, start + max_seq_len - max_decoder_seq_len: start + max_seq_len], shifts=1)
     expected_stem_input[:, :, 0:1] = get_start_of_sequence_token(CODEBOOKS)
     expected_stem_input = cut_sequence(apply_interleaving(expected_stem_input, PADDING_VALUE), max_decoder_seq_len, cut_left=False)

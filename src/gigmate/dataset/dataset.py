@@ -91,9 +91,7 @@ class AudioDataset(Dataset):
         full_track = pad_sequence(full_track, full_track.shape[-1] + MAX_SEQ_LEN - MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, get_pad_token_id(), pad_left=True)
         stem = pad_sequence(stem, stem.shape[-1] + MAX_SEQ_LEN - MIN_TOKENS_TO_KEEP_FROM_FULL_TRACK, get_pad_token_id(), pad_left=True)
 
-        # TODO: change back
-        # return DataLoaderItem(full_track=full_track, stem=stem, path=path)
-        return DataLoaderItem(full_track=stem.clone(), stem=stem, path=path)
+        return DataLoaderItem(full_track=full_track, stem=stem, path=path)
     
 
 def get_audio_dataset(directory: str):
@@ -204,9 +202,6 @@ def get_model_input(full_track: Tensor, stem: Tensor, sequence_length: int, max_
     
     stem_input = pad_sequence(stem_input, max_decoder_seq_len, padding_value)
     target = pad_sequence(target, max_decoder_seq_len, padding_value)
-
-    if random.randint(0, 9) >= 5:
-        stem_sequence_length = min(stem_sequence_length, 20)
 
     return full_track_input, full_track_sequence_length, stem_input, stem_sequence_length, target
 

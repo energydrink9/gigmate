@@ -45,7 +45,8 @@ CURRICULUM_LEARNING = False
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50
 NUMBER_OF_SAMPLES_FOR_FAD = 5 if ENVIRONMENT != 'dev' else 0
-TEMPERATURE = 0.6
+TEMPERATURE_HIGH = 0.8
+TEMPERATURE_LOW = 0.4
 LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING = False
 
 
@@ -160,7 +161,8 @@ class TrainingModel(L.LightningModule):
         self.perplexity_metric: Dict[str, Dict[int, Metric]] = dict({'train': dict(), 'val': dict()})
         self.frechet_audio_distance_metric_tf: Dict[str, Any] = dict()
         self.frechet_audio_distance_metric: Dict[str, Any] = dict()
-        self.frechet_audio_distance_metric_temp: Dict[str, Any] = dict()
+        self.frechet_audio_distance_metric_temp_high: Dict[str, Any] = dict()
+        self.frechet_audio_distance_metric_temp_low: Dict[str, Any] = dict()
 
         for k in range(codebooks):
             self.loss['train'][k] = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN_ID, reduction='none')  # Ignore padding index
@@ -178,8 +180,10 @@ class TrainingModel(L.LightningModule):
         self.frechet_audio_distance_metric_tf['val'] = FrechetAudioDistance.with_vggish()
         # self.frechet_audio_distance_metric['train'] = FrechetAudioDistance.with_vggish()
         # self.frechet_audio_distance_metric['val'] = FrechetAudioDistance.with_vggish()
-        self.frechet_audio_distance_metric_temp['train'] = FrechetAudioDistance.with_vggish()
-        self.frechet_audio_distance_metric_temp['val'] = FrechetAudioDistance.with_vggish()
+        self.frechet_audio_distance_metric_temp_high['train'] = FrechetAudioDistance.with_vggish()
+        self.frechet_audio_distance_metric_temp_high['val'] = FrechetAudioDistance.with_vggish()
+        self.frechet_audio_distance_metric_temp_low['train'] = FrechetAudioDistance.with_vggish()
+        self.frechet_audio_distance_metric_temp_low['val'] = FrechetAudioDistance.with_vggish()
 
         self.task_logger = logger
 
@@ -316,18 +320,29 @@ class TrainingModel(L.LightningModule):
                 targets_fad = targets[:1, :, :length]
                 pred_audio_tf, pred_audio_tf_sr = get_pred_audio(logits_fad.detach().to(self.device), length)
                 full_track_prediction_input = get_full_track_prediction_input(full_track[:1, :, :], sequence_lengths.full_track[0])
-                # pred_audio_encoded = self.predict_continuation(full_track_prediction_input, length, 0)
-                # pred_audio, pred_audio_sr = decode(pred_audio_encoded, full_track.device.type, to_cpu=True)
-                pred_audio_temp_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE)
-                pred_audio_temp, pred_audio_temp_sr = decode(pred_audio_temp_encoded, full_track.device.type, to_cpu=True)
+
+                pred_audio_temp_high_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE_HIGH)
+                pred_audio_temp_high, pred_audio_temp_high_sr = decode(pred_audio_temp_high_encoded, full_track.device.type, to_cpu=True)
+                pred_audio_temp_low_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE_LOW)
+                pred_audio_temp_low, pred_audio_temp_low_sr = decode(pred_audio_temp_low_encoded, full_track.device.type, to_cpu=True)
                 target_audio, target_audio_sr = get_target_audio(targets_fad.detach(), length)
                 self.log_frechet_audio_distance_metric(batch.size, pred_audio_tf, target_audio, 'train', self.frechet_audio_distance_metric_tf['train'], 'tf')
-                # self.log_frechet_audio_distance_metric(batch.size, pred_audio, target_audio, 'train', self.frechet_audio_distance_metric['train'])
-                self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp, target_audio, 'train', self.frechet_audio_distance_metric_temp['train'], 'temp')
-                
+                self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp_high, target_audio, 'train', self.frechet_audio_distance_metric_temp_high['train'], 'temp_high')
+                self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp_low, target_audio, 'train', self.frechet_audio_distance_metric_temp_low['train'], 'temp_low')
+
                 if batch_idx < 8:
-                    # self.save_generated_audio(batch_idx, pred_audio_tf, pred_audio, pred_audio_temp, target_audio, pred_audio_tf_sr, pred_audio_sr, pred_audio_temp_sr, target_audio_sr, 'train')
-                    self.save_generated_audio(batch_idx, pred_audio_tf, None, pred_audio_temp, target_audio, pred_audio_tf_sr, None, pred_audio_temp_sr, target_audio_sr, 'train')
+                    self.save_generated_audio(
+                        batch_idx,
+                        pred_audio_tf,
+                        pred_audio_temp_high,
+                        pred_audio_temp_low,
+                        target_audio,
+                        pred_audio_tf_sr,
+                        pred_audio_temp_high_sr,
+                        pred_audio_temp_low_sr,
+                        target_audio_sr,
+                        'train'
+                    )
 
         self.log_metrics('train', batch.size, interval='step', loss=loss, **loss_metrics)
         self.log_metrics('train', batch.size, interval='step', **metrics)
@@ -354,18 +369,17 @@ class TrainingModel(L.LightningModule):
                 targets_fad = targets[:1, :, :length]
                 pred_audio_tf, pred_audio_tf_sr = get_pred_audio(logits_fad.detach(), length)
                 full_track_prediction_input = get_full_track_prediction_input(full_track[:1, :, :], sequence_lengths.full_track[0])
-                # pred_audio_encoded = self.predict_continuation(full_track_prediction_input, length, 0)
-                # pred_audio, pred_audio_sr = decode(pred_audio_encoded, full_track.device.type, to_cpu=True)
-                pred_audio_temp_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE)
-                pred_audio_temp, pred_audio_temp_sr = decode(pred_audio_temp_encoded, full_track.device.type, to_cpu=True)
+                pred_audio_temp_high_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE_HIGH)
+                pred_audio_temp_high, pred_audio_temp_high_sr = decode(pred_audio_temp_high_encoded, full_track.device.type, to_cpu=True)
+                pred_audio_temp_low_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE_LOW)
+                pred_audio_temp_low, pred_audio_temp_low_sr = decode(pred_audio_temp_low_encoded, full_track.device.type, to_cpu=True)
                 target_audio, target_audio_sr = get_target_audio(targets_fad.detach(), length)
                 self.log_frechet_audio_distance_metric(batch.size, pred_audio_tf, target_audio, 'val', self.frechet_audio_distance_metric_tf['val'], 'tf')
-                # self.log_frechet_audio_distance_metric(batch.size, pred_audio, target_audio, 'val', self.frechet_audio_distance_metric['val'])
-                self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp, target_audio, 'val', self.frechet_audio_distance_metric_temp['val'], 'temp')
+                self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp_high, target_audio, 'val', self.frechet_audio_distance_metric_temp_high['val'], 'temp_high')
+                self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp_low, target_audio, 'val', self.frechet_audio_distance_metric_temp_low['val'], 'temp_low')
 
                 if batch_idx < 8:
-                    # self.save_generated_audio(batch_idx, pred_audio_tf, pred_audio, pred_audio_temp, target_audio, pred_audio_tf_sr, pred_audio_sr, pred_audio_temp_sr, target_audio_sr, 'val')
-                    self.save_generated_audio(batch_idx, pred_audio_tf, None, pred_audio_temp, target_audio, pred_audio_tf_sr, None, pred_audio_temp_sr, target_audio_sr, 'val')
+                    self.save_generated_audio(batch_idx, pred_audio_tf, pred_audio_temp_high, pred_audio_temp_low, target_audio, pred_audio_tf_sr, pred_audio_temp_high_sr, pred_audio_temp_low_sr, target_audio_sr, 'val')
 
         self.log_metrics('val', batch.size, loss=loss, interval='step', **loss_metrics)
         self.log_metrics('val', batch.size, interval='step', **metrics)
@@ -458,25 +472,24 @@ class TrainingModel(L.LightningModule):
         self,
         index: int,
         pred_audio_tf: Tensor,
-        pred_audio: Optional[Tensor],
-        pred_audio_temp: Tensor,
+        pred_audio_temp_high: Tensor,
+        pred_audio_temp_low: Tensor,
         target_audio: Tensor,
         pred_audio_tf_sr: int,
-        pred_audio_sr: Optional[int],
-        pred_audio_temp_sr: int,
+        pred_audio_temp_high_sr: int,
+        pred_audio_temp_low_sr: int,
         target_audio_sr: int,
         dataset_set: Literal['train', 'val', 'test']
     ):
         
         try:
             pred_audio_tf_path = os.path.join(TEMP_DIR, 'pred_audio_tf.wav')
-            pred_audio_path = os.path.join(TEMP_DIR, 'pred_audio.wav')
-            pred_audio_temp_path = os.path.join(TEMP_DIR, 'pred_audio_temp.wav')
+            pred_audio_temp_high_path = os.path.join(TEMP_DIR, 'pred_audio_temp_high.wav')
+            pred_audio_temp_low_path = os.path.join(TEMP_DIR, 'pred_audio_temp_low.wav')
             target_audio_path = os.path.join(TEMP_DIR, 'target_audio.wav')
             save_audio(path=pred_audio_tf_path, wav=pred_audio_tf.to(dtype=torch.float32), sample_rate=pred_audio_tf_sr)
-            if pred_audio is not None and pred_audio_sr is not None:
-                save_audio(path=pred_audio_path, wav=pred_audio.to(dtype=torch.float32), sample_rate=pred_audio_sr)
-            save_audio(path=pred_audio_temp_path, wav=pred_audio_temp.to(dtype=torch.float32), sample_rate=pred_audio_temp_sr)
+            save_audio(path=pred_audio_temp_high_path, wav=pred_audio_temp_high.to(dtype=torch.float32), sample_rate=pred_audio_temp_high_sr)
+            save_audio(path=pred_audio_temp_low_path, wav=pred_audio_temp_low.to(dtype=torch.float32), sample_rate=pred_audio_temp_low_sr)
             save_audio(path=target_audio_path, wav=target_audio.to(dtype=torch.float32), sample_rate=target_audio_sr)
             if self.task_logger is not None:
                 self.task_logger.report_media(
@@ -487,20 +500,19 @@ class TrainingModel(L.LightningModule):
                     file_extension='.wav',
                     max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
                 )
-                if pred_audio is not None:
-                    self.task_logger.report_media(
-                        title=f'Predicted audio ({dataset_set})',
-                        series=f'{index}',
-                        iteration=self.current_epoch,
-                        local_path=pred_audio_path,
-                        file_extension='.wav',
-                        max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
-                    )
                 self.task_logger.report_media(
-                    title=f'Predicted audio Temp ({dataset_set})',
+                    title=f'Predicted audio Temp high ({dataset_set})',
                     series=f'{index}',
                     iteration=self.current_epoch,
-                    local_path=pred_audio_temp_path,
+                    local_path=pred_audio_temp_high_path,
+                    file_extension='.wav',
+                    max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
+                )
+                self.task_logger.report_media(
+                    title=f'Predicted audio Temp low ({dataset_set})',
+                    series=f'{index}',
+                    iteration=self.current_epoch,
+                    local_path=pred_audio_temp_low_path,
                     file_extension='.wav',
                     max_history=NUMBER_OF_PREDICTED_SAMPLES_TO_KEEP,
                 )
