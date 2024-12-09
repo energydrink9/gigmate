@@ -11,7 +11,7 @@ from gigmate.dataset.dataset import SequenceLengths
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode, encode
 from gigmate.utils.audio_utils import generate_random_filename
-from gigmate.utils.constants import CODEBOOKS, get_pad_token_id, get_params
+from gigmate.utils.constants import CODEBOOKS, get_pad_token_id, get_params, get_start_of_sequence_token_id
 from gigmate.utils.device import Device
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
 
@@ -50,6 +50,30 @@ def predict_next_token(
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 
 
+# 0 1 2 3
+# S 1 2 3
+# P S 1 2
+# P P S 1
+# P P P S
+def correct_current_token(token: torch.Tensor, index: int) -> torch.Tensor:
+    if index == 1:
+        # Correct second token
+        token[:, 1, :] = get_start_of_sequence_token_id()
+        token[:, 2, :] = get_pad_token_id()
+        token[:, 3, :] = get_pad_token_id()
+
+    if index == 2:
+        # Correct second token
+        token[:, 2, :] = get_start_of_sequence_token_id()
+        token[:, 3, :] = get_pad_token_id()
+
+    if index == 3:
+        # Correct second token
+        token[:, 3, :] = get_start_of_sequence_token_id()
+
+    return token
+
+
 def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: torch.Tensor, max_seq_len: int, index: int):
     """
     Updates the next sequence with the current token, taking into account interleaving and maximum sequence length.
@@ -58,6 +82,7 @@ def update_next_sequence(previous_next_sequence: torch.Tensor, current_token: to
         torch.Tensor: the updated next sequence ready for the next inference iteration
     """
     current_token = current_token.to(previous_next_sequence.device)
+    current_token = correct_current_token(current_token, index)
 
     assert index <= max_seq_len, "index must not be larger than max_seq_len"
 
@@ -150,7 +175,7 @@ def complete_sequence(
     full_track_initial_sequence, full_track_initial_sequence_length = get_initial_next_sequence(full_track_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True, interleaving=False)
     stem_sequence_length = max_decoder_seq_len
     next_sequence, _ = get_initial_next_sequence(input_sequence, max_decoder_seq_len, padding_value, codebooks, device, prepend_sos_token=True)
-    initial_token_index = input_sequence.shape[-1] - 1
+    initial_token_index = input_sequence.shape[-1] - 1 if input_sequence.shape[-1] > 0 else 0
     sequence_lengths = SequenceLengths(full_track=[full_track_initial_sequence_length], stem=[stem_sequence_length])
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)
 

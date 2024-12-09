@@ -17,7 +17,7 @@ from gigmate.utils.sequence_utils import cut_sequence, revert_interleaving
 NUM_OUTPUT_FILES = 5
 SUBSET_OF_TEST_DATASET_NUMBER = 2
 AUDIO_TO_GENERATE_LENGTH = 4
-TEMPERATURE = 0.8
+TEMPERATURE = 0.5
 BUCKET_NAME = 'gigmate-predictions'
 INPUT_SEQUENCE_LENGTH_IN_SECONDS = 0
 

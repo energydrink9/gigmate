@@ -8,7 +8,7 @@ def remove_forbidden_tokens(outputs: Tensor, forbidden_tokens: list[int]) -> Ten
     return outputs
 
 
-def sample_from_logits(logits: Tensor, temperature: float, no_special_tokens=True) -> Tensor:
+def sample_from_logits(logits: Tensor, temperature: float, no_special_tokens=False) -> Tensor:
 
     if no_special_tokens is True:
         forbidden_tokens = [get_start_of_sequence_token_id(), get_end_of_sequence_token_id(), get_pad_token_id()]
