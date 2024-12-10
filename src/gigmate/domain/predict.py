@@ -15,9 +15,9 @@ from gigmate.utils.device import get_device, Device
 from gigmate.utils.sequence_utils import cut_sequence, revert_interleaving
 
 NUM_OUTPUT_FILES = 5
-SUBSET_OF_TEST_DATASET_NUMBER = 2
+SUBSET_OF_TEST_DATASET_NUMBER = 5
 AUDIO_TO_GENERATE_LENGTH = 4
-TEMPERATURE = 0.5
+TEMPERATURE = 1.3
 BUCKET_NAME = 'gigmate-predictions'
 INPUT_SEQUENCE_LENGTH_IN_SECONDS = 0
 
@@ -32,12 +32,12 @@ def test_model(model: TransformerModel, device: Device, data_loader, frame_rate:
         stem_file = f'/tmp/stem_{i}.wav'
         output_file = f'/tmp/output_{i}.wav'
         
+        print(f'File: {data_items[i].paths[0]}')
         print(f'Generating audio file output {i}:')
-        # input_file = 'resources/test_generation.wav'
 
         full_track_sequence = data_items[i].inputs.full_track[:1, :, :]
-        full_track_sequence = cut_sequence(full_track_sequence, data_items[i].sequence_lengths.full_track[0], cut_left=True)
-        # full_track_sequence = revert_interleaving(full_track_sequence)
+        sequence_length = data_items[i].sequence_lengths.full_track[0]
+        full_track_sequence = cut_sequence(full_track_sequence, sequence_length, cut_left=True)
         full_track_tensor, sr = decode(full_track_sequence, device)
         save_audio(full_track_tensor.detach().cpu(), full_track_file, sample_rate=sr)
         upload_name = f'full_track_{file_idx}.wav'

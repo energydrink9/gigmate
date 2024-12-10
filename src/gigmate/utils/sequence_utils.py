@@ -208,3 +208,29 @@ def add_start_and_end_tokens(sequence: Tensor):
     end_token = get_end_of_sequence_token(codebooks, batch_size=batch_size)
 
     return torch.cat([start_token, sequence, end_token], dim=-1)
+
+
+def mix_sequences(first_sequence: Tensor, second_sequence: Tensor, probability: float) -> Tensor:
+    """
+    Mix elements of two sequences with a given probability.
+    
+    Args:
+        first_sequence (Tensor): The first sequence.
+        second_sequence (Tensor): The second sequence (must have the same shape as first_sequence).
+        probability (float): Probability of choosing elements from the first sequence (0 ≤ p ≤ 1).
+    
+    Returns:
+        Tensor: A new tensor with elements mixed from the two input sequences.
+    """
+    if first_sequence.shape != second_sequence.shape:
+        raise ValueError("Both sequences must have the same shape.")
+    if not (0 <= probability <= 1):
+        raise ValueError("Probability must be between 0 and 1.")
+    
+    # Create a mask tensor with values drawn from a Bernoulli distribution
+    mask = torch.bernoulli(torch.full(first_sequence.shape, probability))
+    
+    # Select from the first sequence where mask == 1, and from the second where mask == 0
+    mixed_sequence = mask * first_sequence + (1 - mask) * second_sequence
+    
+    return mixed_sequence

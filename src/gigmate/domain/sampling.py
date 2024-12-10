@@ -8,6 +8,7 @@ def remove_forbidden_tokens(outputs: Tensor, forbidden_tokens: list[int]) -> Ten
     return outputs
 
 
+# logits: B, K, S, V shape or B, K, V shape
 def sample_from_logits(logits: Tensor, temperature: float, no_special_tokens=False) -> Tensor:
 
     if no_special_tokens is True:
@@ -16,13 +17,25 @@ def sample_from_logits(logits: Tensor, temperature: float, no_special_tokens=Fal
 
     # If temp is 0 then next_token is the argmax of logits
     if temperature == 0.0:
-        next_token = torch.argmax(logits, dim=-1, keepdim=True)
+        next_token = torch.argmax(logits, dim=-1)
     # If temp is not 0 then next_token is sampled out of logits
     else:
         logits = logits / temperature
-        next_token = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
+        probs = torch.softmax(logits, dim=-1)
 
-    return next_token.squeeze(-1)
+        # TODO: Vectorize this operation
+        batches = []
+        for b in range(probs.shape[0]):
+            codebooks = []
+            for c in range(probs.shape[1]):
+                sample = torch.multinomial(probs[b, c], num_samples=1)
+                codebooks.append(sample)
+  
+            batches.append(torch.stack(codebooks))
+ 
+        next_token = torch.stack(batches)
+ 
+    return next_token
 
 
 

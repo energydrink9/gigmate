@@ -1,4 +1,5 @@
 import os
+import shutil
 from typing import Optional, cast
 from clearml import Task
 import torch
@@ -9,7 +10,7 @@ from torch.utils.data import DataLoader
 from s3fs.core import S3FileSystem
 
 from gigmate.dataset.dataset import get_data_loaders
-from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path, get_remote_checkpoint_path
+from gigmate.model.model_checkpoint import CHECKPOINTS_DIR, LATEST_CHECKPOINT_EPOCH_PATH, LATEST_CHECKPOINT_PATH, get_latest_model_checkpoint_path, get_remote_checkpoint_path
 from gigmate.training.training_model import get_training_model
 from gigmate.utils.constants import get_clearml_project_name, get_params
 from gigmate.utils.device import get_device
@@ -17,9 +18,8 @@ from gigmate.utils.env import get_environment
 
 ENVIRONMENT = get_environment()
 DEBUG = False
-OUTPUT_DIRECTORY = 'output'
 UPLOAD_CHECKPOINT = True
-UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 5
+UPLOAD_CHECKPOINT_EVERY_N_EPOCHS = 4
 MIXED_PRECISION = True
 USE_CLEARML = ENVIRONMENT != 'dev'
 VAL_CHECK_INTERVAL = None
@@ -61,13 +61,17 @@ class ModelCheckpointUpload(ModelCheckpoint):
     
     def _save_checkpoint(self, trainer, filepath) -> None:
         super()._save_checkpoint(trainer, filepath)
-        upload_weights(self.fs, self.task_id, trainer.current_epoch, filepath)
+        shutil.copyfile(filepath, LATEST_CHECKPOINT_PATH)
+        with open(LATEST_CHECKPOINT_PATH, 'w') as f:
+            f.write('{}'.format(trainer.current_epoch))
+        if trainer.current_epoch % UPLOAD_CHECKPOINT_EVERY_N_EPOCHS == 0:
+            upload_weights(self.fs, self.task_id, trainer.current_epoch, filepath)
 
 
-def train_model(task: Optional[Task], params, device, output_dir: str, train_loader: DataLoader, validation_loader: DataLoader, fs: Optional[S3FileSystem], ckpt_path: Optional[str] = None):
+def train_model(task: Optional[Task], params, device, train_loader: DataLoader, validation_loader: DataLoader, fs: Optional[S3FileSystem], ckpt_path: Optional[str] = None, resume_epoch: Optional[int] = None):
     accumulate_grad_batches = params['accumulate_grad_batches']
     steps_per_epoch = len(train_loader) // accumulate_grad_batches
-    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch, compile=False)
+    training_model = get_training_model(params, ckpt_path, device, task, steps_per_epoch, resume_epoch=resume_epoch, compile=False)
 
     # summary(model, input_size=(params['batch_size'], max_seq_len, vocab_size))
     print('Loaded model:')
@@ -78,9 +82,9 @@ def train_model(task: Optional[Task], params, device, output_dir: str, train_loa
     checkpoint_callback = ModelCheckpointUpload(
         task_id=cast(str, task.id) if task is not None else 'default',
         fs=fs,
-        dirpath=os.path.join(output_dir, 'checkpoints'),
+        dirpath=CHECKPOINTS_DIR,
         filename='{epoch}',
-        every_n_epochs=UPLOAD_CHECKPOINT_EVERY_N_EPOCHS,
+        every_n_epochs=1,
         enable_version_counter=True,
         save_top_k=1,
         save_weights_only=True,
@@ -129,4 +133,14 @@ if __name__ == '__main__':
     train_loader, validation_loader, _ = get_data_loaders()
 
     ckpt_path = get_latest_model_checkpoint_path()
-    model = train_model(task, params, device, OUTPUT_DIRECTORY, train_loader, validation_loader, fs=fs, ckpt_path=ckpt_path)
+
+    if os.path.exists(LATEST_CHECKPOINT_EPOCH_PATH):
+        with open(LATEST_CHECKPOINT_EPOCH_PATH, 'r') as f:
+            resume_epoch: Optional[int] = int(f.readline())
+
+        print(f'Resuming training from epoch {resume_epoch}')
+
+    else:
+        resume_epoch = None
+
+    model = train_model(task, params, device, train_loader, validation_loader, fs=fs, ckpt_path=ckpt_path, resume_epoch=resume_epoch)

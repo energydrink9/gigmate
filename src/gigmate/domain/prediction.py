@@ -43,9 +43,8 @@ def predict_next_token(
             cache_index=cache_index if incremental else None,
             encoder_cache=encoder_cache,
         )
-        outputs = outputs.squeeze(0).transpose(0, 1)  # switch codebooks and sequence dimensions
-        outputs = outputs[-1 if use_cache and incremental else current_token_index]  # remove batch dimension and take only next token logits
-        predicted_tokens = sample_from_logits(outputs, temperature, no_special_tokens=False).unsqueeze(0).unsqueeze(2)  # sample and remove last dimension
+        outputs = outputs[:, :, -1 if use_cache and incremental else current_token_index, :]  # take only next token logits and add batch dimension
+        predicted_tokens = sample_from_logits(outputs, temperature)  # sample
         
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache
 

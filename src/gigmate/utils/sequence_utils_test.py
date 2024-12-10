@@ -4,7 +4,7 @@ from typing import Tuple
 
 from gigmate.utils.constants import get_pad_token_id, get_special_tokens
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_end_of_sequence_token, get_start_of_sequence_token, pad_sequence
-from gigmate.utils.sequence_utils import remove_special_tokens_from_target_and_logits, revert_interleaving, add_start_and_end_tokens
+from gigmate.utils.sequence_utils import remove_special_tokens_from_target_and_logits, revert_interleaving, add_start_and_end_tokens, mix_sequences
 
 
 def get_sample_data(B: int, K: int, T: int) -> torch.Tensor:
@@ -180,3 +180,21 @@ def test_add_start_and_end_token(test_sequence):
     assert padded_sequence.shape == (B, K, T + 2), "Invalid shape after adding start and end token"
     assert torch.equal(padded_sequence[:, :, 0:1], get_start_of_sequence_token(K, batch_size=B)), "Start token is not correct"
     assert torch.equal(padded_sequence[:, :, -1:], get_end_of_sequence_token(K, batch_size=B)), "End token is not correct"
+
+
+def test_mix_sequences_prob_0(test_sequence):
+    sequence, B, K, T = test_sequence
+    
+    second_sequence = torch.rand(size=sequence.shape)
+    mixed_sequence = mix_sequences(sequence, second_sequence, 1.0)
+
+    assert torch.equal(mixed_sequence, sequence)
+
+
+def test_mix_sequences_prob_1(test_sequence):
+    sequence, B, K, T = test_sequence
+    
+    second_sequence = torch.rand(size=sequence.shape)
+    mixed_sequence = mix_sequences(sequence, second_sequence, 0.0)
+
+    assert torch.equal(mixed_sequence, second_sequence)
