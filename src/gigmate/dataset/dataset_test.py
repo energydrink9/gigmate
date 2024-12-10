@@ -11,8 +11,8 @@ from gigmate.dataset.dataset import AudioDataset, get_data_loader, get_dataset, 
 from gigmate.model.model import TransformerModel, get_model
 from gigmate.model.model_checkpoint import get_latest_model_checkpoint_path
 from gigmate.utils.device import Device, get_device
-from gigmate.utils.constants import get_pad_token_id, get_random_seed
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, shift_sequence
+from gigmate.utils.constants import get_pad_token_id, get_random_seed, get_start_of_sequence_token_id
+from gigmate.utils.sequence_utils import apply_interleaving, apply_start_tokens_to_interleaved_sequence, cut_sequence, get_start_of_sequence_token, pad_sequence, shift_sequence
 
 
 CODEBOOKS = 4
@@ -73,7 +73,7 @@ def test_get_model_input():
     expected_full_track_input = cut_sequence(full_track.clone()[:, :, start: start + max_seq_len], max_seq_len, cut_left=True)
     expected_stem_input = shift_sequence(stem[:, :, start + max_seq_len: start + max_seq_len + max_decoder_seq_len], shifts=1)
     expected_stem_input[:, :, 0:1] = get_start_of_sequence_token(CODEBOOKS)
-    expected_stem_input = cut_sequence(apply_interleaving(expected_stem_input, PADDING_VALUE), max_decoder_seq_len)
+    expected_stem_input = cut_sequence(apply_start_tokens_to_interleaved_sequence(apply_interleaving(expected_stem_input, PADDING_VALUE), 4, get_start_of_sequence_token_id()), max_decoder_seq_len)
 
     expected_target = stem[:, :, start + max_seq_len: start + max_seq_len + max_decoder_seq_len]
     expected_target = cut_sequence(apply_interleaving(expected_target, PADDING_VALUE), max_decoder_seq_len)
@@ -113,7 +113,7 @@ def test_get_model_input_with_zero_shift():
     expected_full_track_input = cut_sequence(full_track.clone()[:, :, start: start + max_seq_len], max_seq_len, cut_left=True)
     expected_stem_input = shift_sequence(stem[:, :, start + max_seq_len - max_decoder_seq_len: start + max_seq_len], shifts=1)
     expected_stem_input[:, :, 0:1] = get_start_of_sequence_token(CODEBOOKS)
-    expected_stem_input = cut_sequence(apply_interleaving(expected_stem_input, PADDING_VALUE), max_decoder_seq_len, cut_left=False)
+    expected_stem_input = cut_sequence(apply_start_tokens_to_interleaved_sequence(apply_interleaving(expected_stem_input, PADDING_VALUE), 4, get_start_of_sequence_token_id()), max_decoder_seq_len, cut_left=False)
 
     expected_target = stem[:, :, start + max_seq_len - max_decoder_seq_len: start + max_seq_len]
     expected_target = cut_sequence(apply_interleaving(expected_target, PADDING_VALUE), max_decoder_seq_len, cut_left=False)

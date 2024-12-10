@@ -13,7 +13,7 @@ from gigmate.model.codec import decode, encode
 from gigmate.utils.audio_utils import generate_random_filename
 from gigmate.utils.constants import CODEBOOKS, get_pad_token_id, get_params, get_start_of_sequence_token_id
 from gigmate.utils.device import Device
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
+from gigmate.utils.sequence_utils import apply_interleaving, apply_start_tokens_to_interleaved_sequence, cut_sequence, get_start_of_sequence_token, pad_sequence, revert_interleaving, shift_sequence
 
 DEFAULT_TEMPERATURE = 0
 DEFAULT_MAX_OUTPUT_LENGTH_IN_SECONDS = 10
@@ -59,13 +59,13 @@ def correct_current_token(token: torch.Tensor, index: int) -> torch.Tensor:
     if index == 1:
         # Correct second token
         token[:, 1, :] = get_start_of_sequence_token_id()
-        token[:, 2, :] = get_pad_token_id()
-        token[:, 3, :] = get_pad_token_id()
+        token[:, 2, :] = get_start_of_sequence_token_id()
+        token[:, 3, :] = get_start_of_sequence_token_id()
 
     if index == 2:
         # Correct second token
         token[:, 2, :] = get_start_of_sequence_token_id()
-        token[:, 3, :] = get_pad_token_id()
+        token[:, 3, :] = get_start_of_sequence_token_id()
 
     if index == 3:
         # Correct second token
@@ -106,6 +106,9 @@ def get_initial_next_sequence(sequence: torch.Tensor, max_seq_len: int, padding_
 
     if interleaving is True:
         sequence = apply_interleaving(sequence, padding_value)
+        if prepend_sos_token is True:
+            apply_start_tokens_to_interleaved_sequence(sequence, codebooks, get_start_of_sequence_token_id())
+
     sequence_length = sequence.shape[-1]
     padded_sequence = pad_sequence(sequence, max_seq_len, padding_value, pad_left)
 
@@ -175,6 +178,7 @@ def complete_sequence(
     full_track_initial_sequence, full_track_initial_sequence_length = get_initial_next_sequence(full_track_sequence, max_seq_len, padding_value, codebooks, device, pad_left=True, interleaving=False)
     stem_sequence_length = max_decoder_seq_len
     next_sequence, _ = get_initial_next_sequence(input_sequence, max_decoder_seq_len, padding_value, codebooks, device, prepend_sos_token=True)
+
     initial_token_index = input_sequence.shape[-1] - 1 if input_sequence.shape[-1] > 0 else 0
     sequence_lengths = SequenceLengths(full_track=[full_track_initial_sequence_length], stem=[stem_sequence_length])
     max_output_tokens = math.ceil(max_output_length_in_seconds * frame_rate)

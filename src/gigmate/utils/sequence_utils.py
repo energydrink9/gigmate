@@ -114,6 +114,13 @@ def revert_interleaving(sequence: torch.Tensor) -> torch.Tensor:
     return output
 
 
+def apply_start_tokens_to_interleaved_sequence(sequence: Tensor, codebooks: int, start_token_id: int):
+    for codebook in range(codebooks):
+        sequence[:, codebook, :codebook + 1] = start_token_id
+
+    return sequence
+
+
 def update_interleaved_sequence(sequence: Tensor, position: int, new_tokens: Tensor, padding_value: int) -> torch.Tensor:
     """
     Updates the tokens at a specific position in the input sequence, taking into consideration delayed interleaving.

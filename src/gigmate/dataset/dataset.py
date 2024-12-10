@@ -11,7 +11,7 @@ import os
 import random
 
 from gigmate.utils.constants import MAX_SEQ_LEN, get_clearml_dataset_name, get_clearml_dataset_project_name, get_clearml_dataset_version, get_params, get_pad_token_id, get_start_of_sequence_token_id
-from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, pad_sequence, revert_interleaving, shift_sequence, add_start_and_end_tokens
+from gigmate.utils.sequence_utils import apply_interleaving, apply_start_tokens_to_interleaved_sequence, cut_sequence, pad_sequence, revert_interleaving, shift_sequence, add_start_and_end_tokens
 
 params = get_params()
 
@@ -180,12 +180,11 @@ def get_model_input(full_track: Tensor, stem: Tensor, sequence_length: int, max_
 
     # Shift the stem by 1 position and set the first token to the start of sequence token
     stem_input = shift_sequence(stem_input, shifts=1)
-    stem_input[:, :, 0] = get_start_of_sequence_token_id()
-
-    # Apply interleaving
-    # full_track_input = apply_interleaving(full_track_input, padding_value)
 
     stem_input = apply_interleaving(stem_input, padding_value)
+    
+    apply_start_tokens_to_interleaved_sequence(stem_input, codebooks, get_start_of_sequence_token_id())
+
     target = apply_interleaving(target, padding_value)
 
     # Cut sequences if necessary
