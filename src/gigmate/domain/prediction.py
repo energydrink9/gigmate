@@ -43,7 +43,7 @@ def predict_next_token(
             cache_index=cache_index if incremental else None,
             encoder_cache=encoder_cache,
         )
-        outputs = outputs[:, :, -1 if use_cache and incremental else current_token_index, :]  # take only next token logits and add batch dimension
+        outputs = outputs[:, :, -1:, :] if use_cache and incremental else outputs[:, :, current_token_index:current_token_index + 1, :]  # take only next token logits and add batch dimension
         predicted_tokens = sample_from_logits(outputs, temperature)  # sample
         
     return predicted_tokens.detach().to('cpu'), updated_cache, updated_encoder_cache

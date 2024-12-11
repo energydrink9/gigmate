@@ -175,7 +175,7 @@ def get_model_input(full_track: Tensor, stem: Tensor, sequence_length: int, max_
     full_track_end_position = full_track_start_position + max_seq_len
     full_track_input = full_track[:, :, full_track_start_position:full_track_end_position]
 
-    stem_input = cut_sequence(stem[:, :, full_track_start_position + shift:full_track_end_position + shift], max_decoder_seq_len, cut_left=True)
+    stem_input = cut_sequence(stem[:, :, full_track_end_position - max_decoder_seq_len + shift:full_track_end_position + shift], max_decoder_seq_len, cut_left=False)
     target = stem_input
 
     # Shift the stem by 1 position and set the first token to the start of sequence token

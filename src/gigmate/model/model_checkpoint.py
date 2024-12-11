@@ -9,8 +9,8 @@ from functools import lru_cache
 from gigmate.utils.constants import get_clearml_project_name
 
 # Set to none to start training from scratch, otherwise use checkpoint id to continue training from last checkpoint.
-LATEST_TASK_CHECKPOINT_ID = '24b6e0fbfdeb480ab1e652d64df3d0a6'  # '37b6cfb8f13c4d79b37810979683d3b5'  # 'e3b53c03bad94c8cb77fe8499300356a'  # 'cfbaa68397fd4113b21b0214fc16eb73'  # '177638d08ce3446e9821fe396b4e0155'
-EPOCH = 19  # 24  # 24  # 39  # 34
+LATEST_TASK_CHECKPOINT_ID = None  # '24b6e0fbfdeb480ab1e652d64df3d0a6'  # '37b6cfb8f13c4d79b37810979683d3b5'  # 'e3b53c03bad94c8cb77fe8499300356a'  # 'cfbaa68397fd4113b21b0214fc16eb73'
+EPOCH = 19  # 24  # 24  # 39
 S3_CHECKPOINTS_STORAGE = True
 CHECKPOINTS_BUCKET = 'gigmate-checkpoints'
 OUTPUT_DIRECTORY = '/data' if os.path.exists('/data') else tempfile.gettempdir()

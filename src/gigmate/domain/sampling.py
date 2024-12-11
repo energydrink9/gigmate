@@ -33,7 +33,7 @@ def sample_from_logits(logits: Tensor, temperature: float, no_special_tokens=Fal
   
             batches.append(torch.stack(codebooks))
  
-        next_token = torch.stack(batches)
+        next_token = torch.stack(batches).squeeze(-1)
  
     return next_token
 

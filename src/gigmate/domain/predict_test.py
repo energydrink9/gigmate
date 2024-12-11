@@ -29,7 +29,6 @@ def mock_model():
         ],        
     ]]), None, None
 
-    print('sh', model.return_value[0].shape)
     return model
 
 
@@ -45,13 +44,13 @@ def test_predict_next_note_temperature_zero(mock_model):
         incremental=False,
         temperature=0,
     )
-    
-    assert torch.equal(result, torch.tensor([1, 0, 1, 1]).reshape((1, 4, 1)))
+
+    assert torch.allclose(result, torch.tensor([1, 0, 1, 1]))
 
 
 # TODO: fix and re-enable
 @patch('torch.multinomial')
-def skip_test_predict_next_note_with_temperature(mock_multinomial, mock_model):
+def test_predict_next_note_with_temperature(mock_multinomial, mock_model):
     mock_multinomial.return_value = torch.tensor([1])
     input_sequence = torch.tensor([[1, 2, 3]])
     full_track_sequence = torch.tensor([[[1, 2, 3]]])
@@ -64,5 +63,5 @@ def skip_test_predict_next_note_with_temperature(mock_multinomial, mock_model):
         incremental=False,
         temperature=0.5,
     )
-    
-    assert torch.equal(result, torch.tensor([1, 0, 1, 1]).reshape((1, 4, 1)))
+
+    assert torch.allclose(result, torch.tensor([1, 1, 1, 1]))

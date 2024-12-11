@@ -2,8 +2,8 @@ import pytest
 import torch
 from typing import Tuple
 from gigmate.domain.prediction import apply_interleaving, get_initial_next_sequence, update_next_sequence
-from gigmate.utils.constants import get_pad_token_id
-from gigmate.utils.sequence_utils import get_start_of_sequence_token, pad_sequence
+from gigmate.utils.constants import get_pad_token_id, get_start_of_sequence_token_id
+from gigmate.utils.sequence_utils import apply_start_tokens_to_interleaved_sequence, get_start_of_sequence_token, pad_sequence
 
 
 CODEBOOKS = 4
@@ -90,7 +90,7 @@ def test_update_next_sequence_when_position_equals_last_element(test_sequence):
 
 def test_get_initial_next_sequence_with_empty_sequence():
     initial_sequence, seq_len = get_initial_next_sequence(torch.empty((1, CODEBOOKS, 0)), CODEBOOKS, PADDING_VALUE, CODEBOOKS, device, prepend_sos_token=True)
-    expected_sequence = apply_interleaving(get_start_of_sequence_token(CODEBOOKS), PADDING_VALUE)
+    expected_sequence = apply_start_tokens_to_interleaved_sequence(apply_interleaving(get_start_of_sequence_token(CODEBOOKS), PADDING_VALUE), CODEBOOKS, get_start_of_sequence_token_id())
 
     assert torch.equal(initial_sequence, expected_sequence), "Should return interleaved sequence containing start token only"
     assert seq_len == CODEBOOKS, "Returned sequence length should be equal to number of codebooks (because of interleaving)"
