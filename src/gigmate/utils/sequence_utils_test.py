@@ -2,7 +2,7 @@ import pytest
 import torch
 from typing import Tuple
 
-from gigmate.utils.constants import get_pad_token_id, get_special_tokens
+from gigmate.utils.constants import RANDOM_SEED, get_pad_token_id, get_special_tokens
 from gigmate.utils.sequence_utils import apply_interleaving, cut_sequence, get_end_of_sequence_token, get_start_of_sequence_token, pad_sequence
 from gigmate.utils.sequence_utils import remove_special_tokens_from_target_and_logits, revert_interleaving, add_start_and_end_tokens, mix_sequences
 
@@ -182,19 +182,43 @@ def test_add_start_and_end_token(test_sequence):
     assert torch.equal(padded_sequence[:, :, -1:], get_end_of_sequence_token(K, batch_size=B)), "End token is not correct"
 
 
-def test_mix_sequences_prob_0(test_sequence):
+def test_mix_sequences_prob_1(test_sequence):
     sequence, B, K, T = test_sequence
     
-    second_sequence = torch.rand(size=sequence.shape)
+    second_sequence = torch.randint(10, 20, size=sequence.shape)
     mixed_sequence = mix_sequences(sequence, second_sequence, 1.0)
 
     assert torch.equal(mixed_sequence, sequence)
 
 
-def test_mix_sequences_prob_1(test_sequence):
+def test_mix_sequences_prob_0(test_sequence):
     sequence, B, K, T = test_sequence
     
-    second_sequence = torch.rand(size=sequence.shape)
+    second_sequence = torch.randint(10, 20, size=sequence.shape)
     mixed_sequence = mix_sequences(sequence, second_sequence, 0.0)
 
     assert torch.equal(mixed_sequence, second_sequence)
+
+
+def test_mix_sequences_prob_0_5(test_sequence):
+    sequence, B, K, T = test_sequence
+    torch.manual_seed(RANDOM_SEED)
+    second_sequence = torch.randint(10, 20, size=sequence.shape)
+    mixed_sequence = mix_sequences(sequence, second_sequence, 0.5)
+
+    # At a sequence position, the resulting sequence must have codebooks from the same sequence.
+    # We must not mix codebooks from different sequences. 
+
+    expected_sequence = torch.tensor([
+        [[12, 2, 3, 4, 5, 15, 10, 14, 9],
+         [13, 2, 3, 4, 5, 11, 12, 15, 9],
+         [17, 2, 3, 4, 5, 11, 19, 13, 9],
+         [19, 2, 3, 4, 5, 15, 19, 13, 9]],
+
+        [[1, 16, 3, 10, 5, 12, 7, 8, 17],
+         [1, 13, 3, 13, 5, 10, 7, 8, 19],
+         [1, 19, 3, 14, 5, 18, 7, 8, 10],
+         [1, 10, 3, 13, 5, 11, 7, 8, 19]]
+    ])
+
+    assert torch.equal(mixed_sequence, expected_sequence)

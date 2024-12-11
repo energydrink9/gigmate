@@ -228,7 +228,8 @@ def mix_sequences(first_sequence: Tensor, second_sequence: Tensor, probability: 
         raise ValueError("Probability must be between 0 and 1.")
     
     # Create a mask tensor with values drawn from a Bernoulli distribution
-    mask = torch.bernoulli(torch.full(first_sequence.shape, probability, device=first_sequence.device)).to(dtype=torch.int)
+    mask_shape = (first_sequence.shape[0], 1, first_sequence.shape[2])
+    mask = torch.bernoulli(torch.full(mask_shape, probability, device=first_sequence.device)).to(dtype=torch.int)
     
     # Select from the first sequence where mask == 1, and from the second where mask == 0
     mixed_sequence = mask * first_sequence + (1 - mask) * second_sequence

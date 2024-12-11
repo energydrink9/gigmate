@@ -220,7 +220,7 @@ class TransformerModel(nn.Module):
         return logits, updated_cache, cross_attention_src
 
 
-def load_ckpt(model, checkpoint_path: str, device: Device) -> None:
+def load_ckpt(model: nn.Module, checkpoint_path: str, device: Device) -> None:
     print(f'Loading ckpt {checkpoint_path}')
     state_dict = torch.load(checkpoint_path, map_location=torch.device(device), weights_only=True)['state_dict']
     

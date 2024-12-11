@@ -21,7 +21,7 @@ from gigmate.dataset.dataset import SequenceLengths, get_inputs_and_targets, get
 from gigmate.domain.prediction import complete_sequence
 from gigmate.domain.sampling import sample_from_logits
 from gigmate.model.codec import decode
-from gigmate.model.model import get_model
+from gigmate.model.model import TransformerModel, get_model
 from gigmate.model.utils import compile_model
 from gigmate.training.greedy_lr import GreedyLR
 from gigmate.utils.constants import EPOCHS, MAX_DECODER_SEQ_LEN, get_pad_token_id, get_start_of_sequence_token_id
@@ -40,14 +40,14 @@ CODEBOOKS_LOSS_WEIGHTS: Dict[int, float] = {
     2: 1,
     3: 1,
 }
-CURRICULUM_LEARNING = False
+ENABLE_CURRICULUM_LEARNING = False
 # TODO: Enable compilation of training model
 COMPILE_TRAINING_MODEL = False
 FRAME_RATE = 50
 NUMBER_OF_SAMPLES_FOR_FAD = 5 if ENVIRONMENT != 'dev' else 0
 TEMPERATURE_HIGH = 1.0
 LOG_FRECHET_AUDIO_DISTANCE_IN_TRAINING = False
-SCHEDULED_SAMPLING = True
+ENABLE_SCHEDULED_SAMPLING = True
 SCHEDULED_SAMPLING_TEMPERATURE = 1.0
 
 
@@ -147,7 +147,18 @@ def get_target_audio(target: Tensor, sequence_length: int) -> Tuple[Tensor, int]
 
 
 class TrainingModel(L.LightningModule):
-    def __init__(self, model, learning_rate: float, max_learning_rate: float, min_learning_rate: float, vocab_size: int, codebooks: int, steps_per_epoch: int, resume_epoch: Optional[int], logger: Optional[Logger]):
+    def __init__(
+            self,
+            model: TransformerModel,
+            learning_rate: float,
+            max_learning_rate: float,
+            min_learning_rate: float,
+            vocab_size: int,
+            codebooks: int,
+            steps_per_epoch: int,
+            resume_epoch: Optional[int],
+            logger: Optional[Logger],
+    ):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
@@ -240,7 +251,7 @@ class TrainingModel(L.LightningModule):
         metrics: Dict[str, Tensor] = dict()
         total_loss = torch.tensor(0., device=self.device)
 
-        if CURRICULUM_LEARNING:
+        if ENABLE_CURRICULUM_LEARNING:
             # logits have shape (B, V, S) == (B, 2048, 512)
             # max(e^-(x/100), 0.1)
             w = math.e ** -(torch.tensor(range(0, MAX_DECODER_SEQ_LEN), device=self.device.type) / 100)
@@ -303,7 +314,7 @@ class TrainingModel(L.LightningModule):
         return int(self.global_step / self.steps_per_epoch * 4)
 
     def get_scheduled_sampling_probability(self) -> float:
-        return self.trainer.current_epoch / (EPOCHS)
+        return self.trainer.current_epoch / (EPOCHS * 2)
     
     # gold_target: B, K, S, V logits: B, K, S, returns B, K, S
     def get_scheduled_sampling_input(self, gold_target: Tensor, logits: Tensor) -> Tensor:
@@ -316,20 +327,38 @@ class TrainingModel(L.LightningModule):
 
         return mix_sequences(input_sequence, gold_target, scheduled_sampling_probability)
 
-    def schedule_sample(self, gold_target: Tensor, logits: Tensor, full_track: Tensor, sequence_lengths: SequenceLengths):
-        scheduled_sampling_input = self.get_scheduled_sampling_input(gold_target, logits)
+    def schedule_sample(self, stem: Tensor, conditioning_input: Tensor, sequence_lengths: SequenceLengths):
 
-        return self.model(scheduled_sampling_input, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
+        self.model.eval()
+        # with torch.no_grad():
+        logits, _, _ = self.forward(stem.clone(), conditioning_input.clone(), sequence_lengths)
+        logits = logits.detach()
+        scheduled_sampling_input = self.get_scheduled_sampling_input(stem, logits)
+        self.model.train()
+
+        opt = self.optimizers()
+        if isinstance(opt, List):
+            for optimizer in opt:
+                optimizer.zero_grad()
+        else:
+            opt.zero_grad()
+
+        self.model.zero_grad()
+
+        return self.forward(scheduled_sampling_input, conditioning_input, sequence_lengths)
+    
+    def forward(self, stem: Tensor, conditioning_input: Tensor, sequence_lengths: SequenceLengths):
+        return self.model(stem, conditioning_input=conditioning_input, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
     def training_step(self, batch: DatasetBatch, batch_idx: int):
         scheduled_sampling_probability = self.get_scheduled_sampling_probability()
         self.log_metric(None, None, 'scheduled_sampling_probability', scheduled_sampling_probability, interval='epoch')
-        
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
-        if SCHEDULED_SAMPLING is True:
-            logits, _, _ = self.schedule_sample(stem, logits, full_track, sequence_lengths)
+        if ENABLE_SCHEDULED_SAMPLING is True:
+            logits, _, _ = self.schedule_sample(stem, full_track, sequence_lengths)
+        else:
+            logits, _, _ = self.forward(stem, full_track, sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics, loss_by_codebooks_position = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'train')
@@ -373,15 +402,20 @@ class TrainingModel(L.LightningModule):
         return loss
     
     def predict_continuation(self, full_track: Tensor, length: int, temperature: float):
-        return complete_sequence(self.model, full_track.device.type, full_track, FRAME_RATE, PAD_TOKEN_ID, length / FRAME_RATE, temperature, use_cache=False)
+        self.model.eval()
+        with torch.no_grad():
+            sequence = complete_sequence(self.model, full_track.device.type, full_track, FRAME_RATE, PAD_TOKEN_ID, length / FRAME_RATE, temperature, use_cache=False)
+        self.model.train()
+        return sequence
 
     def validation_step(self, batch: DatasetBatch, batch_idx: int):
 
         full_track, stem, targets, sequence_lengths = get_inputs_and_targets(batch, self.device)
-        logits, _, _ = self.model(stem, conditioning_input=full_track, sequence_lengths=sequence_lengths, shift=get_shift(MAX_DECODER_SEQ_LEN))
 
-        if SCHEDULED_SAMPLING is True:
-            logits, _, _ = self.schedule_sample(stem, logits, full_track, sequence_lengths)
+        if ENABLE_SCHEDULED_SAMPLING is True:
+            logits, _, _ = self.schedule_sample(stem, full_track, sequence_lengths)
+        else:
+            logits, _, _ = self.forward(stem, full_track, sequence_lengths)
 
         codebook_logits, codebook_targets, codebook_logits_for_loss = get_codebook_logits_and_targets(self.codebooks, logits, targets)
         loss, loss_metrics, loss_by_codebooks_position = self.compute_loss(codebook_logits_for_loss, codebook_targets, 'val')
@@ -397,12 +431,9 @@ class TrainingModel(L.LightningModule):
                 full_track_prediction_input = get_full_track_prediction_input(full_track[:1, :, :], sequence_lengths.full_track[0])
                 pred_audio_temp_high_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE_HIGH)
                 pred_audio_temp_high, pred_audio_temp_high_sr = decode(pred_audio_temp_high_encoded, full_track.device.type, to_cpu=True)
-                # pred_audio_temp_low_encoded = self.predict_continuation(full_track_prediction_input, length, TEMPERATURE_LOW)
-                # pred_audio_temp_low, pred_audio_temp_low_sr = decode(pred_audio_temp_low_encoded, full_track.device.type, to_cpu=True)
                 target_audio, target_audio_sr = get_target_audio(targets_fad.detach(), length)
                 self.log_frechet_audio_distance_metric(batch.size, pred_audio_tf, target_audio, 'val', self.frechet_audio_distance_metric_tf['val'], 'tf')
                 self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp_high, target_audio, 'val', self.frechet_audio_distance_metric_temp_high['val'], 'temp_high')
-                # self.log_frechet_audio_distance_metric(batch.size, pred_audio_temp_low, target_audio, 'val', self.frechet_audio_distance_metric_temp_low['val'], 'temp_low')
 
                 if batch_idx < 8:
                     self.save_generated_audio(batch_idx, pred_audio_tf, pred_audio_temp_high, target_audio, pred_audio_tf_sr, pred_audio_temp_high_sr, target_audio_sr, 'val')

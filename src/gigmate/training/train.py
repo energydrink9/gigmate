@@ -66,6 +66,7 @@ class ModelCheckpointUpload(ModelCheckpoint):
             f.write('{}'.format(trainer.current_epoch))
         if trainer.current_epoch % UPLOAD_CHECKPOINT_EVERY_N_EPOCHS == 0:
             upload_weights(self.fs, self.task_id, trainer.current_epoch, filepath)
+        os.remove(filepath)
 
 
 def train_model(task: Optional[Task], params, device, train_loader: DataLoader, validation_loader: DataLoader, fs: Optional[S3FileSystem], ckpt_path: Optional[str] = None, resume_epoch: Optional[int] = None):
