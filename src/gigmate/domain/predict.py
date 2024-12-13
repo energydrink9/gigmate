@@ -17,9 +17,9 @@ from gigmate.utils.sequence_utils import cut_sequence, revert_interleaving
 NUM_OUTPUT_FILES = 5
 SUBSET_OF_TEST_DATASET_NUMBER = 5
 AUDIO_TO_GENERATE_LENGTH = 4
-TEMPERATURE = 1.1
+TEMPERATURE = 1.0
 BUCKET_NAME = 'gigmate-predictions'
-INPUT_SEQUENCE_LENGTH_IN_SECONDS = 0
+INPUT_SEQUENCE_LENGTH_IN_SECONDS = 2
 
 
 def test_model(model: TransformerModel, device: Device, data_loader, frame_rate: int, fs: S3FileSystem, id: str = 'default') -> None:
