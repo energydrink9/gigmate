@@ -70,7 +70,7 @@ poetry install
 poetry install -E dataset
 ```
 
-#### Environment Variables
+### Environment Variables
 
 If you want to run training or dataset generation (for inference it's not needed), make sure the following environment variables are set before running the application (replace the <> tokens with the actual secrets):
 
