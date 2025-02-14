@@ -84,7 +84,9 @@ Also this one in case you are running on Apple Silicon:
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 ```
 
-### Running the API
+## 🚀 Running the Application
+
+### Starting the API Server
 To start the API server for audio completion:
 
 ```sh
@@ -92,7 +94,7 @@ poetry run python -m gigmate.api.complete_audio # To start the API
 ```
 
 
-### Inference
+### Running Inference
 ```sh
 poetry run python -m gigmate.play # To start the client
 ```
@@ -117,8 +119,8 @@ with open("output.wav", "wb") as f:
     f.write(response.content)
 ```
 
-### Streaming Audio Completion
-GigMate supports WebSocket-based streaming for real-time accompaniment (in future iterations).
+### Streaming Audio Completion (Future Feature)
+GigMate will support WebSocket-based streaming for real-time accompaniment.
 
 ## 🏋️‍♂️ Training Your Own Model
 
@@ -143,10 +145,7 @@ GigMate is inspired by and builds upon several key papers and frameworks:
 
 ## 📌 Future Improvements
 - Improve music continuation quality through better training techniques
-- Support for additional musical styles and genres
 - Enhanced real-time streaming performance
-- Integration with MIDI for structured music generation
-- Mobile and desktop applications for enhanced accessibility
 
 ## 🤝 Contributing
 GigMate is an ambitious but early-stage project, and contributions are highly welcome! If you'd like to improve GigMate, please follow these steps:
